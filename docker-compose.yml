@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  mysql:
+    build: .
+    container_name: miaumiau-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-miaumiau_db}
+      MYSQL_USER: ${MYSQL_USER:-miaumiau_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-miaumiau_password}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - miaumiau-network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  miaumiau-network:
+    driver: bridge
