@@ -2,8 +2,17 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Deshabilitar validaciones temporalmente para el seeder
-    const { City } = require('../src/models');
+    // Verificar si ya existen ciudades para evitar duplicados
+    const existingCities = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM cities',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay ciudades existentes
+    if (existingCities[0].count > 0) {
+      console.log('Ciudades ya existen, saltando inserción');
+      return;
+    }
     
     const cities = [
       {
@@ -144,12 +153,8 @@ module.exports = {
       }
     ];
 
-    // Usar el modelo para crear las ciudades (evita problemas de validación)
-    for (const cityData of cities) {
-      await City.create(cityData, {
-        validate: false // Deshabilitar validaciones para el seeder
-      });
-    }
+    // Insertar ciudades usando queryInterface
+    await queryInterface.bulkInsert('cities', cities);
   },
 
   async down(queryInterface, Sequelize) {

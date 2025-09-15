@@ -2,8 +2,17 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Deshabilitar validaciones temporalmente para el seeder
-    const { Role } = require('../src/models');
+    // Verificar si ya existen roles para evitar duplicados
+    const existingRoles = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM roles',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay roles existentes
+    if (existingRoles[0].count > 0) {
+      console.log('Roles ya existen, saltando inserción');
+      return;
+    }
     
     const roles = [
       {
@@ -50,12 +59,8 @@ module.exports = {
       }
     ];
 
-    // Usar el modelo para crear los roles (evita problemas de validación)
-    for (const roleData of roles) {
-      await Role.create(roleData, {
-        validate: false // Deshabilitar validaciones para el seeder
-      });
-    }
+    // Insertar roles usando queryInterface
+    await queryInterface.bulkInsert('roles', roles);
   },
 
   async down(queryInterface, Sequelize) {

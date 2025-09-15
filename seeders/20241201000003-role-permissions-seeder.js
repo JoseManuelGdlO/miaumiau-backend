@@ -2,6 +2,18 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Verificar si ya existen asignaciones para evitar duplicados
+    const existingAssignments = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM role_permissions',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay asignaciones existentes
+    if (existingAssignments[0].count > 0) {
+      console.log('Asignaciones de roles-permisos ya existen, saltando inserción');
+      return;
+    }
+    
     // Usar los modelos para obtener datos
     const { Role, Permission, RolePermission } = require('../src/models');
     
@@ -142,13 +154,9 @@ module.exports = {
       });
     }
 
-    // Insertar todas las asignaciones usando el modelo
+    // Insertar todas las asignaciones usando queryInterface
     if (rolePermissions.length > 0) {
-      for (const rolePermissionData of rolePermissions) {
-        await RolePermission.create(rolePermissionData, {
-          validate: false // Deshabilitar validaciones para el seeder
-        });
-      }
+      await queryInterface.bulkInsert('role_permissions', rolePermissions);
     }
   },
 

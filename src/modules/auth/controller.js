@@ -69,8 +69,8 @@ class AuthController {
         });
       }
 
-      // Verificar contraseña
-      const isPasswordValid = await user.comparePassword(contrasena);
+      // Verificar contraseña (texto plano por ahora)
+      const isPasswordValid = user.contrasena === contrasena;
 
       if (!isPasswordValid) {
         return res.status(401).json({

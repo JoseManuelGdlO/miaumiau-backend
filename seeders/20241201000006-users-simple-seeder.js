@@ -2,6 +2,18 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Verificar si ya existen usuarios para evitar duplicados
+    const existingUsers = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM users',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay usuarios existentes
+    if (existingUsers[0].count > 0) {
+      console.log('Usuarios ya existen, saltando inserción');
+      return;
+    }
+    
     // Insertar usuarios directamente con SQL
     await queryInterface.bulkInsert('users', [
       {
@@ -54,7 +66,7 @@ module.exports = {
         created_at: new Date(),
         updated_at: new Date()
       }
-    ], {});
+    ]);
   },
 
   async down(queryInterface, Sequelize) {

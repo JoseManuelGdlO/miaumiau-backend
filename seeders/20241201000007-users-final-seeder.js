@@ -4,6 +4,18 @@ const bcrypt = require('bcryptjs');
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Verificar si ya existen usuarios para evitar duplicados
+    const existingUsers = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM users',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay usuarios existentes
+    if (existingUsers[0].count > 0) {
+      console.log('Usuarios ya existen, saltando inserción');
+      return;
+    }
+    
     // Hash de las contraseñas
     const hashedPassword = await bcrypt.hash('Password123!', 12);
     
@@ -60,7 +72,7 @@ module.exports = {
       }
     ];
 
-    await queryInterface.bulkInsert('users', users, {});
+    await queryInterface.bulkInsert('users', users);
   },
 
   async down(queryInterface, Sequelize) {

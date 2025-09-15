@@ -9,6 +9,15 @@ const RolePermission = require('./RolePermission');
 const City = require('./City');
 const Promotion = require('./Promotion');
 const PromotionCity = require('./PromotionCity');
+const Peso = require('./Peso');
+const CategoriaProducto = require('./CategoriaProducto');
+const Proveedor = require('./Proveedor');
+const Inventario = require('./Inventario');
+const Conversacion = require('./Conversacion');
+const ConversacionChat = require('./ConversacionChat');
+const ConversacionLog = require('./ConversacionLog');
+const Pedido = require('./Pedido');
+const ProductoPedido = require('./ProductoPedido');
 
 // Inicializar modelos
 const models = {
@@ -18,7 +27,16 @@ const models = {
   RolePermission: RolePermission(sequelize, DataTypes),
   City: City(sequelize, DataTypes),
   Promotion: Promotion(sequelize, DataTypes),
-  PromotionCity: PromotionCity(sequelize, DataTypes)
+  PromotionCity: PromotionCity(sequelize, DataTypes),
+  Peso: Peso(sequelize, DataTypes),
+  CategoriaProducto: CategoriaProducto(sequelize, DataTypes),
+  Proveedor: Proveedor(sequelize, DataTypes),
+  Inventario: Inventario(sequelize, DataTypes),
+  Conversacion: Conversacion(sequelize, DataTypes),
+  ConversacionChat: ConversacionChat(sequelize, DataTypes),
+  ConversacionLog: ConversacionLog(sequelize, DataTypes),
+  Pedido: Pedido(sequelize, DataTypes),
+  ProductoPedido: ProductoPedido(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -100,6 +118,125 @@ models.PromotionCity.belongsTo(models.Promotion, {
 models.PromotionCity.belongsTo(models.City, {
   foreignKey: 'city_id',
   as: 'city'
+});
+
+// Asociaciones para Inventario
+models.Inventario.belongsTo(models.Peso, {
+  foreignKey: 'fkid_peso',
+  as: 'peso'
+});
+
+models.Inventario.belongsTo(models.CategoriaProducto, {
+  foreignKey: 'fkid_categoria',
+  as: 'categoria'
+});
+
+models.Inventario.belongsTo(models.City, {
+  foreignKey: 'fkid_ciudad',
+  as: 'ciudad'
+});
+
+models.Inventario.belongsTo(models.Proveedor, {
+  foreignKey: 'fkid_proveedor',
+  as: 'proveedor'
+});
+
+// Asociaciones inversas
+models.Peso.hasMany(models.Inventario, {
+  foreignKey: 'fkid_peso',
+  as: 'inventarios'
+});
+
+models.CategoriaProducto.hasMany(models.Inventario, {
+  foreignKey: 'fkid_categoria',
+  as: 'inventarios'
+});
+
+models.City.hasMany(models.Inventario, {
+  foreignKey: 'fkid_ciudad',
+  as: 'inventarios'
+});
+
+models.Proveedor.hasMany(models.Inventario, {
+  foreignKey: 'fkid_proveedor',
+  as: 'inventarios'
+});
+
+// Asociaciones para Conversaciones
+models.Conversacion.belongsTo(models.User, {
+  foreignKey: 'id_cliente',
+  as: 'cliente'
+});
+
+models.Conversacion.hasMany(models.ConversacionChat, {
+  foreignKey: 'fkid_conversacion',
+  as: 'chats'
+});
+
+models.Conversacion.hasMany(models.ConversacionLog, {
+  foreignKey: 'fkid_conversacion',
+  as: 'logs'
+});
+
+// Asociaciones para ConversacionChat
+models.ConversacionChat.belongsTo(models.Conversacion, {
+  foreignKey: 'fkid_conversacion',
+  as: 'conversacion'
+});
+
+// Asociaciones para ConversacionLog
+models.ConversacionLog.belongsTo(models.Conversacion, {
+  foreignKey: 'fkid_conversacion',
+  as: 'conversacion'
+});
+
+// Asociaciones inversas
+models.User.hasMany(models.Conversacion, {
+  foreignKey: 'id_cliente',
+  as: 'conversaciones'
+});
+
+// Asociaciones para Pedidos
+models.Pedido.belongsTo(models.User, {
+  foreignKey: 'fkid_cliente',
+  as: 'cliente'
+});
+
+models.Pedido.belongsTo(models.City, {
+  foreignKey: 'fkid_ciudad',
+  as: 'ciudad'
+});
+
+models.Pedido.hasMany(models.ProductoPedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'productos'
+});
+
+// Asociaciones para ProductoPedido
+models.ProductoPedido.belongsTo(models.Pedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'pedido'
+});
+
+models.ProductoPedido.belongsTo(models.Inventario, {
+  foreignKey: 'fkid_producto',
+  as: 'producto'
+});
+
+// Asociaciones inversas
+models.User.hasMany(models.Pedido, {
+  foreignKey: 'fkid_cliente',
+  as: 'pedidos'
+});
+
+models.City.hasMany(models.Pedido, {
+  foreignKey: 'fkid_ciudad',
+  as: 'pedidos'
+});
+
+models.Inventario.hasMany(models.ProductoPedido, {
+  foreignKey: 'fkid_producto',
+  as: 'productos_pedido'
 });
 
 models.sequelize = sequelize;

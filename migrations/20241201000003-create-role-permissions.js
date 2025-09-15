@@ -41,10 +41,8 @@ module.exports = {
       }
     });
 
-    // Crear índices
+    // Crear índices esenciales
     await queryInterface.addIndex('role_permissions', ['role_id', 'permission_id'], { unique: true, name: 'idx_role_permissions_unique' });
-    await queryInterface.addIndex('role_permissions', ['role_id'], { name: 'idx_role_permissions_role_id' });
-    await queryInterface.addIndex('role_permissions', ['permission_id'], { name: 'idx_role_permissions_permission_id' });
   },
 
   async down(queryInterface, Sequelize) {

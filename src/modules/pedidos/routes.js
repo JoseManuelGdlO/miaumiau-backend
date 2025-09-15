@@ -1,0 +1,292 @@
+const express = require('express');
+const router = express.Router();
+const pedidoController = require('./controller');
+const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { body, param, query } = require('express-validator');
+const { handleValidationErrors } = require('../../utils/validation');
+
+// Validaciones
+const validatePedido = [
+  body('fkid_cliente')
+    .isInt({ min: 1 })
+    .withMessage('El ID del cliente debe ser un número entero positivo'),
+  
+  body('telefono_referencia')
+    .optional()
+    .isLength({ min: 7, max: 20 })
+    .withMessage('El teléfono debe tener entre 7 y 20 caracteres')
+    .matches(/^[\+]?[0-9\s\-\(\)]+$/)
+    .withMessage('El teléfono solo puede contener números, espacios, guiones, paréntesis y +'),
+  
+  body('email_referencia')
+    .optional()
+    .isEmail()
+    .withMessage('El email debe ser válido')
+    .isLength({ min: 5, max: 255 })
+    .withMessage('El email debe tener entre 5 y 255 caracteres'),
+  
+  body('direccion_entrega')
+    .isLength({ min: 10, max: 500 })
+    .withMessage('La dirección de entrega debe tener entre 10 y 500 caracteres')
+    .notEmpty()
+    .withMessage('La dirección de entrega no puede estar vacía'),
+  
+  body('fkid_ciudad')
+    .isInt({ min: 1 })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
+  
+  body('fecha_entrega_estimada')
+    .optional()
+    .isISO8601()
+    .withMessage('La fecha de entrega estimada debe ser una fecha válida'),
+  
+  body('metodo_pago')
+    .optional()
+    .isIn(['efectivo', 'tarjeta', 'transferencia', 'pago_movil'])
+    .withMessage('El método de pago debe ser: efectivo, tarjeta, transferencia o pago_movil'),
+  
+  body('notas')
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage('Las notas no pueden exceder 1000 caracteres'),
+  
+  body('productos')
+    .optional()
+    .isArray()
+    .withMessage('Los productos deben ser un array'),
+  
+  body('productos.*.fkid_producto')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El ID del producto debe ser un número entero positivo'),
+  
+  body('productos.*.cantidad')
+    .optional()
+    .isInt({ min: 1, max: 9999 })
+    .withMessage('La cantidad debe ser entre 1 y 9999'),
+  
+  body('productos.*.precio_unidad')
+    .optional()
+    .isFloat({ min: 0.01 })
+    .withMessage('El precio unitario debe ser mayor a 0.01'),
+  
+  body('productos.*.descuento_producto')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('El descuento debe ser entre 0 y 100'),
+  
+  handleValidationErrors
+];
+
+const validateId = [
+  param('id')
+    .isInt({ min: 1 })
+    .withMessage('El ID debe ser un número entero positivo'),
+  
+  handleValidationErrors
+];
+
+const validateQuery = [
+  query('fkid_cliente')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El ID del cliente debe ser un número entero positivo'),
+  
+  query('fkid_ciudad')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
+  
+  query('estado')
+    .optional()
+    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'])
+    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado o cancelado'),
+  
+  query('metodo_pago')
+    .optional()
+    .isIn(['efectivo', 'tarjeta', 'transferencia', 'pago_movil'])
+    .withMessage('El método de pago debe ser: efectivo, tarjeta, transferencia o pago_movil'),
+  
+  query('activos')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('El parámetro activos debe ser true o false'),
+  
+  query('search')
+    .optional()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('La búsqueda debe tener entre 2 y 50 caracteres'),
+  
+  query('start_date')
+    .optional()
+    .isISO8601()
+    .withMessage('La fecha de inicio debe ser una fecha válida'),
+  
+  query('end_date')
+    .optional()
+    .isISO8601()
+    .withMessage('La fecha de fin debe ser una fecha válida'),
+  
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('La página debe ser un número entero positivo'),
+  
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('El límite debe ser entre 1 y 100'),
+  
+  handleValidationErrors
+];
+
+const validateEstadoChange = [
+  body('estado')
+    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'])
+    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado o cancelado'),
+  
+  handleValidationErrors
+];
+
+const validateEstadoParam = [
+  param('estado')
+    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'])
+    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado o cancelado'),
+  
+  handleValidationErrors
+];
+
+const validateClientId = [
+  param('clientId')
+    .isInt({ min: 1 })
+    .withMessage('El ID del cliente debe ser un número entero positivo'),
+  
+  handleValidationErrors
+];
+
+const validateCiudadId = [
+  param('ciudadId')
+    .isInt({ min: 1 })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
+  
+  handleValidationErrors
+];
+
+const validateNumero = [
+  param('numero')
+    .isLength({ min: 5, max: 50 })
+    .withMessage('El número de pedido debe tener entre 5 y 50 caracteres'),
+  
+  handleValidationErrors
+];
+
+// Rutas públicas (solo para obtener información)
+router.get('/stats', pedidoController.getPedidoStats);
+router.get('/recent', pedidoController.getRecentPedidos);
+router.get('/pendientes', pedidoController.getPedidosPendientes);
+router.get('/en-preparacion', pedidoController.getPedidosEnPreparacion);
+router.get('/en-camino', pedidoController.getPedidosEnCamino);
+
+// Rutas protegidas - Solo administradores y moderadores pueden gestionar pedidos
+router.get('/', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateQuery, 
+  pedidoController.getAllPedidos
+);
+
+router.get('/:id', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateId, 
+  pedidoController.getPedidoById
+);
+
+router.post('/', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validatePedido, 
+  pedidoController.createPedido
+);
+
+router.put('/:id', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin']), 
+  validateId, 
+  validatePedido, 
+  pedidoController.updatePedido
+);
+
+router.delete('/:id', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin']), 
+  validateId, 
+  pedidoController.deletePedido
+);
+
+router.patch('/:id/restore', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin']), 
+  validateId, 
+  pedidoController.restorePedido
+);
+
+router.patch('/:id/estado', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateId, 
+  validateEstadoChange, 
+  pedidoController.changeEstado
+);
+
+router.patch('/:id/confirmar', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateId, 
+  pedidoController.confirmarPedido
+);
+
+router.patch('/:id/entregar', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateId, 
+  pedidoController.entregarPedido
+);
+
+router.patch('/:id/cancelar', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateId, 
+  pedidoController.cancelarPedido
+);
+
+// Rutas para consultas específicas
+router.get('/cliente/:clientId', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateClientId, 
+  pedidoController.getPedidosByCliente
+);
+
+router.get('/estado/:estado', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateEstadoParam, 
+  pedidoController.getPedidosByEstado
+);
+
+router.get('/ciudad/:ciudadId', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateCiudadId, 
+  pedidoController.getPedidosByCiudad
+);
+
+router.get('/numero/:numero', 
+  authenticateToken, 
+  requireRole(['admin', 'super_admin', 'moderator']), 
+  validateNumero, 
+  pedidoController.searchPedidoByNumero
+);
+
+module.exports = router;

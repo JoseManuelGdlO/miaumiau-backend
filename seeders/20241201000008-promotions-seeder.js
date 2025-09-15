@@ -2,8 +2,17 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Deshabilitar validaciones temporalmente para el seeder
-    const { Promotion } = require('../src/models');
+    // Verificar si ya existen promociones para evitar duplicados
+    const existingPromotions = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM promotions',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay promociones existentes
+    if (existingPromotions[0].count > 0) {
+      console.log('Promociones ya existen, saltando inserción');
+      return;
+    }
     
     const promotions = [
       {
@@ -113,12 +122,8 @@ module.exports = {
       }
     ];
 
-    // Usar el modelo para crear las promociones (evita problemas de validación)
-    for (const promotionData of promotions) {
-      await Promotion.create(promotionData, {
-        validate: false // Deshabilitar validaciones para el seeder
-      });
-    }
+    // Insertar promociones usando queryInterface
+    await queryInterface.bulkInsert('promotions', promotions);
   },
 
   async down(queryInterface, Sequelize) {

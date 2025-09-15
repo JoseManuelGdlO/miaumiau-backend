@@ -77,11 +77,8 @@ module.exports = {
       }
     });
 
-    // Crear índices
-    await queryInterface.addIndex('cities', ['departamento'], { name: 'idx_cities_departamento' });
-    await queryInterface.addIndex('cities', ['estado_inicial'], { name: 'idx_cities_estado_inicial' });
+    // Crear índices esenciales
     await queryInterface.addIndex('cities', ['baja_logica'], { name: 'idx_cities_baja_logica' });
-    await queryInterface.addIndex('cities', ['nombre', 'departamento'], { unique: true, name: 'idx_cities_unique' });
   },
 
   async down(queryInterface, Sequelize) {

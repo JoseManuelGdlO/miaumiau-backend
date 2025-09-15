@@ -2,8 +2,17 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Deshabilitar validaciones temporalmente para el seeder
-    const { Permission } = require('../src/models');
+    // Verificar si ya existen permisos para evitar duplicados
+    const existingPermissions = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM permissions',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay permisos existentes
+    if (existingPermissions[0].count > 0) {
+      console.log('Permisos ya existen, saltando inserción');
+      return;
+    }
     
     const permissions = [
       // Permisos de Usuario
@@ -159,12 +168,8 @@ module.exports = {
       }
     ];
 
-    // Usar el modelo para crear los permisos (evita problemas de validación)
-    for (const permissionData of permissions) {
-      await Permission.create(permissionData, {
-        validate: false // Deshabilitar validaciones para el seeder
-      });
-    }
+    // Insertar permisos usando queryInterface
+    await queryInterface.bulkInsert('permissions', permissions);
   },
 
   async down(queryInterface, Sequelize) {

@@ -41,10 +41,8 @@ module.exports = {
       }
     });
 
-    // Crear índices
+    // Crear índices esenciales
     await queryInterface.addIndex('promotion_cities', ['promotion_id', 'city_id'], { unique: true, name: 'idx_promotion_cities_unique' });
-    await queryInterface.addIndex('promotion_cities', ['promotion_id'], { name: 'idx_promotion_cities_promotion_id' });
-    await queryInterface.addIndex('promotion_cities', ['city_id'], { name: 'idx_promotion_cities_city_id' });
   },
 
   async down(queryInterface, Sequelize) {

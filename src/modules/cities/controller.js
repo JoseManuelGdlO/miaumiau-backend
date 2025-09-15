@@ -36,9 +36,9 @@ class CityController {
       // Búsqueda por nombre o departamento
       if (search) {
         whereClause[Op.or] = [
-          { nombre: { [Op.iLike]: `%${search}%` } },
-          { departamento: { [Op.iLike]: `%${search}%` } },
-          { manager: { [Op.iLike]: `%${search}%` } }
+          { nombre: { [Op.like]: `%${search}%` } },
+          { departamento: { [Op.like]: `%${search}%` } },
+          { manager: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -46,7 +46,7 @@ class CityController {
 
       const { count, rows: cities } = await City.findAndCountAll({
         where: whereClause,
-        order: [['departamento', 'ASC'], ['nombre', 'ASC']],
+        order: [['created_at', 'ASC'], ['updated_at', 'ASC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
       });

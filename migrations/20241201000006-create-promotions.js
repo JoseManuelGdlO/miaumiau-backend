@@ -69,13 +69,8 @@ module.exports = {
       }
     });
 
-    // Crear índices
-    await queryInterface.addIndex('promotions', ['codigo'], { unique: true, name: 'idx_promotions_codigo_unique' });
-    await queryInterface.addIndex('promotions', ['tipo_promocion'], { name: 'idx_promotions_tipo' });
-    await queryInterface.addIndex('promotions', ['fecha_inicio'], { name: 'idx_promotions_fecha_inicio' });
-    await queryInterface.addIndex('promotions', ['fecha_fin'], { name: 'idx_promotions_fecha_fin' });
+    // Crear índices esenciales
     await queryInterface.addIndex('promotions', ['baja_logica'], { name: 'idx_promotions_baja_logica' });
-    await queryInterface.addIndex('promotions', ['fecha_inicio', 'fecha_fin'], { name: 'idx_promotions_fechas' });
   },
 
   async down(queryInterface, Sequelize) {

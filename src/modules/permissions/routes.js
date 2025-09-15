@@ -62,6 +62,7 @@ const validateQuery = [
 router.get('/categories', permissionController.getCategories);
 router.get('/types', permissionController.getTypes);
 
+
 // Rutas protegidas - Solo administradores pueden gestionar permisos
 router.get('/', 
   authenticateToken, 

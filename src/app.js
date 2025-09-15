@@ -12,10 +12,21 @@ const notFound = require('./middleware/notFound');
 
 // Importar rutas
 const authRoutes = require('./modules/auth/routes');
+const userRoutes = require('./modules/users/routes');
 const permissionRoutes = require('./modules/permissions/routes');
 const roleRoutes = require('./modules/roles/routes');
 const cityRoutes = require('./modules/cities/routes');
 const promotionRoutes = require('./modules/promotions/routes');
+const pesoRoutes = require('./modules/pesos/routes');
+const categoriaProductoRoutes = require('./modules/categorias-producto/routes');
+const clienteRoutes = require('./modules/clientes/routes');
+const proveedorRoutes = require('./modules/proveedores/routes');
+const inventarioRoutes = require('./modules/inventarios/routes');
+const conversacionRoutes = require('./modules/conversaciones/routes');
+const conversacionChatRoutes = require('./modules/conversaciones-chat/routes');
+const conversacionLogRoutes = require('./modules/conversaciones-logs/routes');
+const pedidoRoutes = require('./modules/pedidos/routes');
+const productoPedidoRoutes = require('./modules/productos-pedido/routes');
 
 const app = express();
 
@@ -54,10 +65,21 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Rutas
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/cities', cityRoutes);
 app.use('/api/promotions', promotionRoutes);
+app.use('/api/pesos', pesoRoutes);
+app.use('/api/categorias-producto', categoriaProductoRoutes);
+app.use('/api/clientes', clienteRoutes);
+app.use('/api/proveedores', proveedorRoutes);
+app.use('/api/inventarios', inventarioRoutes);
+app.use('/api/conversaciones', conversacionRoutes);
+app.use('/api/conversaciones-chat', conversacionChatRoutes);
+app.use('/api/conversaciones-logs', conversacionLogRoutes);
+app.use('/api/pedidos', pedidoRoutes);
+app.use('/api/productos-pedido', productoPedidoRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {
@@ -67,6 +89,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
 
 // Middlewares de error
 app.use(notFound);
@@ -83,7 +106,7 @@ const startServer = async () => {
     
     // Sincronizar modelos (solo en desarrollo)
     if (process.env.NODE_ENV === 'development') {
-       await sequelize.sync({ alter: true });
+      // await sequelize.sync({ alter: true });
       console.log('✅ Modelos sincronizados con la base de datos.');
     }
     

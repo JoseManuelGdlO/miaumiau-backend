@@ -2,6 +2,18 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Verificar si ya existen usuarios para evitar duplicados
+    const existingUsers = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM users',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay usuarios existentes
+    if (existingUsers[0].count > 0) {
+      console.log('Usuarios ya existen, saltando inserción');
+      return;
+    }
+    
     // Deshabilitar validaciones temporalmente para el seeder
     const { User, Role, City } = require('../src/models');
     
@@ -131,12 +143,8 @@ module.exports = {
       }
     ];
 
-    // Usar el modelo para crear los usuarios (evita problemas de validación)
-    for (const userData of users) {
-      await User.create(userData, {
-        validate: false // Deshabilitar validaciones para el seeder
-      });
-    }
+    // Insertar usuarios usando queryInterface
+    await queryInterface.bulkInsert('users', users);
   },
 
   async down(queryInterface, Sequelize) {

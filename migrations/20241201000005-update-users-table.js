@@ -92,10 +92,8 @@ module.exports = {
       onUpdate: 'CASCADE'
     });
 
-    // Crear índices
-    await queryInterface.addIndex('users', ['rol_id'], { name: 'idx_users_rol_id' });
+    // Crear índices esenciales
     await queryInterface.addIndex('users', ['ciudad_id'], { name: 'idx_users_ciudad_id' });
-    await queryInterface.addIndex('users', ['correo_electronico'], { unique: true, name: 'idx_users_email_unique' });
   },
 
   async down(queryInterface, Sequelize) {

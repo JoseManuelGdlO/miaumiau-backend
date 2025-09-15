@@ -2,6 +2,18 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Verificar si ya existen asignaciones para evitar duplicados
+    const existingAssignments = await queryInterface.sequelize.query(
+      'SELECT COUNT(*) as count FROM promotion_cities',
+      { type: queryInterface.sequelize.QueryTypes.SELECT }
+    );
+    
+    // Solo insertar si no hay asignaciones existentes
+    if (existingAssignments[0].count > 0) {
+      console.log('Asignaciones de promociones-ciudades ya existen, saltando inserción');
+      return;
+    }
+    
     // Usar los modelos para obtener datos
     const { Promotion, City, PromotionCity } = require('../src/models');
     
@@ -126,13 +138,9 @@ module.exports = {
       }
     }
 
-    // Insertar todas las asignaciones usando el modelo
+    // Insertar todas las asignaciones usando queryInterface
     if (promotionCities.length > 0) {
-      for (const promotionCityData of promotionCities) {
-        await PromotionCity.create(promotionCityData, {
-          validate: false // Deshabilitar validaciones para el seeder
-        });
-      }
+      await queryInterface.bulkInsert('promotion_cities', promotionCities);
     }
   },
 
