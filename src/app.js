@@ -49,6 +49,7 @@ app.use(cors({
     'http://localhost:8080',
     'http://192.168.1.64:8080',
     'http://192.168.1.64:3000',
+    'https://intelekia-miaumiau-front.vvggha.easypanel.host',
     process.env.FRONTEND_URL
   ].filter(Boolean),
   credentials: true,
