@@ -2,7 +2,7 @@
 FROM node:20
 
 # Create app directory
-WORKDIR /usr/src
+WORKDIR /src
 
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
 COPY package*.json ./
@@ -18,3 +18,4 @@ CMD [ "node", "app.js" ]
 
 # Exposing server port
 EXPOSE 3000
+
