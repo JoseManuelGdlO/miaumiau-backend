@@ -88,9 +88,7 @@ module.exports = (sequelize, DataTypes) => {
   Proveedor.findByEmail = function(correo) {
     return this.findOne({ 
       where: { 
-        correo: {
-          [sequelize.Sequelize.Op.iLike]: correo
-        }
+        correo: correo
       } 
     });
   };

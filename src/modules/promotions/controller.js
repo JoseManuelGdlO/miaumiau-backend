@@ -31,8 +31,8 @@ class PromotionController {
       // Búsqueda por nombre o código
       if (search) {
         whereClause[Op.or] = [
-          { nombre: { [Op.iLike]: `%${search}%` } },
-          { codigo: { [Op.iLike]: `%${search}%` } }
+          { nombre: { [Op.like]: `%${search}%` } },
+          { codigo: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -53,7 +53,7 @@ class PromotionController {
       const { count, rows: promotions } = await Promotion.findAndCountAll({
         where: whereClause,
         include: includeOptions,
-        order: [['fecha_inicio', 'DESC']],
+        order: [['created_at', 'DESC'], ['updated_at', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
       });
@@ -198,7 +198,7 @@ class PromotionController {
     try {
       const { id } = req.params;
       const updateData = req.body;
-      const { cities } = updateData;
+      const { ciudades } = updateData;
 
       const promotion = await Promotion.findByPk(id);
       
@@ -226,25 +226,25 @@ class PromotionController {
         }
       }
 
-      // Remover cities del updateData para manejarlo por separado
-      delete updateData.cities;
+      // Remover ciudades del updateData para manejarlo por separado
+      delete updateData.ciudades;
 
       // Actualizar la promoción
       await promotion.update(updateData);
 
       // Actualizar ciudades si se proporcionan
-      if (cities !== undefined) {
-        if (Array.isArray(cities)) {
+      if (ciudades !== undefined) {
+        if (Array.isArray(ciudades)) {
           // Verificar que todas las ciudades existan
-          if (cities.length > 0) {
+          if (ciudades.length > 0) {
             const existingCities = await City.findAll({
               where: {
-                id: { [Op.in]: cities },
+                id: { [Op.in]: ciudades },
                 baja_logica: false
               }
             });
 
-            if (existingCities.length !== cities.length) {
+            if (existingCities.length !== ciudades.length) {
               return res.status(400).json({
                 success: false,
                 message: 'Algunas ciudades no existen o están inactivas'
@@ -253,7 +253,7 @@ class PromotionController {
           }
 
           // Sincronizar ciudades
-          await PromotionCity.syncPromotionCities(promotion.id, cities);
+          await PromotionCity.syncPromotionCities(promotion.id, ciudades);
         }
       }
 

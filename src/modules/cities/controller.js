@@ -46,7 +46,7 @@ class CityController {
 
       const { count, rows: cities } = await City.findAndCountAll({
         where: whereClause,
-        order: [['created_at', 'ASC'], ['updated_at', 'ASC']],
+        order: [['created_at', 'DESC'], ['updated_at', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
       });

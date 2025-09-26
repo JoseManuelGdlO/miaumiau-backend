@@ -65,9 +65,9 @@ class InventarioController {
       // Búsqueda por nombre, SKU o descripción
       if (search) {
         whereClause[Op.or] = [
-          { nombre: { [Op.iLike]: `%${search}%` } },
-          { sku: { [Op.iLike]: `%${search}%` } },
-          { descripcion: { [Op.iLike]: `%${search}%` } }
+          { nombre: { [Op.like]: `%${search}%` } },
+          { sku: { [Op.like]: `%${search}%` } },
+          { descripcion: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -97,7 +97,7 @@ class InventarioController {
             attributes: ['id', 'nombre', 'correo', 'telefono']
           }
         ],
-        order: [['nombre', 'ASC']],
+        order: [['created_at', 'DESC'], ['updated_at', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
       });

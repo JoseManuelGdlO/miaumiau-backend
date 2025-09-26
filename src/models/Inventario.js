@@ -115,6 +115,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     tableName: 'inventarios',
     timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     paranoid: false,
     indexes: [
       {
@@ -217,9 +219,7 @@ module.exports = (sequelize, DataTypes) => {
   Inventario.findBySKU = function(sku) {
     return this.findOne({ 
       where: { 
-        sku: {
-          [sequelize.Sequelize.Op.iLike]: sku
-        }
+        sku: sku
       } 
     });
   };

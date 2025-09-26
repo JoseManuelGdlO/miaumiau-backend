@@ -145,9 +145,7 @@ class ProveedorController {
       if (updateData.correo) {
         const existingProveedor = await Proveedor.findOne({
           where: { 
-            correo: {
-              [Op.iLike]: updateData.correo
-            },
+            correo: updateData.correo,
             id: { [Op.ne]: id }
           }
         });
