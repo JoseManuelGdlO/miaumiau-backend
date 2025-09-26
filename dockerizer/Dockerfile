@@ -2,7 +2,7 @@
 FROM node:20
 
 # Create app directory
-WORKDIR /src
+WORKDIR /app/src
 
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
 COPY package*.json ./
