@@ -27,6 +27,9 @@ const conversacionChatRoutes = require('./modules/conversaciones-chat/routes');
 const conversacionLogRoutes = require('./modules/conversaciones-logs/routes');
 const pedidoRoutes = require('./modules/pedidos/routes');
 const productoPedidoRoutes = require('./modules/productos-pedido/routes');
+const mascotaRoutes = require('./modules/mascotas/routes');
+const agenteRoutes = require('./modules/agentes/routes');
+const repartidorRoutes = require('./modules/repartidores/routes');
 
 const app = express();
 
@@ -34,28 +37,63 @@ const app = express();
 app.use(helmet());
 app.use(compression());
 
-// Rate limiting
+// Rate limiting (más permisivo en desarrollo)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // máximo 100 requests por IP
-  message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.'
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // más permisivo en desarrollo
+  message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.',
+  standardHeaders: true,
+  legacyHeaders: false
 });
 app.use(limiter);
 
 // CORS
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:8080',
-    'http://192.168.1.64:8080',
-    'http://192.168.1.64:3000',
-    'https://intelekia-miaumiau-front.vvggha.easypanel.host',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (como mobile apps o Postman)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:8080',
+      'http://127.0.0.1:8080',
+      'http://127.0.0.1:3000',
+      'http://192.168.1.64:8080',
+      'http://192.168.1.64:3000',
+      'https://intelekia-miaumiau-front.vvggha.easypanel.host',
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('No permitido por CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  optionsSuccessStatus: 200 // Para legacy browser support
 }));
+
+// Manejar preflight requests explícitamente
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(200);
+});
 
 // Logging
 app.use(morgan('combined'));
@@ -81,6 +119,9 @@ app.use('/api/conversaciones-chat', conversacionChatRoutes);
 app.use('/api/conversaciones-logs', conversacionLogRoutes);
 app.use('/api/pedidos', pedidoRoutes);
 app.use('/api/productos-pedido', productoPedidoRoutes);
+app.use('/api/mascotas', mascotaRoutes);
+app.use('/api/agentes', agenteRoutes);
+app.use('/api/repartidores', repartidorRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

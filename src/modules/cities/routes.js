@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const cityController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -139,28 +140,28 @@ router.get('/active', cityController.getActiveCities);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar ciudades
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateQuery, 
   cityController.getAllCities
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateId, 
   cityController.getCityById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateCity, 
   cityController.createCity
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateId, 
   validateCity, 
   cityController.updateCity
@@ -168,28 +169,28 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateId, 
   cityController.deleteCity
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateId, 
   cityController.restoreCity
 );
 
 router.patch('/:id/activate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateId, 
   cityController.activateCity
 );
 
 router.patch('/:id/deactivate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateId, 
   cityController.deactivateCity
 );
@@ -197,14 +198,14 @@ router.patch('/:id/deactivate',
 // Rutas para consultas específicas
 router.get('/department/:departamento', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateDepartment, 
   cityController.getCitiesByDepartment
 );
 
 router.get('/status/:estado', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_ciudades'), 
   validateStatus, 
   cityController.getCitiesByStatus
 );

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const usersController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -114,34 +115,34 @@ const validateQuery = [
 // Rutas protegidas - Solo administradores pueden gestionar usuarios
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   validateQuery, 
   usersController.getAllUsers
 );
 
 router.get('/stats', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   usersController.getUserStats
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']),
+  requireSuperAdminOrPermission('ver_usuarios'),
   validateId, 
   usersController.getUserById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   validateUser, 
   usersController.createUser
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   validateId, 
   validateUserUpdate, 
   usersController.updateUser
@@ -149,21 +150,21 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   validateId, 
   usersController.deleteUser
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   validateId, 
   usersController.restoreUser
 );
 
 router.patch('/:id/change-password', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_usuarios'), 
   validateId, 
   validatePasswordChange, 
   usersController.changeUserPassword

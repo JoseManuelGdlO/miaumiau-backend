@@ -1,4 +1,4 @@
-const { User, Role, City, Pedido } = require('../../models');
+const { Cliente, Mascota, City, Pedido } = require('../../models');
 const { Op } = require('sequelize');
 
 class ClienteController {
@@ -23,39 +23,40 @@ class ClienteController {
       }
       
       // Filtrar por ciudad
-      if (ciudad_id) {
-        whereClause.ciudad_id = ciudad_id;
+      const fkidCiudadQuery = ciudad_id ?? req.query.fkid_ciudad;
+      if (fkidCiudadQuery) {
+        whereClause.fkid_ciudad = fkidCiudadQuery;
       }
 
       // Búsqueda por nombre o email
       if (search) {
         whereClause[Op.or] = [
           { nombre_completo: { [Op.like]: `%${search}%` } },
-          { correo_electronico: { [Op.like]: `%${search}%` } }
+          { email: { [Op.like]: `%${search}%` } }
         ];
       }
 
       const offset = (page - 1) * limit;
 
-      const { count, rows: clientes } = await User.findAndCountAll({
+      const { count, rows: clientes } = await Cliente.findAndCountAll({
         where: whereClause,
         include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'user' }, // Solo usuarios con rol user (clientes)
-            attributes: ['id', 'nombre', 'descripcion']
-          },
           {
             model: City,
             as: 'ciudad',
             attributes: ['id', 'nombre', 'departamento']
+          },
+          {
+            model: Mascota,
+            as: 'mascotas',
+            where: { isActive: true },
+            required: false,
+            attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
           }
         ],
         order: [['created_at', 'DESC']],
         limit: parseInt(limit),
-        offset: parseInt(offset),
-        attributes: { exclude: ['contrasena'] } // Excluir contraseña
+        offset: parseInt(offset)
       });
 
       // Obtener estadísticas adicionales para cada cliente
@@ -113,21 +114,21 @@ class ClienteController {
     try {
       const { id } = req.params;
       
-      const cliente = await User.findByPk(id, {
+      const cliente = await Cliente.findByPk(id, {
         include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'user' },
-            attributes: ['id', 'nombre', 'descripcion']
-          },
           {
             model: City,
             as: 'ciudad',
             attributes: ['id', 'nombre', 'departamento']
+          },
+          {
+            model: Mascota,
+            as: 'mascotas',
+            where: { isActive: true },
+            required: false,
+            attributes: ['id', 'nombre', 'edad', 'genero', 'raza', 'producto_preferido', 'puntos_lealtad', 'notas_especiales']
           }
-        ],
-        attributes: { exclude: ['contrasena'] }
+        ]
       });
       
       if (!cliente) {
@@ -177,37 +178,42 @@ class ClienteController {
     try {
       const {
         nombre_completo,
-        correo_electronico,
-        ciudad_id,
-        contrasena = 'cliente123' // Contraseña por defecto
+        telefono,
+        canal_contacto,
+        direccion_entrega,
+        notas_especiales
       } = req.body;
+      const email = req.body.email ?? req.body.correo_electronico;
+      const fkid_ciudad = req.body.fkid_ciudad ?? req.body.ciudad_id;
 
-      // Verificar que el email no exista
-      const existingUser = await User.findOne({
-        where: { correo_electronico }
-      });
-
-      if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'Ya existe un usuario con ese correo electrónico'
+      // Verificar que el email no exista (si se proporciona)
+      if (email) {
+        const existingCliente = await Cliente.findOne({
+          where: { email }
         });
+
+        if (existingCliente) {
+          return res.status(400).json({
+            success: false,
+            message: 'Ya existe un cliente con ese correo electrónico'
+          });
+        }
       }
 
-      // Obtener el rol de usuario (cliente)
-      const rolCliente = await Role.findOne({
-        where: { nombre: 'user' }
+      // Verificar que el teléfono no exista
+      const existingPhone = await Cliente.findOne({
+        where: { telefono }
       });
 
-      if (!rolCliente) {
+      if (existingPhone) {
         return res.status(400).json({
           success: false,
-          message: 'No se encontró el rol de usuario'
+          message: 'Ya existe un cliente con ese número de teléfono'
         });
       }
 
       // Verificar que la ciudad existe
-      const ciudad = await City.findByPk(ciudad_id);
+      const ciudad = await City.findByPk(fkid_ciudad);
       if (!ciudad) {
         return res.status(400).json({
           success: false,
@@ -215,29 +221,32 @@ class ClienteController {
         });
       }
 
-      const cliente = await User.create({
+      const cliente = await Cliente.create({
         nombre_completo,
-        correo_electronico,
-        contrasena,
-        rol_id: rolCliente.id,
-        ciudad_id
+        telefono,
+        email,
+        fkid_ciudad,
+        canal_contacto,
+        direccion_entrega,
+        notas_especiales
       });
 
       // Obtener el cliente creado con sus relaciones
-      const clienteCompleto = await User.findByPk(cliente.id, {
+      const clienteCompleto = await Cliente.findByPk(cliente.id, {
         include: [
-          {
-            model: Role,
-            as: 'rol',
-            attributes: ['id', 'nombre', 'descripcion']
-          },
           {
             model: City,
             as: 'ciudad',
             attributes: ['id', 'nombre', 'departamento']
+          },
+          {
+            model: Mascota,
+            as: 'mascotas',
+            where: { isActive: true },
+            required: false,
+            attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
           }
-        ],
-        attributes: { exclude: ['contrasena'] }
+        ]
       });
 
       res.status(201).json({
@@ -256,15 +265,7 @@ class ClienteController {
       const { id } = req.params;
       const updateData = req.body;
 
-      const cliente = await User.findByPk(id, {
-        include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'cliente' }
-          }
-        ]
-      });
+      const cliente = await Cliente.findByPk(id);
       
       if (!cliente) {
         return res.status(404).json({
@@ -274,25 +275,44 @@ class ClienteController {
       }
 
       // Verificar que el nuevo email no exista (si se está cambiando)
-      if (updateData.correo_electronico && updateData.correo_electronico !== cliente.correo_electronico) {
-        const existingUser = await User.findOne({
+      const updateEmail = updateData.email ?? updateData.correo_electronico;
+      if (updateEmail && updateEmail !== cliente.email) {
+        const existingCliente = await Cliente.findOne({
           where: { 
-            correo_electronico: updateData.correo_electronico,
+            email: updateEmail,
             id: { [Op.ne]: id }
           }
         });
         
-        if (existingUser) {
+        if (existingCliente) {
           return res.status(400).json({
             success: false,
-            message: 'Ya existe un usuario con ese correo electrónico'
+            message: 'Ya existe un cliente con ese correo electrónico'
+          });
+        }
+      }
+
+      // Verificar que el nuevo teléfono no exista (si se está cambiando)
+      if (updateData.telefono && updateData.telefono !== cliente.telefono) {
+        const existingPhone = await Cliente.findOne({
+          where: { 
+            telefono: updateData.telefono,
+            id: { [Op.ne]: id }
+          }
+        });
+        
+        if (existingPhone) {
+          return res.status(400).json({
+            success: false,
+            message: 'Ya existe un cliente con ese número de teléfono'
           });
         }
       }
 
       // Verificar que la ciudad existe (si se está cambiando)
-      if (updateData.ciudad_id) {
-        const ciudad = await City.findByPk(updateData.ciudad_id);
+      const updateCiudadId = updateData.fkid_ciudad ?? updateData.ciudad_id;
+      if (updateCiudadId) {
+        const ciudad = await City.findByPk(updateCiudadId);
         if (!ciudad) {
           return res.status(400).json({
             success: false,
@@ -301,23 +321,28 @@ class ClienteController {
         }
       }
 
-      await cliente.update(updateData);
+      await cliente.update({
+        ...updateData,
+        email: updateEmail ?? cliente.email,
+        fkid_ciudad: updateCiudadId ?? cliente.fkid_ciudad
+      });
 
       // Obtener el cliente actualizado con sus relaciones
-      const clienteActualizado = await User.findByPk(id, {
+      const clienteActualizado = await Cliente.findByPk(id, {
         include: [
-          {
-            model: Role,
-            as: 'rol',
-            attributes: ['id', 'nombre', 'descripcion']
-          },
           {
             model: City,
             as: 'ciudad',
             attributes: ['id', 'nombre', 'departamento']
+          },
+          {
+            model: Mascota,
+            as: 'mascotas',
+            where: { isActive: true },
+            required: false,
+            attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
           }
-        ],
-        attributes: { exclude: ['contrasena'] }
+        ]
       });
 
       res.json({
@@ -335,15 +360,7 @@ class ClienteController {
     try {
       const { id } = req.params;
 
-      const cliente = await User.findByPk(id, {
-        include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'cliente' }
-          }
-        ]
-      });
+      const cliente = await Cliente.findByPk(id);
       
       if (!cliente) {
         return res.status(404).json({
@@ -352,7 +369,7 @@ class ClienteController {
         });
       }
 
-      await cliente.update({ isActive: false });
+      await cliente.softDelete();
 
       res.json({
         success: true,
@@ -368,15 +385,7 @@ class ClienteController {
     try {
       const { id } = req.params;
 
-      const cliente = await User.findByPk(id, {
-        include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'cliente' }
-          }
-        ]
-      });
+      const cliente = await Cliente.findByPk(id);
       
       if (!cliente) {
         return res.status(404).json({
@@ -385,7 +394,7 @@ class ClienteController {
         });
       }
 
-      await cliente.update({ isActive: true });
+      await cliente.restore();
 
       res.json({
         success: true,
@@ -400,52 +409,25 @@ class ClienteController {
   // Estadísticas de clientes
   async getClienteStats(req, res, next) {
     try {
-      const totalClientes = await User.count({
-        include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'cliente' }
-          }
-        ],
+      const totalClientes = await Cliente.count({
         where: { isActive: true }
       });
 
-      const clientesActivos = await User.count({
-        include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'cliente' }
-          }
-        ],
+      const clientesActivos = await Cliente.count({
         where: { isActive: true }
       });
 
-      const clientesInactivos = await User.count({
-        include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'cliente' }
-          }
-        ],
+      const clientesInactivos = await Cliente.count({
         where: { isActive: false }
       });
 
       // Clientes por ciudad
-      const clientesByCiudad = await User.findAll({
+      const clientesByCiudad = await Cliente.findAll({
         attributes: [
-          'ciudad_id',
-          [User.sequelize.fn('COUNT', User.sequelize.col('User.id')), 'count']
+          'fkid_ciudad',
+          [Cliente.sequelize.fn('COUNT', Cliente.sequelize.col('Cliente.id')), 'count']
         ],
         include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'user' },
-            attributes: []
-          },
           {
             model: City,
             as: 'ciudad',
@@ -453,8 +435,8 @@ class ClienteController {
           }
         ],
         where: { isActive: true },
-        group: ['ciudad_id', 'ciudad.id'],
-        order: [[User.sequelize.fn('COUNT', User.sequelize.col('User.id')), 'DESC']]
+        group: ['fkid_ciudad', 'ciudad.id'],
+        order: [[Cliente.sequelize.fn('COUNT', Cliente.sequelize.col('Cliente.id')), 'DESC']]
       });
 
       res.json({
@@ -474,23 +456,23 @@ class ClienteController {
   // Obtener clientes activos
   async getActiveClientes(req, res, next) {
     try {
-      const clientes = await User.findAll({
+      const clientes = await Cliente.findAll({
         include: [
-          {
-            model: Role,
-            as: 'rol',
-            where: { nombre: 'user' },
-            attributes: ['id', 'nombre', 'descripcion']
-          },
           {
             model: City,
             as: 'ciudad',
             attributes: ['id', 'nombre', 'departamento']
+          },
+          {
+            model: Mascota,
+            as: 'mascotas',
+            where: { isActive: true },
+            required: false,
+            attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
           }
         ],
         where: { isActive: true },
-        order: [['nombre_completo', 'ASC']],
-        attributes: { exclude: ['contrasena'] }
+        order: [['nombre_completo', 'ASC']]
       });
 
       res.json({

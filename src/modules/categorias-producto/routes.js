@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const categoriaProductoController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -68,28 +69,28 @@ router.get('/active', categoriaProductoController.getActiveCategorias);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar categorías
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateQuery, 
   categoriaProductoController.getAllCategorias
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateId, 
   categoriaProductoController.getCategoriaById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateCategoria, 
   categoriaProductoController.createCategoria
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateId, 
   validateCategoria, 
   categoriaProductoController.updateCategoria
@@ -97,28 +98,28 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateId, 
   categoriaProductoController.deleteCategoria
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateId, 
   categoriaProductoController.restoreCategoria
 );
 
 router.patch('/:id/activate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateId, 
   categoriaProductoController.activateCategoria
 );
 
 router.patch('/:id/deactivate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateId, 
   categoriaProductoController.deactivateCategoria
 );
@@ -126,7 +127,7 @@ router.patch('/:id/deactivate',
 // Rutas para consultas específicas
 router.get('/search/term', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_categorias_producto'), 
   validateSearch, 
   categoriaProductoController.searchCategorias
 );

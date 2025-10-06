@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const pedidoController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -74,6 +75,11 @@ const validatePedido = [
     .optional()
     .isFloat({ min: 0, max: 100 })
     .withMessage('El descuento debe ser entre 0 y 100'),
+  
+  body('codigo_promocion')
+    .optional()
+    .isLength({ min: 3, max: 50 })
+    .withMessage('El código de promoción debe tener entre 3 y 50 caracteres'),
   
   handleValidationErrors
 ];
@@ -190,28 +196,28 @@ router.get('/en-camino', pedidoController.getPedidosEnCamino);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar pedidos
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateQuery, 
   pedidoController.getAllPedidos
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.getPedidoById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validatePedido, 
   pedidoController.createPedido
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   validatePedido, 
   pedidoController.updatePedido
@@ -219,21 +225,21 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.deletePedido
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.restorePedido
 );
 
 router.patch('/:id/estado', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   validateEstadoChange, 
   pedidoController.changeEstado
@@ -241,21 +247,21 @@ router.patch('/:id/estado',
 
 router.patch('/:id/confirmar', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.confirmarPedido
 );
 
 router.patch('/:id/entregar', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.entregarPedido
 );
 
 router.patch('/:id/cancelar', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.cancelarPedido
 );
@@ -263,28 +269,28 @@ router.patch('/:id/cancelar',
 // Rutas para consultas específicas
 router.get('/cliente/:clientId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateClientId, 
   pedidoController.getPedidosByCliente
 );
 
 router.get('/estado/:estado', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateEstadoParam, 
   pedidoController.getPedidosByEstado
 );
 
 router.get('/ciudad/:ciudadId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateCiudadId, 
   pedidoController.getPedidosByCiudad
 );
 
 router.get('/numero/:numero', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pedidos'), 
   validateNumero, 
   pedidoController.searchPedidoByNumero
 );

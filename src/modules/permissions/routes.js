@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const permissionController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -63,31 +64,31 @@ router.get('/categories', permissionController.getCategories);
 router.get('/types', permissionController.getTypes);
 
 
-// Rutas protegidas - Solo administradores pueden gestionar permisos
+// Rutas protegidas - Super admin o usuarios con permisos específicos
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin']), 
+  requireSuperAdminOrPermission('ver_permisos'), 
   validateQuery, 
   permissionController.getAllPermissions
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin']), 
+  requireSuperAdminOrPermission('ver_permisos'), 
   validateId, 
   permissionController.getPermissionById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin']), 
+  requireSuperAdminOrPermission('crear_permisos'), 
   validatePermission, 
   permissionController.createPermission
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin']), 
+  requireSuperAdminOrPermission('editar_permisos'), 
   validateId, 
   validatePermission, 
   permissionController.updatePermission
@@ -95,14 +96,14 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin']), 
+  requireSuperAdminOrPermission('eliminar_permisos'), 
   validateId, 
   permissionController.deletePermission
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin']), 
+  requireSuperAdminOrPermission('editar_permisos'), 
   validateId, 
   permissionController.restorePermission
 );

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const productoPedidoController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -129,28 +130,28 @@ router.get('/con-descuento', productoPedidoController.getProductosConDescuento);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar productos de pedido
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateQuery, 
   productoPedidoController.getAllProductosPedido
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateId, 
   productoPedidoController.getProductoPedidoById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateProductoPedido, 
   productoPedidoController.createProductoPedido
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateId, 
   validateProductoPedido, 
   productoPedidoController.updateProductoPedido
@@ -158,21 +159,21 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateId, 
   productoPedidoController.deleteProductoPedido
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateId, 
   productoPedidoController.restoreProductoPedido
 );
 
 router.patch('/:id/cantidad', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateId, 
   validateCantidad, 
   productoPedidoController.updateCantidad
@@ -180,7 +181,7 @@ router.patch('/:id/cantidad',
 
 router.patch('/:id/descuento', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateId, 
   validateDescuento, 
   productoPedidoController.aplicarDescuento
@@ -189,14 +190,14 @@ router.patch('/:id/descuento',
 // Rutas para consultas específicas
 router.get('/pedido/:pedidoId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validatePedidoId, 
   productoPedidoController.getProductosByPedido
 );
 
 router.get('/producto/:productoId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_productos_pedido'), 
   validateProductoId, 
   productoPedidoController.getProductosByProducto
 );

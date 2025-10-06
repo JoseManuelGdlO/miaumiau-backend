@@ -1,4 +1,4 @@
-const { Conversacion, User, ConversacionChat, ConversacionLog } = require('../../models');
+const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario } = require('../../models');
 const { Op } = require('sequelize');
 
 class ConversacionController {
@@ -62,10 +62,32 @@ class ConversacionController {
         where: whereClause,
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
             required: false
+          },
+          {
+            model: Pedido,
+            as: 'pedido',
+            attributes: ['id', 'numero_pedido', 'estado', 'total', 'fecha_pedido'],
+            required: false
+          },
+          {
+            model: ConversacionChat,
+            as: 'chats',
+            attributes: ['id', 'fecha', 'hora', 'from', 'mensaje', 'tipo_mensaje', 'leido', 'created_at'],
+            limit: 1,
+            separate: true,
+            order: [['created_at', 'DESC']]
+          },
+          {
+            model: ConversacionLog,
+            as: 'logs',
+            attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
+            limit: 1,
+            separate: true,
+            order: [['created_at', 'DESC']]
           }
         ],
         order: [['created_at', 'DESC']],
@@ -98,10 +120,29 @@ class ConversacionController {
       const conversacion = await Conversacion.findByPk(id, {
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
             required: false
+          },
+          {
+            model: Pedido,
+            as: 'pedido',
+            required: false,
+            include: [
+              {
+                model: ProductoPedido,
+                as: 'productos',
+                required: false,
+                include: [
+                  {
+                    model: Inventario,
+                    as: 'producto',
+                    required: false
+                  }
+                ]
+              }
+            ]
           },
           {
             model: ConversacionChat,
@@ -148,7 +189,7 @@ class ConversacionController {
 
       // Verificar que el cliente existe si se proporciona
       if (id_cliente) {
-        const cliente = await User.findByPk(id_cliente);
+        const cliente = await Cliente.findByPk(id_cliente);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -181,9 +222,9 @@ class ConversacionController {
       const conversacionCompleta = await Conversacion.findByPk(conversacion.id, {
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
             required: false
           }
         ]
@@ -216,7 +257,7 @@ class ConversacionController {
 
       // Verificar que el cliente existe si se está actualizando
       if (updateData.id_cliente) {
-        const cliente = await User.findByPk(updateData.id_cliente);
+        const cliente = await Cliente.findByPk(updateData.id_cliente);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -249,9 +290,9 @@ class ConversacionController {
       const conversacionActualizada = await Conversacion.findByPk(id, {
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
             required: false
           }
         ]
@@ -400,7 +441,7 @@ class ConversacionController {
       }
 
       // Verificar que el cliente existe
-      const cliente = await User.findByPk(id_cliente);
+      const cliente = await Cliente.findByPk(id_cliente);
       if (!cliente) {
         return res.status(400).json({
           success: false,

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const proveedorController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -98,28 +99,28 @@ router.get('/active', proveedorController.getActiveProveedores);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar proveedores
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateQuery, 
   proveedorController.getAllProveedores
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateId, 
   proveedorController.getProveedorById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateProveedor, 
   proveedorController.createProveedor
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateId, 
   validateProveedor, 
   proveedorController.updateProveedor
@@ -127,28 +128,28 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateId, 
   proveedorController.deleteProveedor
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateId, 
   proveedorController.restoreProveedor
 );
 
 router.patch('/:id/activate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateId, 
   proveedorController.activateProveedor
 );
 
 router.patch('/:id/deactivate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateId, 
   proveedorController.deactivateProveedor
 );
@@ -156,21 +157,21 @@ router.patch('/:id/deactivate',
 // Rutas para consultas específicas
 router.get('/search/term', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateSearch, 
   proveedorController.searchProveedores
 );
 
 router.get('/email/:correo', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validateEmail, 
   proveedorController.getProveedorByEmail
 );
 
 router.get('/phone/:telefono', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_proveedores'), 
   validatePhone, 
   proveedorController.getProveedorByPhone
 );

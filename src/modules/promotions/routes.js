@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const promotionController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -188,9 +189,9 @@ router.use(authenticateToken);
 // Rutas de administración (requieren rol admin o super_admin)
 router.get('/', promotionController.getAllPromotions);
 router.get('/:id', validateId, promotionController.getPromotionById);
-router.post('/', requireRole(['admin', 'super_admin']), validateCreatePromotion, promotionController.createPromotion);
-router.put('/:id', requireRole(['admin', 'super_admin']), validateId, validateUpdatePromotion, promotionController.updatePromotion);
-router.delete('/:id', requireRole(['admin', 'super_admin']), validateId, promotionController.deletePromotion);
-router.patch('/:id/restore', requireRole(['admin', 'super_admin']), validateId, promotionController.restorePromotion);
+router.post('/', requireSuperAdminOrPermission('ver_promociones'), validateCreatePromotion, promotionController.createPromotion);
+router.put('/:id', requireSuperAdminOrPermission('ver_promociones'), validateId, validateUpdatePromotion, promotionController.updatePromotion);
+router.delete('/:id', requireSuperAdminOrPermission('ver_promociones'), validateId, promotionController.deletePromotion);
+router.patch('/:id/restore', requireSuperAdminOrPermission('ver_promociones'), validateId, promotionController.restorePromotion);
 
 module.exports = router;

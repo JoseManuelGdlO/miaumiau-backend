@@ -26,7 +26,17 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: true,
         references: {
-          model: 'users',
+          model: 'clientes',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      id_pedido: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'pedidos',
           key: 'id'
         },
         onUpdate: 'CASCADE',
@@ -57,6 +67,7 @@ module.exports = {
     // Crear índices esenciales
     await queryInterface.addIndex('conversaciones', ['status'], { name: 'idx_conversaciones_status' });
     await queryInterface.addIndex('conversaciones', ['id_cliente'], { name: 'idx_conversaciones_cliente' });
+    await queryInterface.addIndex('conversaciones', ['id_pedido'], { name: 'idx_conversaciones_pedido' });
     await queryInterface.addIndex('conversaciones', ['baja_logica'], { name: 'idx_conversaciones_baja_logica' });
   },
 

@@ -24,13 +24,19 @@ class RoleController {
           model: Permission,
           as: 'permissions',
           through: { attributes: [] }, // No incluir datos de la tabla intermedia
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false
         });
       }
 
       const roles = await Role.findAll({
         where: whereClause,
         include: includeOptions,
+        attributes: {
+          include: [
+            [Role.sequelize.literal('(SELECT COUNT(*) FROM `users` AS u WHERE u.rol_id = `Role`.`id`)'), 'users_count']
+          ]
+        },
         order: [['nombre', 'ASC']]
       });
 

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const roleController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -64,28 +65,28 @@ const validateQuery = [
 // Rutas protegidas - Solo administradores pueden gestionar roles
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateQuery, 
   roleController.getAllRoles
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   roleController.getRoleById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateRole, 
   roleController.createRole
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   validateRole, 
   roleController.updateRole
@@ -93,14 +94,14 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   roleController.deleteRole
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   roleController.restoreRole
 );
@@ -108,7 +109,7 @@ router.patch('/:id/restore',
 // Rutas para gestión de permisos en roles
 router.post('/:id/permissions', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   validatePermissionId, 
   roleController.assignPermission
@@ -116,7 +117,7 @@ router.post('/:id/permissions',
 
 router.delete('/:id/permissions/:permission_id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   param('permission_id').isInt({ min: 1 }).withMessage('El ID del permiso debe ser un número entero positivo'),
   handleValidationErrors,
@@ -125,7 +126,7 @@ router.delete('/:id/permissions/:permission_id',
 
 router.get('/:id/permissions', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_roles'), 
   validateId, 
   roleController.getRolePermissions
 );

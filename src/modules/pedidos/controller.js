@@ -1,4 +1,4 @@
-const { Pedido, User, City, ProductoPedido, Inventario } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion } = require('../../models');
 const { Op } = require('sequelize');
 
 class PedidoController {
@@ -67,9 +67,9 @@ class PedidoController {
         where: whereClause,
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email'],
             required: false
           },
           {
@@ -123,9 +123,9 @@ class PedidoController {
       const pedido = await Pedido.findByPk(id, {
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico', 'telefono'],
+            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
             required: false
           },
           {
@@ -179,11 +179,12 @@ class PedidoController {
         fecha_entrega_estimada,
         metodo_pago,
         notas,
-        productos = []
+        productos = [],
+        codigo_promocion
       } = req.body;
 
       // Verificar que el cliente existe
-      const cliente = await User.findByPk(fkid_cliente);
+      const cliente = await Cliente.findByPk(fkid_cliente);
       if (!cliente) {
         return res.status(400).json({
           success: false,
@@ -200,6 +201,52 @@ class PedidoController {
         });
       }
 
+      // Validar código de promoción si se proporciona
+      let promocion = null;
+      let descuentoPromocion = 0;
+      if (codigo_promocion) {
+        promocion = await Promotion.findOne({
+          where: {
+            codigo: codigo_promocion,
+            baja_logica: false
+          },
+          include: [
+            {
+              model: City,
+              as: 'ciudades',
+              where: { id: fkid_ciudad },
+              required: false
+            }
+          ]
+        });
+
+        if (!promocion) {
+          return res.status(400).json({
+            success: false,
+            message: 'El código de promoción no es válido'
+          });
+        }
+
+        // Verificar si la promoción está activa
+        const ahora = new Date();
+        if (promocion.fecha_inicio > ahora || promocion.fecha_fin < ahora) {
+          return res.status(400).json({
+            success: false,
+            message: 'El código de promoción no está activo'
+          });
+        }
+
+        // Verificar si la promoción aplica para esta ciudad
+        if (promocion.ciudades && promocion.ciudades.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'El código de promoción no aplica para esta ciudad'
+          });
+        }
+
+        descuentoPromocion = promocion.descuento_porcentaje || 0;
+      }
+
       // Generar número de pedido único
       const numeroPedido = Pedido.generateNumeroPedido();
 
@@ -212,7 +259,9 @@ class PedidoController {
         numero_pedido: numeroPedido,
         fecha_entrega_estimada,
         metodo_pago,
-        notas
+        notas,
+        codigo_promocion: codigo_promocion || null,
+        descuento_promocion: descuentoPromocion
       });
 
       // Agregar productos al pedido si se proporcionan
@@ -248,17 +297,24 @@ class PedidoController {
           subtotal += precioFinal;
         }
 
+        // Aplicar descuento de promoción al subtotal
+        let totalConDescuento = subtotal;
+        if (descuentoPromocion > 0) {
+          const descuento = (subtotal * descuentoPromocion) / 100;
+          totalConDescuento = subtotal - descuento;
+        }
+
         // Actualizar subtotal del pedido
-        await pedido.actualizarSubtotal(subtotal);
+        await pedido.actualizarSubtotal(totalConDescuento);
       }
 
       // Obtener el pedido creado con sus relaciones
       const pedidoCompleto = await Pedido.findByPk(pedido.id, {
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email'],
             required: false
           },
           {
@@ -311,7 +367,7 @@ class PedidoController {
 
       // Verificar que el cliente existe si se está actualizando
       if (updateData.fkid_cliente) {
-        const cliente = await User.findByPk(updateData.fkid_cliente);
+        const cliente = await Cliente.findByPk(updateData.fkid_cliente);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -337,9 +393,9 @@ class PedidoController {
       const pedidoActualizado = await Pedido.findByPk(id, {
         include: [
           {
-            model: User,
+            model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
+            attributes: ['id', 'nombre_completo', 'email'],
             required: false
           },
           {

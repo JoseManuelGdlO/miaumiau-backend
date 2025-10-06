@@ -19,6 +19,7 @@ class PromotionController {
       // Filtrar por activos/inactivos
       if (activos === 'true') {
         whereClause.baja_logica = false;
+        // No agregamos filtros de fecha para incluir todas las promociones (activas, futuras y vencidas)
       } else if (activos === 'false') {
         whereClause.baja_logica = true;
       }
@@ -44,7 +45,8 @@ class PromotionController {
           model: City,
           as: 'ciudades',
           through: { attributes: [] },
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false // LEFT JOIN instead of INNER JOIN
         });
       }
 
@@ -88,7 +90,8 @@ class PromotionController {
           model: City,
           as: 'ciudades',
           through: { attributes: [] },
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false // LEFT JOIN instead of INNER JOIN
         });
       }
       
@@ -327,7 +330,7 @@ class PromotionController {
     }
   }
 
-  // Obtener promociones activas
+  // Obtener promociones activas (ahora incluye todas las promociones no eliminadas)
   async getActivePromotions(req, res, next) {
     try {
       const { include_cities = 'true' } = req.query;
@@ -339,11 +342,17 @@ class PromotionController {
           model: City,
           as: 'ciudades',
           through: { attributes: [] },
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false // LEFT JOIN instead of INNER JOIN
         });
       }
 
-      const promotions = await Promotion.findActive();
+      // Usar el nuevo método que trae todas las promociones con las opciones de include
+      const promotions = await Promotion.findAll({
+        where: { baja_logica: false },
+        include: includeOptions,
+        order: [['fecha_inicio', 'ASC']]
+      });
 
       res.json({
         success: true,
@@ -378,7 +387,8 @@ class PromotionController {
           model: City,
           as: 'ciudades',
           through: { attributes: [] },
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false // LEFT JOIN instead of INNER JOIN
         });
       }
 

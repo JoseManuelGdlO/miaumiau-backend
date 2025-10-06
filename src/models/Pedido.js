@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: 'users',
+        model: 'clientes',
         key: 'id'
       },
       onUpdate: 'CASCADE',
@@ -117,6 +117,22 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       validate: {
         len: [0, 1000]
+      }
+    },
+    codigo_promocion: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      validate: {
+        len: [0, 50]
+      }
+    },
+    descuento_promocion: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: false,
+      defaultValue: 0.00,
+      validate: {
+        min: 0,
+        max: 100
       }
     },
     baja_logica: {

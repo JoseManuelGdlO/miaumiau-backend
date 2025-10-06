@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const conversacionLogController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -170,28 +171,28 @@ router.get('/warnings', conversacionLogController.getWarningLogs);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar logs
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateQuery, 
   conversacionLogController.getAllLogs
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateId, 
   conversacionLogController.getLogById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateLog, 
   conversacionLogController.createLog
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateId, 
   validateLog, 
   conversacionLogController.updateLog
@@ -199,21 +200,21 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateId, 
   conversacionLogController.deleteLog
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateId, 
   conversacionLogController.restoreLog
 );
 
 router.patch('/:id/data', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateId, 
   validateDataUpdate, 
   conversacionLogController.updateLogData
@@ -221,7 +222,7 @@ router.patch('/:id/data',
 
 router.patch('/:id/data/add', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateId, 
   validateDataAdd, 
   conversacionLogController.addToLogData
@@ -230,42 +231,42 @@ router.patch('/:id/data/add',
 // Rutas para consultas específicas
 router.get('/conversacion/:conversacionId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateConversacionId, 
   conversacionLogController.getLogsByConversacion
 );
 
 router.get('/type/:tipo', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateTipo, 
   conversacionLogController.getLogsByType
 );
 
 router.get('/level/:nivel', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateNivel, 
   conversacionLogController.getLogsByLevel
 );
 
 router.get('/date/:fecha', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateFecha, 
   conversacionLogController.getLogsByDate
 );
 
 router.get('/search/data', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateSearch, 
   conversacionLogController.searchInData
 );
 
 router.get('/hour/:fecha', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_logs'), 
   validateFecha, 
   conversacionLogController.getLogsByHour
 );

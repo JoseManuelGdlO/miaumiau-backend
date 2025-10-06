@@ -22,7 +22,17 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true,
       references: {
-        model: 'users',
+        model: 'clientes',
+        key: 'id'
+      },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL'
+    },
+    id_pedido: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'pedidos',
         key: 'id'
       },
       onUpdate: 'CASCADE',
@@ -51,6 +61,9 @@ module.exports = (sequelize, DataTypes) => {
       },
       {
         fields: ['id_cliente']
+      },
+      {
+        fields: ['id_pedido']
       },
       {
         fields: ['tipo_usuario']

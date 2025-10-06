@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const conversacionController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -135,28 +136,28 @@ router.get('/active', conversacionController.getActiveConversaciones);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar conversaciones
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateQuery, 
   conversacionController.getAllConversaciones
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateId, 
   conversacionController.getConversacionById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateConversacion, 
   conversacionController.createConversacion
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateId, 
   validateConversacion, 
   conversacionController.updateConversacion
@@ -164,21 +165,21 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateId, 
   conversacionController.deleteConversacion
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateId, 
   conversacionController.restoreConversacion
 );
 
 router.patch('/:id/status', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateId, 
   validateStatusChange, 
   conversacionController.changeStatus
@@ -186,7 +187,7 @@ router.patch('/:id/status',
 
 router.patch('/:id/assign', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateId, 
   validateClientAssignment, 
   conversacionController.assignToClient
@@ -195,21 +196,21 @@ router.patch('/:id/assign',
 // Rutas para consultas específicas
 router.get('/status/:status', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateStatusParam, 
   conversacionController.getConversacionesByStatus
 );
 
 router.get('/client/:clientId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateClientId, 
   conversacionController.getConversacionesByClient
 );
 
 router.get('/search/term', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
   validateSearch, 
   conversacionController.searchConversaciones
 );

@@ -206,6 +206,16 @@ module.exports = (sequelize, DataTypes) => {
     });
   };
 
+  // Método para obtener todas las promociones (activas, futuras y vencidas)
+  Promotion.findAllPromotions = function() {
+    return this.findAll({
+      where: {
+        baja_logica: false
+      },
+      order: [['fecha_inicio', 'ASC']]
+    });
+  };
+
   // Scope para consultas comunes
   Promotion.addScope('active', {
     where: {

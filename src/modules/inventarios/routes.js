@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const inventarioController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -180,28 +181,28 @@ router.get('/low-stock', inventarioController.getLowStockInventarios);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar inventarios
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateQuery, 
   inventarioController.getAllInventarios
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateId, 
   inventarioController.getInventarioById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateInventario, 
   inventarioController.createInventario
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateId, 
   validateInventario, 
   inventarioController.updateInventario
@@ -209,21 +210,21 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateId, 
   inventarioController.deleteInventario
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateId, 
   inventarioController.restoreInventario
 );
 
 router.patch('/:id/stock', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateId, 
   validateStockUpdate, 
   inventarioController.updateStock
@@ -232,28 +233,28 @@ router.patch('/:id/stock',
 // Rutas para consultas específicas
 router.get('/categoria/:categoriaId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateCategoryId, 
   inventarioController.getInventariosByCategory
 );
 
 router.get('/ciudad/:ciudadId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateCityId, 
   inventarioController.getInventariosByCity
 );
 
 router.get('/proveedor/:proveedorId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateProviderId, 
   inventarioController.getInventariosByProvider
 );
 
 router.get('/search/term', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_inventarios'), 
   validateSearch, 
   inventarioController.searchInventarios
 );

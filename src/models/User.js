@@ -66,18 +66,18 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     tableName: 'users',
     timestamps: true,
-    hooks: {
-      beforeCreate: async (user) => {
-        if (user.contrasena) {
-          user.contrasena = await bcrypt.hash(user.contrasena, 12);
-        }
-      },
-      beforeUpdate: async (user) => {
-        if (user.changed('contrasena')) {
-          user.contrasena = await bcrypt.hash(user.contrasena, 12);
-        }
-      }
-    },
+    // hooks: {
+    //   beforeCreate: async (user) => {
+    //     if (user.contrasena) {
+    //       user.contrasena = await bcrypt.hash(user.contrasena, 12);
+    //     }
+    //   },
+    //   beforeUpdate: async (user) => {
+    //     if (user.changed('contrasena')) {
+    //       user.contrasena = await bcrypt.hash(user.contrasena, 12);
+    //     }
+    //   }
+    // },
     indexes: [
       {
         fields: ['rol_id']
@@ -94,7 +94,8 @@ module.exports = (sequelize, DataTypes) => {
 
   // Métodos de instancia
   User.prototype.comparePassword = async function(candidatePassword) {
-    return await bcrypt.compare(candidatePassword, this.contrasena);
+    // Comparación directa sin encriptado (temporal)
+    return candidatePassword === this.contrasena;
   };
 
   User.prototype.toJSON = function() {

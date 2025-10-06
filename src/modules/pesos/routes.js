@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const pesoController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -83,28 +84,28 @@ router.get('/active', pesoController.getActivePesos);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar pesos
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateQuery, 
   pesoController.getAllPesos
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateId, 
   pesoController.getPesoById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validatePeso, 
   pesoController.createPeso
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateId, 
   validatePeso, 
   pesoController.updatePeso
@@ -112,28 +113,28 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateId, 
   pesoController.deletePeso
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateId, 
   pesoController.restorePeso
 );
 
 router.patch('/:id/activate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateId, 
   pesoController.activatePeso
 );
 
 router.patch('/:id/deactivate', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateId, 
   pesoController.deactivatePeso
 );
@@ -141,14 +142,14 @@ router.patch('/:id/deactivate',
 // Rutas para consultas específicas
 router.get('/unidad/:unidad', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateUnidad, 
   pesoController.getPesosByUnidad
 );
 
 router.get('/range/min/:min/max/:max', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_pesos'), 
   validateRange, 
   pesoController.getPesosByRange
 );

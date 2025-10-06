@@ -18,6 +18,13 @@ const ConversacionChat = require('./ConversacionChat');
 const ConversacionLog = require('./ConversacionLog');
 const Pedido = require('./Pedido');
 const ProductoPedido = require('./ProductoPedido');
+const Cliente = require('./Cliente');
+const Mascota = require('./Mascota');
+const Ruta = require('./Ruta');
+const RutaPedido = require('./RutaPedido');
+const Agente = require('./Agente');
+const AgenteConversacion = require('./AgenteConversacion');
+const Repartidor = require('./Repartidor');
 
 // Inicializar modelos
 const models = {
@@ -36,7 +43,14 @@ const models = {
   ConversacionChat: ConversacionChat(sequelize, DataTypes),
   ConversacionLog: ConversacionLog(sequelize, DataTypes),
   Pedido: Pedido(sequelize, DataTypes),
-  ProductoPedido: ProductoPedido(sequelize, DataTypes)
+  ProductoPedido: ProductoPedido(sequelize, DataTypes),
+  Cliente: Cliente(sequelize, DataTypes),
+  Mascota: Mascota(sequelize, DataTypes),
+  Ruta: Ruta(sequelize, DataTypes),
+  RutaPedido: RutaPedido(sequelize, DataTypes),
+  Agente: Agente(sequelize, DataTypes),
+  AgenteConversacion: AgenteConversacion(sequelize, DataTypes),
+  Repartidor: Repartidor(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -163,9 +177,14 @@ models.Proveedor.hasMany(models.Inventario, {
 });
 
 // Asociaciones para Conversaciones
-models.Conversacion.belongsTo(models.User, {
+models.Conversacion.belongsTo(models.Cliente, {
   foreignKey: 'id_cliente',
   as: 'cliente'
+});
+
+models.Conversacion.belongsTo(models.Pedido, {
+  foreignKey: 'id_pedido',
+  as: 'pedido'
 });
 
 models.Conversacion.hasMany(models.ConversacionChat, {
@@ -191,13 +210,18 @@ models.ConversacionLog.belongsTo(models.Conversacion, {
 });
 
 // Asociaciones inversas
-models.User.hasMany(models.Conversacion, {
+models.Cliente.hasMany(models.Conversacion, {
   foreignKey: 'id_cliente',
   as: 'conversaciones'
 });
 
+models.Pedido.hasMany(models.Conversacion, {
+  foreignKey: 'id_pedido',
+  as: 'conversaciones'
+});
+
 // Asociaciones para Pedidos
-models.Pedido.belongsTo(models.User, {
+models.Pedido.belongsTo(models.Cliente, {
   foreignKey: 'fkid_cliente',
   as: 'cliente'
 });
@@ -224,7 +248,7 @@ models.ProductoPedido.belongsTo(models.Inventario, {
 });
 
 // Asociaciones inversas
-models.User.hasMany(models.Pedido, {
+models.Cliente.hasMany(models.Pedido, {
   foreignKey: 'fkid_cliente',
   as: 'pedidos'
 });
@@ -237,6 +261,122 @@ models.City.hasMany(models.Pedido, {
 models.Inventario.hasMany(models.ProductoPedido, {
   foreignKey: 'fkid_producto',
   as: 'productos_pedido'
+});
+
+// Asociaciones para Cliente
+models.Cliente.belongsTo(models.City, {
+  foreignKey: 'fkid_ciudad',
+  as: 'ciudad'
+});
+
+models.Cliente.hasMany(models.Mascota, {
+  foreignKey: 'fkid_cliente',
+  as: 'mascotas'
+});
+
+// Asociaciones para Mascota
+models.Mascota.belongsTo(models.Cliente, {
+  foreignKey: 'fkid_cliente',
+  as: 'cliente'
+});
+
+// Asociaciones inversas
+models.City.hasMany(models.Cliente, {
+  foreignKey: 'fkid_ciudad',
+  as: 'clientes'
+});
+
+// Asociaciones para Ruta
+models.Ruta.belongsTo(models.City, {
+  foreignKey: 'fkid_ciudad',
+  as: 'ciudad'
+});
+
+models.Ruta.belongsTo(models.User, {
+  foreignKey: 'fkid_repartidor',
+  as: 'repartidor'
+});
+
+models.Ruta.hasMany(models.RutaPedido, {
+  foreignKey: 'fkid_ruta',
+  as: 'pedidos'
+});
+
+// Asociaciones para RutaPedido
+models.RutaPedido.belongsTo(models.Ruta, {
+  foreignKey: 'fkid_ruta',
+  as: 'ruta'
+});
+
+models.RutaPedido.belongsTo(models.Pedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'pedido'
+});
+
+// Asociaciones inversas
+models.City.hasMany(models.Ruta, {
+  foreignKey: 'fkid_ciudad',
+  as: 'rutas'
+});
+
+models.User.hasMany(models.Ruta, {
+  foreignKey: 'fkid_repartidor',
+  as: 'rutas_asignadas'
+});
+
+models.Pedido.hasMany(models.RutaPedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'rutas'
+});
+
+// Asociaciones para Agente
+models.Agente.hasMany(models.AgenteConversacion, {
+  foreignKey: 'fkid_agente',
+  as: 'conversaciones'
+});
+
+// Asociaciones para AgenteConversacion
+models.AgenteConversacion.belongsTo(models.Agente, {
+  foreignKey: 'fkid_agente',
+  as: 'agente'
+});
+
+models.AgenteConversacion.belongsTo(models.Conversacion, {
+  foreignKey: 'fkid_conversacion',
+  as: 'conversacion'
+});
+
+// Asociaciones inversas
+models.Conversacion.hasMany(models.AgenteConversacion, {
+  foreignKey: 'fkid_conversacion',
+  as: 'agentes'
+});
+
+// Asociaciones para Repartidor
+models.Repartidor.belongsTo(models.City, {
+  foreignKey: 'fkid_ciudad',
+  as: 'ciudad'
+});
+
+models.Repartidor.belongsTo(models.User, {
+  foreignKey: 'fkid_usuario',
+  as: 'usuario'
+});
+
+models.Repartidor.hasMany(models.Ruta, {
+  foreignKey: 'fkid_repartidor',
+  as: 'rutas'
+});
+
+// Asociaciones inversas
+models.City.hasMany(models.Repartidor, {
+  foreignKey: 'fkid_ciudad',
+  as: 'repartidores'
+});
+
+models.User.hasMany(models.Repartidor, {
+  foreignKey: 'fkid_usuario',
+  as: 'repartidor'
 });
 
 models.sequelize = sequelize;

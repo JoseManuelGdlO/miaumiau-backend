@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const conversacionChatController = require('./controller');
-const { authenticateToken, requireRole } = require('../../middleware/auth');
+const { authenticateToken } = require('../../middleware/auth');
+const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
 
@@ -137,28 +138,28 @@ router.get('/unread', conversacionChatController.getUnreadChats);
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar chats
 router.get('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateQuery, 
   conversacionChatController.getAllChats
 );
 
 router.get('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateId, 
   conversacionChatController.getChatById
 );
 
 router.post('/', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateChat, 
   conversacionChatController.createChat
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateId, 
   validateChat, 
   conversacionChatController.updateChat
@@ -166,28 +167,28 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateId, 
   conversacionChatController.deleteChat
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateId, 
   conversacionChatController.restoreChat
 );
 
 router.patch('/:id/read', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateId, 
   conversacionChatController.markAsRead
 );
 
 router.patch('/:id/unread', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateId, 
   conversacionChatController.markAsUnread
 );
@@ -195,35 +196,35 @@ router.patch('/:id/unread',
 // Rutas para consultas específicas
 router.get('/conversacion/:conversacionId', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateConversacionId, 
   conversacionChatController.getChatsByConversacion
 );
 
 router.get('/from/:from', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateFrom, 
   conversacionChatController.getChatsByFrom
 );
 
 router.get('/date/:fecha', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateFecha, 
   conversacionChatController.getChatsByDate
 );
 
 router.get('/search/term', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateSearch, 
   conversacionChatController.searchChats
 );
 
 router.get('/hour/:fecha', 
   authenticateToken, 
-  requireRole(['admin', 'super_admin', 'moderator']), 
+  requireSuperAdminOrPermission('ver_conversaciones_chat'), 
   validateFecha, 
   conversacionChatController.getChatsByHour
 );

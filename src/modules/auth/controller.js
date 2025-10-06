@@ -1,4 +1,4 @@
-const { User } = require('../../models');
+const { User, Role, Permission } = require('../../models');
 const { generateToken, generateRefreshToken } = require('../../utils/jwt');
 
 class AuthController {
@@ -51,8 +51,25 @@ class AuthController {
     try {
       const { correo_electronico, contrasena } = req.body;
 
-      // Buscar usuario por email
-      const user = await User.findByEmail(correo_electronico);
+      // Buscar usuario por email con rol y permisos
+      const user = await User.findOne({
+        where: { correo_electronico },
+        include: [
+          {
+            model: Role,
+            as: 'rol',
+            include: [
+              {
+                model: Permission,
+                as: 'permissions',
+                through: { attributes: [] },
+                where: { baja_logica: false },
+                required: false
+              }
+            ]
+          }
+        ]
+      });
 
       if (!user) {
         return res.status(401).json({
@@ -82,15 +99,43 @@ class AuthController {
       // Actualizar último login
       await user.update({ lastLogin: new Date() });
 
-      // Generar tokens
-      const token = generateToken({ userId: user.id, email: user.correo_electronico });
+      // Obtener permisos del usuario
+      let userPermissions = [];
+      if (user.rol && user.rol.permissions) {
+        userPermissions = user.rol.permissions.map(p => p.nombre);
+      }
+
+      // Si es super_admin, agregar indicador de acceso total
+      if (user.rol && user.rol.nombre === 'super_admin') {
+        userPermissions.push('*'); // Indicador de acceso total
+      }
+
+      // Generar tokens con permisos incluidos
+      const token = generateToken({ 
+        userId: user.id, 
+        email: user.correo_electronico,
+        role: user.rol ? user.rol.nombre : null,
+        permissions: userPermissions
+      });
       const refreshToken = generateRefreshToken({ userId: user.id });
 
       res.json({
         success: true,
         message: 'Login exitoso',
         data: {
-          user: user.toJSON(),
+          user: {
+            id: user.id,
+            nombre_completo: user.nombre_completo,
+            correo_electronico: user.correo_electronico,
+            rol: user.rol ? {
+              id: user.rol.id,
+              nombre: user.rol.nombre,
+              descripcion: user.rol.descripcion
+            } : null,
+            isActive: user.isActive,
+            lastLogin: user.lastLogin
+          },
+          permissions: userPermissions,
           token,
           refreshToken
         }
