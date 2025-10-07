@@ -30,6 +30,7 @@ const productoPedidoRoutes = require('./modules/productos-pedido/routes');
 const mascotaRoutes = require('./modules/mascotas/routes');
 const agenteRoutes = require('./modules/agentes/routes');
 const repartidorRoutes = require('./modules/repartidores/routes');
+const rutaRoutes = require('./modules/rutas/routes');
 
 const app = express();
 
@@ -122,6 +123,7 @@ app.use('/api/productos-pedido', productoPedidoRoutes);
 app.use('/api/mascotas', mascotaRoutes);
 app.use('/api/agentes', agenteRoutes);
 app.use('/api/repartidores', repartidorRoutes);
+app.use('/api/rutas', rutaRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

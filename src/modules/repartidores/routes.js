@@ -143,8 +143,18 @@ const validateMetricas = [
   handleValidationErrors
 ];
 
+// Validaciones para query parameters
+const validateQueryParams = [
+  query('ciudad')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El ID de ciudad debe ser un número válido'),
+  
+  handleValidationErrors
+];
+
 // Rutas públicas (solo para obtener información básica)
-router.get('/disponibles', repartidorController.getRepartidoresDisponibles);
+router.get('/disponibles', validateQueryParams, repartidorController.getRepartidoresDisponibles);
 router.get('/estadisticas', repartidorController.getEstadisticas);
 router.get('/estadisticas/ciudad', repartidorController.getEstadisticasPorCiudad);
 router.get('/mejores-calificados', repartidorController.getMejoresCalificados);

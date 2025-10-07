@@ -292,7 +292,7 @@ models.Ruta.belongsTo(models.City, {
   as: 'ciudad'
 });
 
-models.Ruta.belongsTo(models.User, {
+models.Ruta.belongsTo(models.Repartidor, {
   foreignKey: 'fkid_repartidor',
   as: 'repartidor'
 });
@@ -319,7 +319,7 @@ models.City.hasMany(models.Ruta, {
   as: 'rutas'
 });
 
-models.User.hasMany(models.Ruta, {
+models.Repartidor.hasMany(models.Ruta, {
   foreignKey: 'fkid_repartidor',
   as: 'rutas_asignadas'
 });
