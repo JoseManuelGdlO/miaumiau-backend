@@ -18,5 +18,6 @@ router.get('/profile', authenticateToken, authController.getProfile);
 router.put('/profile', authenticateToken, authController.updateProfile);
 router.put('/change-password', authenticateToken, validateChangePassword, authController.changePassword);
 router.post('/logout', authenticateToken, authController.logout);
+router.post('/generate-permanent-token', authenticateToken, authController.generatePermanentToken);
 
 module.exports = router;

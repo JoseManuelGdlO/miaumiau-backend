@@ -12,6 +12,12 @@ const generateRefreshToken = (payload) => {
   });
 };
 
+const generatePermanentToken = (payload) => {
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    // Sin expiresIn = token sin vencimiento
+  });
+};
+
 const verifyToken = (token) => {
   return jwt.verify(token, process.env.JWT_SECRET);
 };
@@ -23,6 +29,7 @@ const verifyRefreshToken = (token) => {
 module.exports = {
   generateToken,
   generateRefreshToken,
+  generatePermanentToken,
   verifyToken,
   verifyRefreshToken
 };

@@ -1,5 +1,5 @@
 const { User, Role, Permission } = require('../../models');
-const { generateToken, generateRefreshToken } = require('../../utils/jwt');
+const { generateToken, generateRefreshToken, generatePermanentToken } = require('../../utils/jwt');
 
 class AuthController {
   // Registro de usuario
@@ -270,6 +270,94 @@ class AuthController {
         success: true,
         data: {
           token: newToken
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Generar token permanente (sin vencimiento)
+  async generatePermanentToken(req, res, next) {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID de usuario requerido'
+        });
+      }
+
+      // Buscar usuario con rol y permisos
+      const user = await User.findByPk(userId, {
+        include: [
+          {
+            model: Role,
+            as: 'rol',
+            include: [
+              {
+                model: Permission,
+                as: 'permissions',
+                through: { attributes: [] },
+                where: { baja_logica: false },
+                required: false
+              }
+            ]
+          }
+        ]
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
+      }
+
+      if (!user.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'Usuario inactivo'
+        });
+      }
+
+      // Obtener permisos del usuario
+      let userPermissions = [];
+      if (user.rol && user.rol.permissions) {
+        userPermissions = user.rol.permissions.map(p => p.nombre);
+      }
+
+      // Si es super_admin, agregar indicador de acceso total
+      if (user.rol && user.rol.nombre === 'super_admin') {
+        userPermissions.push('*');
+      }
+
+      // Generar token permanente
+      const permanentToken = generatePermanentToken({
+        userId: user.id,
+        email: user.correo_electronico,
+        role: user.rol ? user.rol.nombre : null,
+        permissions: userPermissions
+      });
+
+      res.json({
+        success: true,
+        message: 'Token permanente generado exitosamente',
+        data: {
+          user: {
+            id: user.id,
+            nombre_completo: user.nombre_completo,
+            correo_electronico: user.correo_electronico,
+            rol: user.rol ? {
+              id: user.rol.id,
+              nombre: user.rol.nombre,
+              descripcion: user.rol.descripcion
+            } : null
+          },
+          permissions: userPermissions,
+          permanentToken,
+          warning: 'Este token no expira. Úsalo con precaución y guárdalo de forma segura.'
         }
       });
     } catch (error) {
