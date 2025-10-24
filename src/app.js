@@ -62,6 +62,7 @@ app.use(cors({
       'http://192.168.1.64:8080',
       'http://192.168.1.64:3000',
       'https://intelekia-miaumiau-front.vvggha.easypanel.host',
+      'https://officina.miaumiau.com.mx',
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
