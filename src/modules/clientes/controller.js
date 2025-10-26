@@ -28,11 +28,12 @@ class ClienteController {
         whereClause.fkid_ciudad = fkidCiudadQuery;
       }
 
-      // Búsqueda por nombre o email
+      // Búsqueda por nombre, email o teléfono
       if (search) {
         whereClause[Op.or] = [
           { nombre_completo: { [Op.like]: `%${search}%` } },
-          { email: { [Op.like]: `%${search}%` } }
+          { email: { [Op.like]: `%${search}%` } },
+          { telefono: { [Op.like]: `%${search}%` } }
         ];
       }
 
@@ -481,6 +482,74 @@ class ClienteController {
           clientes,
           total: clientes.length
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Buscar cliente por teléfono exacto
+  async getClienteByTelefono(req, res, next) {
+    try {
+      const { telefono } = req.params;
+      
+      const cliente = await Cliente.findOne({
+        where: { 
+          telefono: telefono,
+          isActive: true 
+        },
+        include: [
+          {
+            model: City,
+            as: 'ciudad',
+            attributes: ['id', 'nombre', 'departamento']
+          },
+          {
+            model: Mascota,
+            as: 'mascotas',
+            where: { isActive: true },
+            required: false,
+            attributes: ['id', 'nombre', 'edad', 'genero', 'raza', 'producto_preferido', 'puntos_lealtad', 'notas_especiales']
+          }
+        ]
+      });
+      
+      if (!cliente) {
+        return res.status(404).json({
+          success: false,
+          message: 'Cliente no encontrado con ese número de teléfono'
+        });
+      }
+
+      // Obtener estadísticas del cliente
+      const totalPedidos = await Pedido.count({
+        where: { fkid_cliente: cliente.id }
+      });
+
+      const ultimoPedido = await Pedido.findOne({
+        where: { fkid_cliente: cliente.id },
+        order: [['fecha_pedido', 'DESC']],
+        attributes: ['fecha_pedido', 'estado', 'total']
+      });
+
+      const totalGastado = await Pedido.sum('total', {
+        where: { 
+          fkid_cliente: cliente.id,
+          estado: { [Op.in]: ['entregado', 'confirmado', 'en_preparacion', 'en_camino'] }
+        }
+      });
+
+      const clienteConStats = {
+        ...cliente.toJSON(),
+        totalPedidos: totalPedidos || 0,
+        ultimoPedido: ultimoPedido ? ultimoPedido.fecha_pedido : null,
+        totalGastado: totalGastado || 0,
+        loyaltyPoints: Math.floor((totalGastado || 0) / 100)
+      };
+
+      res.json({
+        success: true,
+        data: { cliente: clienteConStats }
       });
     } catch (error) {
       next(error);

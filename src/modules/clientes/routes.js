@@ -117,6 +117,8 @@ const queryValidation = [
   query('search').optional().isLength({ max: 100 }).withMessage('Búsqueda no puede exceder 100 caracteres')
 ];
 
+// Sin validaciones para uso de bot
+
 // Rutas principales
 router.get('/', 
   requireSuperAdminOrPermission('ver_clientes'),
@@ -133,6 +135,11 @@ router.get('/stats',
 router.get('/active',
   requireSuperAdminOrPermission('ver_clientes'),
   clienteController.getActiveClientes
+);
+
+router.get('/telefono/:telefono',
+  requireSuperAdminOrPermission('ver_clientes'),
+  clienteController.getClienteByTelefono
 );
 
 router.get('/:id',
