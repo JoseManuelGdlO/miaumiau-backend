@@ -824,6 +824,109 @@ class PedidoController {
       next(error);
     }
   }
+
+  // Obtener disponibilidad de entregas por día
+  async getDisponibilidadEntregas(req, res, next) {
+    try {
+      const { fecha_inicio } = req.params;
+      const { ciudad_id } = req.query;
+      
+      // Validar fecha
+      const fechaInicio = new Date(fecha_inicio);
+      if (isNaN(fechaInicio.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fecha de inicio inválida'
+        });
+      }
+
+      // Calcular fecha de inicio (día siguiente)
+      const fechaInicioDisponibilidad = new Date(fechaInicio);
+      fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
+      
+      // Generar los próximos 7 días
+      const disponibilidad = [];
+      const maxPedidosPorHorario = 5; // Máximo 5 pedidos por horario
+      
+      for (let i = 0; i < 7; i++) {
+        const fecha = new Date(fechaInicioDisponibilidad);
+        fecha.setDate(fecha.getDate() + i);
+        
+        // Formatear fecha como YYYY-MM-DD
+        const fechaStr = fecha.toISOString().split('T')[0];
+        
+        // Crear rangos de horario
+        const inicioManana = new Date(fecha);
+        inicioManana.setHours(8, 0, 0, 0); // 8:00 AM
+        
+        const finManana = new Date(fecha);
+        finManana.setHours(12, 0, 0, 0); // 12:00 PM
+        
+        const inicioTarde = new Date(fecha);
+        inicioTarde.setHours(14, 0, 0, 0); // 2:00 PM
+        
+        const finTarde = new Date(fecha);
+        finTarde.setHours(18, 0, 0, 0); // 6:00 PM
+        
+        // Construir condiciones de búsqueda
+        let whereClause = {
+          fecha_entrega_estimada: {
+            [Op.between]: [inicioManana, finTarde]
+          },
+          estado: {
+            [Op.in]: ['pendiente', 'confirmado', 'en_preparacion', 'en_camino']
+          },
+          baja_logica: false
+        };
+        
+        // Filtrar por ciudad si se especifica
+        if (ciudad_id) {
+          whereClause.fkid_ciudad = ciudad_id;
+        }
+        
+        // Contar pedidos por horario
+        const pedidosManana = await Pedido.count({
+          where: {
+            ...whereClause,
+            fecha_entrega_estimada: {
+              [Op.between]: [inicioManana, finManana]
+            }
+          }
+        });
+        
+        const pedidosTarde = await Pedido.count({
+          where: {
+            ...whereClause,
+            fecha_entrega_estimada: {
+              [Op.between]: [inicioTarde, finTarde]
+            }
+          }
+        });
+        
+        disponibilidad.push({
+          fecha: fechaStr,
+          manana_disponible: pedidosManana < maxPedidosPorHorario,
+          tarde_disponible: pedidosTarde < maxPedidosPorHorario,
+          pedidos_manana: pedidosManana,
+          pedidos_tarde: pedidosTarde,
+          capacidad_manana: maxPedidosPorHorario,
+          capacidad_tarde: maxPedidosPorHorario
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          disponibilidad,
+          fecha_consulta: fecha_inicio,
+          ciudad_id: ciudad_id || null,
+          total_dias: disponibilidad.length
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new PedidoController();

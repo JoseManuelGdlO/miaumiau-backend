@@ -192,6 +192,7 @@ router.get('/recent', pedidoController.getRecentPedidos);
 router.get('/pendientes', pedidoController.getPedidosPendientes);
 router.get('/en-preparacion', pedidoController.getPedidosEnPreparacion);
 router.get('/en-camino', pedidoController.getPedidosEnCamino);
+router.get('/disponibilidad/:fecha_inicio', pedidoController.getDisponibilidadEntregas);
 
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar pedidos
 router.get('/', 
