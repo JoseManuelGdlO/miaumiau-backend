@@ -633,6 +633,180 @@ class NotificacionController {
       next(error);
     }
   }
+
+  // Obtener KPIs del dashboard con comparación del mes anterior
+  async getDashboardKPIs(req, res, next) {
+    try {
+      const ahora = new Date();
+      const inicioMesActual = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+      const finMesActual = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      const inicioMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+      const finMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth(), 0, 23, 59, 59, 999);
+
+      // 1. CONVERSACIONES ACTIVAS (Total actual de conversaciones activas)
+      const conversacionesActivasActual = await Conversacion.count({
+        where: {
+          status: 'activa',
+          baja_logica: false
+        }
+      });
+
+      // Para comparación: contar conversaciones activas al final del mes anterior
+      // Esto es una aproximación - contar las que estaban activas y fueron creadas antes del fin del mes anterior
+      const conversacionesActivasFinMesAnterior = await Conversacion.count({
+        where: {
+          status: 'activa',
+          baja_logica: false,
+          created_at: {
+            [Op.lte]: finMesAnterior
+          }
+        }
+      });
+
+      const cambioConversaciones = conversacionesActivasFinMesAnterior > 0
+        ? ((conversacionesActivasActual - conversacionesActivasFinMesAnterior) / conversacionesActivasFinMesAnterior * 100).toFixed(1)
+        : conversacionesActivasActual > 0 ? '100' : '0';
+
+      // 2. CLIENTES REGISTRADOS
+      const clientesActual = await Cliente.count({
+        where: {
+          isActive: true,
+          created_at: {
+            [Op.between]: [inicioMesActual, finMesActual]
+          }
+        }
+      });
+
+      const clientesAnterior = await Cliente.count({
+        where: {
+          isActive: true,
+          created_at: {
+            [Op.between]: [inicioMesAnterior, finMesAnterior]
+          }
+        }
+      });
+
+      // Obtener total de clientes registrados (no solo del mes, sino total)
+      const totalClientesRegistrados = await Cliente.count({
+        where: { isActive: true }
+      });
+
+      const cambioClientes = clientesAnterior > 0
+        ? ((clientesActual - clientesAnterior) / clientesAnterior * 100).toFixed(1)
+        : clientesActual > 0 ? '100' : '0';
+
+      // 3. CIUDADES ACTIVAS
+      const ciudadesActivasActual = await City.count({
+        where: {
+          estado_inicial: 'activa',
+          baja_logica: false
+        }
+      });
+
+      // Obtener ciudades activas del mes anterior (nuevas ciudades activas)
+      const ciudadesNuevasEsteMes = await City.count({
+        where: {
+          estado_inicial: 'activa',
+          baja_logica: false,
+          created_at: {
+            [Op.between]: [inicioMesActual, finMesActual]
+          }
+        }
+      });
+
+      const ciudadesNuevasMesAnterior = await City.count({
+        where: {
+          estado_inicial: 'activa',
+          baja_logica: false,
+          created_at: {
+            [Op.between]: [inicioMesAnterior, finMesAnterior]
+          }
+        }
+      });
+
+      const cambioCiudades = ciudadesNuevasEsteMes - ciudadesNuevasMesAnterior;
+
+      // 4. VENTAS DEL MES
+      const ventasMesActual = await Pedido.sum('total', {
+        where: {
+          baja_logica: false,
+          estado: {
+            [Op.ne]: 'cancelado'
+          },
+          fecha_pedido: {
+            [Op.between]: [inicioMesActual, finMesActual]
+          }
+        }
+      }) || 0;
+
+      const ventasMesAnterior = await Pedido.sum('total', {
+        where: {
+          baja_logica: false,
+          estado: {
+            [Op.ne]: 'cancelado'
+          },
+          fecha_pedido: {
+            [Op.between]: [inicioMesAnterior, finMesAnterior]
+          }
+        }
+      }) || 0;
+
+      const cambioVentas = ventasMesAnterior > 0
+        ? ((ventasMesActual - ventasMesAnterior) / ventasMesAnterior * 100).toFixed(1)
+        : ventasMesActual > 0 ? '100' : '0';
+
+      // Formatear respuesta
+      res.status(200).json({
+        success: true,
+        data: {
+          conversacionesActivas: {
+            valor: conversacionesActivasActual,
+            cambio: parseFloat(cambioConversaciones),
+            cambioFormato: cambioConversaciones >= 0 
+              ? `+${cambioConversaciones}% desde el mes pasado`
+              : `${cambioConversaciones}% desde el mes pasado`
+          },
+          clientesRegistrados: {
+            valor: totalClientesRegistrados,
+            cambio: parseFloat(cambioClientes),
+            cambioFormato: cambioClientes >= 0
+              ? `+${cambioClientes}% desde el mes pasado`
+              : `${cambioClientes}% desde el mes pasado`
+          },
+          ciudadesActivas: {
+            valor: ciudadesActivasActual,
+            cambio: cambioCiudades,
+            cambioFormato: cambioCiudades >= 0
+              ? `+${cambioCiudades} desde el mes pasado`
+              : `${cambioCiudades} desde el mes pasado`
+          },
+          ventasDelMes: {
+            valor: parseFloat(ventasMesActual.toFixed(2)),
+            cambio: parseFloat(cambioVentas),
+            cambioFormato: cambioVentas >= 0
+              ? `+${cambioVentas}% desde el mes pasado`
+              : `${cambioVentas}% desde el mes pasado`,
+            formatoMoneda: `$${parseFloat(ventasMesActual.toFixed(2)).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          }
+        },
+        periodo: {
+          mesActual: {
+            inicio: inicioMesActual.toISOString(),
+            fin: finMesActual.toISOString(),
+            nombre: inicioMesActual.toLocaleString('es-MX', { month: 'long', year: 'numeric' })
+          },
+          mesAnterior: {
+            inicio: inicioMesAnterior.toISOString(),
+            fin: finMesAnterior.toISOString(),
+            nombre: inicioMesAnterior.toLocaleString('es-MX', { month: 'long', year: 'numeric' })
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new NotificacionController();

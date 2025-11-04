@@ -115,6 +115,11 @@ const validateQuery = [
 // Rutas públicas (estadísticas y recientes)
 router.get('/stats', notificacionController.getStats);
 router.get('/recent', notificacionController.getNotificacionesRecientes);
+router.get('/dashboard-kpis', 
+  authenticateToken, 
+  requireSuperAdminOrPermission('ver_notificaciones'), 
+  notificacionController.getDashboardKPIs
+);
 router.get('/actividad-reciente', 
   authenticateToken, 
   requireSuperAdminOrPermission('ver_notificaciones'), 
