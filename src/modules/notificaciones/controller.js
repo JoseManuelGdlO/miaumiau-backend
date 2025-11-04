@@ -1,4 +1,4 @@
-const { Notificacion, Sequelize } = require('../../models');
+const { Notificacion, Sequelize, Conversacion, Pedido, Cliente, Inventario, City, ProductoPedido } = require('../../models');
 const { Op } = require('sequelize');
 
 class NotificacionController {
@@ -366,6 +366,267 @@ class NotificacionController {
           leidas,
           noLeidas,
           porPrioridad
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Obtener actividad reciente consolidada de múltiples tablas
+  async getActividadReciente(req, res, next) {
+    try {
+      const { limit = 20, tipo } = req.query;
+      const fechaLimite = new Date();
+      fechaLimite.setHours(fechaLimite.getHours() - 24); // Últimas 24 horas
+
+      const actividades = [];
+
+      // 1. NUEVAS CONVERSACIONES
+      if (!tipo || tipo === 'conversacion') {
+        const conversaciones = await Conversacion.findAll({
+          where: {
+            created_at: {
+              [Op.gte]: fechaLimite
+            },
+            baja_logica: false
+          },
+          include: [
+            {
+              model: Cliente,
+              as: 'cliente',
+              attributes: ['id', 'nombre_completo'],
+              required: false,
+              include: [
+                {
+                  model: City,
+                  as: 'ciudad',
+                  attributes: ['id', 'nombre'],
+                  required: false
+                }
+              ]
+            }
+          ],
+          order: [['created_at', 'DESC']],
+          limit: 10
+        });
+
+        conversaciones.forEach(conv => {
+          const ciudadNombre = conv.cliente?.ciudad?.nombre || 'Ciudad desconocida';
+          const descripcion = conv.cliente 
+            ? `Cliente en ${ciudadNombre} - Consulta sobre productos Miau Miau`
+            : `Nueva conversación desde ${conv.from}`;
+          
+          actividades.push({
+            tipo: 'conversacion',
+            id: `conv_${conv.id}`,
+            titulo: 'Nueva conversación',
+            descripcion: descripcion,
+            fecha: conv.created_at,
+            status: conv.status,
+            statusLabel: conv.status === 'activa' ? 'activa' : conv.status,
+            datos: {
+              conversacionId: conv.id,
+              clienteId: conv.id_cliente,
+              clienteNombre: conv.cliente?.nombre_completo,
+              ciudad: ciudadNombre
+            }
+          });
+        });
+      }
+
+      // 2. VENTAS COMPLETADAS (Pedidos entregados)
+      if (!tipo || tipo === 'venta') {
+        const pedidosCompletados = await Pedido.findAll({
+          where: {
+            estado: 'entregado',
+            fecha_entrega_real: {
+              [Op.gte]: fechaLimite
+            },
+            baja_logica: false
+          },
+          include: [
+            {
+              model: Cliente,
+              as: 'cliente',
+              attributes: ['id', 'nombre_completo'],
+              required: false
+            },
+            {
+              model: ProductoPedido,
+              as: 'productos',
+              attributes: ['id', 'cantidad', 'precio_total'],
+              required: false,
+              limit: 1,
+              include: [
+                {
+                  model: Inventario,
+                  as: 'producto',
+                  attributes: ['id', 'nombre', 'sku'],
+                  required: false
+                }
+              ]
+            }
+          ],
+          order: [['fecha_entrega_real', 'DESC']],
+          limit: 10
+        });
+
+        pedidosCompletados.forEach(pedido => {
+          // Obtener información del primer producto
+          const primerProducto = pedido.productos?.[0];
+          const nombreProducto = primerProducto?.producto?.nombre || 'Productos Miau Miau';
+          const descripcion = `Pedido #${pedido.numero_pedido} - ${nombreProducto}`;
+
+          actividades.push({
+            tipo: 'venta',
+            id: `pedido_${pedido.id}`,
+            titulo: 'Venta completada',
+            descripcion: descripcion,
+            fecha: pedido.fecha_entrega_real || pedido.created_at,
+            status: 'completada',
+            statusLabel: 'completada',
+            datos: {
+              pedidoId: pedido.id,
+              numeroPedido: pedido.numero_pedido,
+              clienteId: pedido.fkid_cliente,
+              clienteNombre: pedido.cliente?.nombre_completo,
+              total: pedido.total
+            }
+          });
+        });
+      }
+
+      // 3. INVENTARIO BAJO
+      if (!tipo || tipo === 'inventario') {
+        const inventariosBajos = await Inventario.findAll({
+          where: {
+            stock_inicial: {
+              [Op.lte]: Sequelize.col('stock_minimo')
+            },
+            baja_logica: false
+          },
+          include: [
+            {
+              model: City,
+              as: 'ciudad',
+              attributes: ['id', 'nombre'],
+              required: false
+            }
+          ],
+          order: [['stock_inicial', 'ASC']],
+          limit: 10
+        });
+
+        inventariosBajos.forEach(inv => {
+          const ciudadNombre = inv.ciudad?.nombre || 'Ciudad desconocida';
+          actividades.push({
+            tipo: 'inventario',
+            id: `inv_${inv.id}`,
+            titulo: 'Inventario bajo',
+            descripcion: `${inv.nombre} en ${ciudadNombre} - Solo ${inv.stock_inicial} unidades`,
+            fecha: inv.updated_at || inv.created_at,
+            status: 'alerta',
+            statusLabel: 'alerta',
+            datos: {
+              inventarioId: inv.id,
+              productoNombre: inv.nombre,
+              stockActual: inv.stock_inicial,
+              stockMinimo: inv.stock_minimo,
+              ciudadId: inv.fkid_ciudad,
+              ciudad: ciudadNombre
+            }
+          });
+        });
+      }
+
+      // 4. CLIENTES NUEVOS
+      if (!tipo || tipo === 'cliente') {
+        const clientesNuevos = await Cliente.findAll({
+          where: {
+            created_at: {
+              [Op.gte]: fechaLimite
+            },
+            isActive: true
+          },
+          include: [
+            {
+              model: City,
+              as: 'ciudad',
+              attributes: ['id', 'nombre'],
+              required: false
+            }
+          ],
+          order: [['created_at', 'DESC']],
+          limit: 10
+        });
+
+        clientesNuevos.forEach(cliente => {
+          const ciudadNombre = cliente.ciudad?.nombre || 'Ciudad desconocida';
+          const canal = cliente.canal_contacto || 'sistema';
+          const descripcion = cliente.canal_contacto === 'whatsapp'
+            ? `Registro completado vía WhatsApp - Interesado en productos Miau Miau`
+            : `Nuevo cliente registrado en ${ciudadNombre}`;
+
+          actividades.push({
+            tipo: 'cliente',
+            id: `cliente_${cliente.id}`,
+            titulo: 'Cliente nuevo',
+            descripcion: descripcion,
+            fecha: cliente.created_at,
+            status: 'nuevo',
+            statusLabel: 'nuevo',
+            datos: {
+              clienteId: cliente.id,
+              clienteNombre: cliente.nombre_completo,
+              ciudadId: cliente.fkid_ciudad,
+              ciudad: ciudadNombre,
+              canalContacto: canal
+            }
+          });
+        });
+      }
+
+      // Ordenar todas las actividades por fecha descendente
+      actividades.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+      // Limitar resultados
+      const actividadesLimitadas = actividades.slice(0, parseInt(limit));
+
+      // Calcular tiempo relativo (hace X minutos/horas)
+      const actividadesConTiempo = actividadesLimitadas.map(act => {
+        const ahora = new Date();
+        const fechaAct = new Date(act.fecha);
+        const diffMs = ahora - fechaAct;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        let tiempoRelativo = '';
+        if (diffMins < 1) {
+          tiempoRelativo = 'Hace un momento';
+        } else if (diffMins < 60) {
+          tiempoRelativo = `Hace ${diffMins} min`;
+        } else if (diffHours < 24) {
+          tiempoRelativo = `Hace ${diffHours} ${diffHours === 1 ? 'hora' : 'horas'}`;
+        } else {
+          tiempoRelativo = `Hace ${diffDays} ${diffDays === 1 ? 'día' : 'días'}`;
+        }
+
+        return {
+          ...act,
+          tiempoRelativo,
+          fechaFormateada: fechaAct.toISOString()
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        data: actividadesConTiempo,
+        total: actividades.length,
+        filtros: {
+          limiteHoras: 24,
+          tipo: tipo || 'todos'
         }
       });
     } catch (error) {
