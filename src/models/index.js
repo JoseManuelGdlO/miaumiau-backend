@@ -25,6 +25,7 @@ const RutaPedido = require('./RutaPedido');
 const Agente = require('./Agente');
 const AgenteConversacion = require('./AgenteConversacion');
 const Repartidor = require('./Repartidor');
+const Notificacion = require('./Notificacion');
 
 // Inicializar modelos
 const models = {
@@ -50,7 +51,8 @@ const models = {
   RutaPedido: RutaPedido(sequelize, DataTypes),
   Agente: Agente(sequelize, DataTypes),
   AgenteConversacion: AgenteConversacion(sequelize, DataTypes),
-  Repartidor: Repartidor(sequelize, DataTypes)
+  Repartidor: Repartidor(sequelize, DataTypes),
+  Notificacion: Notificacion(sequelize, DataTypes)
 };
 
 // Definir asociaciones
