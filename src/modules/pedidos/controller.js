@@ -192,6 +192,14 @@ class PedidoController {
         });
       }
 
+      // Verificar que el cliente tiene telefono válido (requerido por el modelo)
+      if (!cliente.telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'El cliente no tiene un teléfono válido registrado'
+        });
+      }
+
       // Verificar que la ciudad existe
       const ciudad = await City.findByPk(fkid_ciudad);
       if (!ciudad) {
@@ -252,14 +260,14 @@ class PedidoController {
 
       const pedido = await Pedido.create({
         fkid_cliente,
-        telefono_referencia,
-        email_referencia,
+        telefono_referencia: telefono_referencia || null,
+        email_referencia: email_referencia || null,
         direccion_entrega,
         fkid_ciudad,
         numero_pedido: numeroPedido,
-        fecha_entrega_estimada,
-        metodo_pago,
-        notas,
+        fecha_entrega_estimada: fecha_entrega_estimada || null,
+        metodo_pago: metodo_pago || null,
+        notas: notas || null,
         codigo_promocion: codigo_promocion || null,
         descuento_promocion: descuentoPromocion
       });
