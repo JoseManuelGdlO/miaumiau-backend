@@ -301,8 +301,14 @@ module.exports = (sequelize, DataTypes) => {
   };
 
   ConversacionLog.createLog = function(conversacionId, data, tipoLog = 'sistema', nivel = 'info', descripcion = null) {
+    const now = new Date();
+    const fecha = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const hora = now.toTimeString().split(' ')[0]; // HH:MM:SS
+
     return this.create({
       fkid_conversacion: conversacionId,
+      fecha: fecha,
+      hora: hora,
       data: data,
       tipo_log: tipoLog,
       nivel: nivel,

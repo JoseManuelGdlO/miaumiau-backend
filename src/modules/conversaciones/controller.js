@@ -187,9 +187,12 @@ class ConversacionController {
         tipo_usuario = 'cliente'
       } = req.body;
 
+      // Normalizar id_cliente: si viene 0 o '0', tratar como null
+      const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
+
       // Verificar que el cliente existe si se proporciona
-      if (id_cliente) {
-        const cliente = await Cliente.findByPk(id_cliente);
+      if (clienteIdNormalizado) {
+        const cliente = await Cliente.findByPk(clienteIdNormalizado);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -201,7 +204,7 @@ class ConversacionController {
       const conversacion = await Conversacion.create({
         from,
         status,
-        id_cliente,
+        id_cliente: clienteIdNormalizado,
         tipo_usuario
       });
 
@@ -250,6 +253,9 @@ class ConversacionController {
         tipo_usuario = 'cliente'
       } = req.body;
 
+      // Normalizar id_cliente: si viene 0 o '0', tratar como null
+      const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
+
       // Validar que from esté presente
       if (!from) {
         return res.status(400).json({
@@ -259,8 +265,8 @@ class ConversacionController {
       }
 
       // Verificar que el cliente existe si se proporciona
-      if (id_cliente) {
-        const cliente = await Cliente.findByPk(id_cliente);
+      if (clienteIdNormalizado) {
+        const cliente = await Cliente.findByPk(clienteIdNormalizado);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -293,7 +299,7 @@ class ConversacionController {
         conversacion = await Conversacion.create({
           from,
           status,
-          id_cliente,
+          id_cliente: clienteIdNormalizado,
           tipo_usuario
         });
 
