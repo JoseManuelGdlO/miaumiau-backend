@@ -240,6 +240,106 @@ class ConversacionController {
     }
   }
 
+  // Buscar o crear conversación (findOrCreate)
+  async findOrCreateConversacion(req, res, next) {
+    try {
+      const {
+        from,
+        status = 'activa',
+        id_cliente,
+        tipo_usuario = 'cliente'
+      } = req.body;
+
+      // Validar que from esté presente
+      if (!from) {
+        return res.status(400).json({
+          success: false,
+          message: 'El campo "from" es requerido'
+        });
+      }
+
+      // Verificar que el cliente existe si se proporciona
+      if (id_cliente) {
+        const cliente = await Cliente.findByPk(id_cliente);
+        if (!cliente) {
+          return res.status(400).json({
+            success: false,
+            message: 'El cliente especificado no existe'
+          });
+        }
+      }
+
+      // Buscar conversación existente por 'from' que esté activa o no eliminada
+      let conversacion = await Conversacion.findOne({
+        where: {
+          from: from,
+          baja_logica: false
+        },
+        include: [
+          {
+            model: Cliente,
+            as: 'cliente',
+            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+            required: false
+          }
+        ],
+        order: [['created_at', 'DESC']] // Obtener la más reciente
+      });
+
+      let fueCreada = false;
+
+      // Si no existe, crear una nueva
+      if (!conversacion) {
+        conversacion = await Conversacion.create({
+          from,
+          status,
+          id_cliente,
+          tipo_usuario
+        });
+
+        // Crear log de inicio de conversación
+        await ConversacionLog.createLog(
+          conversacion.id,
+          { 
+            from: from,
+            tipo_usuario: tipo_usuario,
+            status_inicial: status
+          },
+          'inicio',
+          'info',
+          `Conversación iniciada por ${from}`
+        );
+
+        // Obtener la conversación creada con sus relaciones
+        conversacion = await Conversacion.findByPk(conversacion.id, {
+          include: [
+            {
+              model: Cliente,
+              as: 'cliente',
+              attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+              required: false
+            }
+          ]
+        });
+
+        fueCreada = true;
+      }
+
+      res.status(fueCreada ? 201 : 200).json({
+        success: true,
+        message: fueCreada 
+          ? 'Conversación creada exitosamente' 
+          : 'Conversación encontrada',
+        data: { 
+          conversacion: conversacion,
+          fueCreada: fueCreada
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Actualizar conversación
   async updateConversacion(req, res, next) {
     try {

@@ -155,6 +155,13 @@ router.post('/',
   conversacionController.createConversacion
 );
 
+router.post('/find-or-create', 
+  authenticateToken, 
+  requireSuperAdminOrPermission('ver_conversaciones'), 
+  validateConversacion, 
+  conversacionController.findOrCreateConversacion
+);
+
 router.put('/:id', 
   authenticateToken, 
   requireSuperAdminOrPermission('ver_conversaciones'), 
