@@ -147,8 +147,15 @@ class ConversacionChatController {
         });
       }
 
+      // Establecer fecha y hora actuales
+      const now = new Date();
+      const fecha = now.toISOString().split('T')[0];
+      const hora = now.toTimeString().split(' ')[0];
+
       const chat = await ConversacionChat.create({
         fkid_conversacion,
+        fecha,
+        hora,
         from,
         mensaje,
         tipo_mensaje,
