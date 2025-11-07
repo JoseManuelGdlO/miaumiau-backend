@@ -80,7 +80,8 @@ class AuthController {
       if (!user) {
         return res.status(401).json({
           success: false,
-          message: 'Credenciales inválidas'
+          message: 'Credenciales inválidas',
+          error: 'Credenciales inválidas'
         });
       }
 
@@ -88,7 +89,8 @@ class AuthController {
       if (!user.isActive) {
         return res.status(401).json({
           success: false,
-          message: 'Cuenta desactivada. Contacta al administrador.'
+          message: 'Cuenta desactivada. Contacta al administrador.',
+          error: 'Cuenta desactivada. Contacta al administrador.'
         });
       }
 
@@ -98,7 +100,8 @@ class AuthController {
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,
-          message: 'Credenciales inválidas'
+          message: 'Credenciales inválidas',
+          error: 'Credenciales inválidas'
         });
       }
 

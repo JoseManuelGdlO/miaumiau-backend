@@ -49,9 +49,13 @@ const errorHandler = (err, req, res, next) => {
     };
   }
 
-  res.status(error.statusCode || 500).json({
+  const statusCode = error.statusCode || 500;
+  
+  // Asegurar que siempre se envíe una respuesta JSON válida
+  res.status(statusCode).json({
     success: false,
     error: error.message || 'Error interno del servidor',
+    message: error.message || 'Error interno del servidor',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };
