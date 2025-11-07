@@ -20,13 +20,19 @@ class AuthController {
       }
 
       // Crear nuevo usuario
-      const user = await User.create({
+      const userData = {
         nombre_completo,
         correo_electronico,
         contrasena,
-        rol_id,
-        ciudad_id
-      });
+        rol_id
+      };
+      
+      // Solo incluir ciudad_id si viene en el body
+      if (ciudad_id !== undefined && ciudad_id !== null) {
+        userData.ciudad_id = ciudad_id;
+      }
+      
+      const user = await User.create(userData);
 
       // Generar tokens
       const token = generateToken({ userId: user.id, email: user.correo_electronico });
@@ -178,11 +184,19 @@ class AuthController {
 
       // Actualizar usuario
       const updatedUser = await User.findByPk(userId);
-      await updatedUser.update({
+      const updateData = {
         nombre_completo: nombre_completo || updatedUser.nombre_completo,
-        correo_electronico: correo_electronico || updatedUser.correo_electronico,
-        ciudad_id: ciudad_id || updatedUser.ciudad_id
-      });
+        correo_electronico: correo_electronico || updatedUser.correo_electronico
+      };
+      
+      // Manejar ciudad_id: si viene undefined, mantener el valor actual; si viene null, establecerlo como null
+      if (ciudad_id !== undefined) {
+        updateData.ciudad_id = ciudad_id;
+      } else {
+        updateData.ciudad_id = updatedUser.ciudad_id;
+      }
+      
+      await updatedUser.update(updateData);
 
       res.json({
         success: true,

@@ -133,13 +133,19 @@ class UsersController {
       }
 
       // Crear nuevo usuario
-      const user = await User.create({
+      const userData = {
         nombre_completo,
         correo_electronico,
         contrasena,
-        rol_id,
-        ciudad_id
-      });
+        rol_id
+      };
+      
+      // Solo incluir ciudad_id si viene en el body
+      if (ciudad_id !== undefined && ciudad_id !== null) {
+        userData.ciudad_id = ciudad_id;
+      }
+      
+      const user = await User.create(userData);
 
       // Obtener el usuario con sus relaciones
       const newUser = await User.findByPk(user.id, {
@@ -196,13 +202,21 @@ class UsersController {
       }
 
       // Actualizar usuario
-      await user.update({
+      const updateData = {
         nombre_completo: nombre_completo || user.nombre_completo,
         correo_electronico: correo_electronico || user.correo_electronico,
         rol_id: rol_id || user.rol_id,
-        ciudad_id: ciudad_id || user.ciudad_id,
         isActive: isActive !== undefined ? isActive : user.isActive
-      });
+      };
+      
+      // Manejar ciudad_id: si viene undefined, mantener el valor actual; si viene null, establecerlo como null
+      if (ciudad_id !== undefined) {
+        updateData.ciudad_id = ciudad_id;
+      } else {
+        updateData.ciudad_id = user.ciudad_id;
+      }
+      
+      await user.update(updateData);
 
       // Obtener el usuario actualizado con sus relaciones
       const updatedUser = await User.findByPk(id, {
