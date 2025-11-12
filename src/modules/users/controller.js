@@ -6,7 +6,7 @@ class UsersController {
   async getAllUsers(req, res, next) {
     try {
       const { 
-        activos = 'true', 
+        activos, 
         rol_id, 
         ciudad_id, 
         search,
@@ -16,12 +16,16 @@ class UsersController {
       
       let whereClause = {};
       
-      // Filtrar por activos/inactivos
-      if (activos === 'true') {
-        whereClause.isActive = true;
-      } else if (activos === 'false') {
-        whereClause.isActive = false;
+      // Filtrar por activos/inactivos solo si se especifica el parámetro explícitamente
+      // Si activos es undefined, null o cualquier otro valor, NO se filtra (trae todos)
+      if (activos !== undefined && activos !== null && activos !== '') {
+        if (activos === 'true') {
+          whereClause.isActive = true;
+        } else if (activos === 'false') {
+          whereClause.isActive = false;
+        }
       }
+      // Si no se envía el parámetro activos, no se filtra (trae todos)
       
       // Filtrar por rol
       if (rol_id) {
@@ -43,8 +47,8 @@ class UsersController {
 
       const offset = (page - 1) * limit;
 
-      const { count, rows: users } = await User.findAndCountAll({
-        where: whereClause,
+      // Construir opciones de consulta
+      const queryOptions = {
         include: [
           {
             model: Role,
@@ -61,7 +65,14 @@ class UsersController {
         limit: parseInt(limit),
         offset: parseInt(offset),
         attributes: { exclude: ['contrasena'] } // Excluir contraseña
-      });
+      };
+
+      // Solo agregar where si hay filtros
+      if (Object.keys(whereClause).length > 0) {
+        queryOptions.where = whereClause;
+      }
+
+      const { count, rows: users } = await User.findAndCountAll(queryOptions);
 
       res.json({
         success: true,
@@ -245,7 +256,7 @@ class UsersController {
     }
   }
 
-  // Eliminar un usuario (baja lógica)
+  // Eliminar un usuario (eliminación física)
   async deleteUser(req, res, next) {
     try {
       const { id } = req.params;
@@ -276,13 +287,21 @@ class UsersController {
         }
       }
 
-      await user.update({ isActive: false });
+      // Eliminación física del usuario
+      await user.destroy();
 
       res.json({
         success: true,
         message: 'Usuario eliminado exitosamente'
       });
     } catch (error) {
+      // Si hay error por restricciones de clave foránea, informar al usuario
+      if (error.name === 'SequelizeForeignKeyConstraintError') {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede eliminar el usuario porque tiene registros asociados (repartidores, etc.). Elimine primero los registros asociados.'
+        });
+      }
       next(error);
     }
   }
