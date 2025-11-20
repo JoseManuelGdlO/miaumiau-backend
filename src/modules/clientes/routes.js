@@ -4,6 +4,31 @@ const clienteController = require('./controller');
 const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query, validationResult } = require('express-validator');
+const multer = require('multer');
+
+// Configurar multer para manejar archivos en memoria
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB límite
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'application/vnd.ms-excel.sheet.macroEnabled.12'
+    ];
+    
+    if (allowedMimes.includes(file.mimetype) || 
+        file.originalname.endsWith('.xlsx') || 
+        file.originalname.endsWith('.xls')) {
+      cb(null, true);
+    } else {
+      req.fileValidationError = 'Solo se permiten archivos Excel (.xlsx, .xls)';
+      cb(null, false);
+    }
+  }
+});
 
 // Middleware de validación
 const validateRequest = (req, res, next) => {
@@ -140,6 +165,29 @@ router.get('/active',
 router.get('/telefono/:telefono',
   requireSuperAdminOrPermission('ver_clientes'),
   clienteController.getClienteByTelefono
+);
+
+// Ruta para descargar template (debe ir antes de /:id)
+router.get('/template',
+  requireSuperAdminOrPermission('crear_clientes'),
+  clienteController.downloadTemplate
+);
+
+// Ruta para carga masiva (debe ir antes de /:id)
+router.post('/bulk-upload',
+  requireSuperAdminOrPermission('crear_clientes'),
+  upload.single('file'),
+  (req, res, next) => {
+    // Manejar errores de multer
+    if (req.fileValidationError) {
+      return res.status(400).json({
+        success: false,
+        message: req.fileValidationError
+      });
+    }
+    next();
+  },
+  clienteController.bulkUploadClientes
 );
 
 router.get('/:id',

@@ -1,5 +1,7 @@
 const { Cliente, Mascota, City, Pedido } = require('../../models');
 const { Op } = require('sequelize');
+const XLSX = require('xlsx');
+const multer = require('multer');
 
 class ClienteController {
   // Obtener todos los clientes
@@ -552,6 +554,558 @@ class ClienteController {
         data: { cliente: clienteConStats }
       });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // Descargar template de Excel
+  async downloadTemplate(req, res, next) {
+    try {
+      // Crear un workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Crear datos de ejemplo con todos los campos
+      const templateData = [
+        [
+          'Plaza',                    // Obligatorio - Se mapea a fkid_ciudad
+          'NombreCompleto',           // Obligatorio - Se mapea a nombre_completo
+          'NumeroTelefonico',         // Obligatorio - Se mapea a telefono
+          'Email',                    // Opcional - Se mapea a email
+          'Direccion',                // Opcional - Se mapea a direccion_entrega
+          'CanalContacto',            // Opcional - Se mapea a canal_contacto (WhatsApp, Instagram, Facebook, etc.)
+          'PuntosLealtad',            // Opcional - Se mapea a puntos_lealtad (default: 0)
+          'Folio',                    // Opcional - Se agrega a notas_especiales
+          'ComprasTelefono',          // Opcional - Se agrega a notas_especiales
+          'NotasEspeciales'           // Opcional - Se mapea a notas_especiales
+        ],
+        [
+          'Cd. Juarez', 
+          'Juan Pérez García', 
+          '6561234567', 
+          'juan.perez@email.com', 
+          'Calle Ejemplo 123, Col. Centro', 
+          'WhatsApp', 
+          '0', 
+          '1234', 
+          '1',
+          'Cliente preferencial'
+        ],
+        [
+          'Cd. Juarez', 
+          'María González López', 
+          '6567654321', 
+          'maria.gonzalez@email.com', 
+          'Avenida Principal 456, Fracc. Norte', 
+          'Instagram', 
+          '0', 
+          '5678', 
+          '2',
+          ''
+        ],
+      ];
+
+      // Crear worksheet
+      const worksheet = XLSX.utils.aoa_to_sheet(templateData);
+      
+      // Ajustar ancho de columnas
+      worksheet['!cols'] = [
+        { wch: 15 }, // Plaza
+        { wch: 30 }, // NombreCompleto
+        { wch: 15 }, // NumeroTelefonico
+        { wch: 30 }, // Email
+        { wch: 50 }, // Direccion
+        { wch: 15 }, // CanalContacto
+        { wch: 12 }, // PuntosLealtad
+        { wch: 15 }, // Folio
+        { wch: 15 }, // ComprasTelefono
+        { wch: 40 }, // NotasEspeciales
+      ];
+
+      // Agregar worksheet al workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
+
+      // Generar buffer
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      // Configurar headers para descarga
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=template_clientes.xlsx');
+      
+      res.send(buffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Cargar clientes masivamente desde Excel
+  async bulkUploadClientes(req, res, next) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se proporcionó ningún archivo'
+        });
+      }
+
+      // Leer el archivo Excel
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Validar que tenga encabezados
+      if (data.length < 2) {
+        return res.status(400).json({
+          success: false,
+          message: 'El archivo debe contener al menos una fila de datos además de los encabezados'
+        });
+      }
+
+      // Obtener encabezados (primera fila)
+      if (!data[0] || !Array.isArray(data[0])) {
+        return res.status(400).json({
+          success: false,
+          message: 'El archivo no tiene encabezados válidos'
+        });
+      }
+
+      const headers = data[0].map(h => {
+        if (h === null || h === undefined) return '';
+        return String(h).trim();
+      });
+      
+      console.log('Headers encontrados:', headers);
+      
+      // Mapear índices de columnas (campos requeridos y opcionales)
+      const plazaIndex = headers.findIndex(h => 
+        h && (h.toLowerCase().includes('plaza') || h.toLowerCase().includes('ciudad'))
+      );
+      const nombreCompletoIndex = headers.findIndex(h => 
+        h && ((h.toLowerCase().includes('nombre') && h.toLowerCase().includes('completo')) ||
+        h.toLowerCase().includes('nombrecompleto'))
+      );
+      const telefonoIndex = headers.findIndex(h => 
+        h && (h.toLowerCase().includes('telefono') || h.toLowerCase().includes('teléfono') || 
+        h.toLowerCase().includes('numerotelefonico') || h.toLowerCase().includes('numero telefonico'))
+      );
+      const emailIndex = headers.findIndex(h => 
+        h && h.toLowerCase().includes('email')
+      );
+      const direccionIndex = headers.findIndex(h => 
+        h && (h.toLowerCase().includes('direccion') || h.toLowerCase().includes('dirección'))
+      );
+      const canalContactoIndex = headers.findIndex(h => 
+        h && ((h.toLowerCase().includes('canal') && h.toLowerCase().includes('contacto')) ||
+        h.toLowerCase().includes('canalcontacto'))
+      );
+      const puntosLealtadIndex = headers.findIndex(h => 
+        h && ((h.toLowerCase().includes('puntos') && h.toLowerCase().includes('lealtad')) ||
+        h.toLowerCase().includes('puntoslealtad'))
+      );
+      const folioIndex = headers.findIndex(h => 
+        h && h.toLowerCase().includes('folio')
+      );
+      const comprasIndex = headers.findIndex(h => 
+        h && (h.toLowerCase().includes('compras') || h.toLowerCase().includes('# compras') ||
+        h.toLowerCase().includes('comprastelefono'))
+      );
+      const notasEspecialesIndex = headers.findIndex(h => 
+        h && ((h.toLowerCase().includes('notas') && h.toLowerCase().includes('especiales')) ||
+        h.toLowerCase().includes('notasespeciales'))
+      );
+
+      console.log('Índices encontrados:', { 
+        plazaIndex, 
+        nombreCompletoIndex, 
+        telefonoIndex, 
+        emailIndex,
+        direccionIndex, 
+        canalContactoIndex,
+        puntosLealtadIndex,
+        folioIndex, 
+        comprasIndex,
+        notasEspecialesIndex
+      });
+
+      // Validar campos requeridos
+      if (plazaIndex === -1 || telefonoIndex === -1) {
+        return res.status(400).json({
+          success: false,
+          message: `El archivo debe contener las columnas requeridas. Encontradas: ${headers.join(', ')}. Se requieren: Plaza, NumeroTelefonico`
+        });
+      }
+
+      const results = {
+        created: 0,
+        updated: 0,
+        errors: [],
+        total: 0
+      };
+
+      // Precargar todas las ciudades para optimizar búsquedas
+      console.log('Precargando ciudades...');
+      const todasLasCiudades = await City.findAll({
+        where: { baja_logica: false },
+        attributes: ['id', 'nombre']
+      });
+
+      // Crear cache de ciudades con múltiples variaciones de nombres
+      const ciudadesCache = new Map();
+      todasLasCiudades.forEach(ciudad => {
+        const nombreLower = ciudad.nombre.toLowerCase().trim();
+        // Guardar con el nombre exacto
+        ciudadesCache.set(nombreLower, ciudad);
+        // Guardar variaciones comunes
+        ciudadesCache.set(nombreLower.replace(/\./g, ''), ciudad); // Sin puntos
+        ciudadesCache.set(nombreLower.replace(/\s+/g, ''), ciudad); // Sin espacios
+        ciudadesCache.set(nombreLower.replace(/\./g, '').replace(/\s+/g, ''), ciudad); // Sin puntos ni espacios
+        // Guardar con "cd" en lugar de "ciudad"
+        if (nombreLower.startsWith('ciudad')) {
+          ciudadesCache.set(nombreLower.replace('ciudad', 'cd'), ciudad);
+        }
+        if (nombreLower.startsWith('cd')) {
+          ciudadesCache.set(nombreLower.replace('cd', 'ciudad'), ciudad);
+        }
+      });
+
+      console.log(`Cache de ciudades precargado: ${ciudadesCache.size} entradas (${todasLasCiudades.length} ciudades)`);
+
+      // Límite de filas para procesar (prevenir loops infinitos)
+      const MAX_ROWS = 10000;
+      const totalRows = Math.min(data.length - 1, MAX_ROWS);
+
+      console.log(`Iniciando procesamiento de ${totalRows} filas...`);
+
+      // Procesar cada fila (empezando desde la fila 2, índice 1)
+      for (let i = 1; i <= totalRows; i++) {
+        const row = data[i];
+        const rowNumber = i + 1; // Para mostrar en errores (1-indexed)
+
+        // Validar que la fila existe y no está completamente vacía
+        if (!row || !Array.isArray(row) || row.length === 0) {
+          continue; // Saltar filas vacías
+        }
+
+        // Verificar si la fila tiene al menos algún dato en las columnas requeridas
+        const hasData = row.some((cell, idx) => {
+          return (idx === plazaIndex || idx === telefonoIndex || idx === nombreCompletoIndex) && 
+                 cell !== null && cell !== undefined && String(cell).trim() !== '';
+        });
+
+        if (!hasData) {
+          continue; // Saltar filas sin datos relevantes
+        }
+
+        // Validar y extraer datos de la fila
+        const validationErrors = [];
+        
+        // Extraer datos de la fila
+        const plaza = row[plazaIndex] ? String(row[plazaIndex]).trim() : '';
+        const nombreCompleto = nombreCompletoIndex !== -1 && row[nombreCompletoIndex] 
+          ? String(row[nombreCompletoIndex]).trim() 
+          : '';
+        const telefono = row[telefonoIndex] ? String(row[telefonoIndex]).trim() : '';
+        const email = emailIndex !== -1 && row[emailIndex] 
+          ? String(row[emailIndex]).trim() 
+          : '';
+        const direccion = direccionIndex !== -1 && row[direccionIndex] 
+          ? String(row[direccionIndex]).trim() 
+          : '';
+        const canalContacto = canalContactoIndex !== -1 && row[canalContactoIndex] 
+          ? String(row[canalContactoIndex]).trim() 
+          : '';
+        const puntosLealtad = puntosLealtadIndex !== -1 && row[puntosLealtadIndex] 
+          ? parseInt(row[puntosLealtadIndex]) || 0 
+          : 0;
+        const folio = folioIndex !== -1 && row[folioIndex] ? String(row[folioIndex]).trim() : '';
+        const compras = comprasIndex !== -1 && row[comprasIndex] ? String(row[comprasIndex]).trim() : '';
+        const notasEspeciales = notasEspecialesIndex !== -1 && row[notasEspecialesIndex] 
+          ? String(row[notasEspecialesIndex]).trim() 
+          : '';
+
+        // Validar campos requeridos
+        if (!plaza) {
+          validationErrors.push('Plaza es obligatorio');
+        }
+        if (!telefono) {
+          validationErrors.push('NumeroTelefonico es obligatorio');
+        }
+        if (telefono && (telefono.length < 7 || telefono.length > 20)) {
+          validationErrors.push(`NumeroTelefonico "${telefono}" debe tener entre 7 y 20 caracteres`);
+        }
+        if (!nombreCompleto) {
+          validationErrors.push('NombreCompleto es obligatorio');
+        }
+        if (nombreCompleto && (nombreCompleto.length < 2 || nombreCompleto.length > 100)) {
+          validationErrors.push(`NombreCompleto "${nombreCompleto}" debe tener entre 2 y 100 caracteres`);
+        }
+
+        // Validar email si se proporciona
+        if (email) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email)) {
+            validationErrors.push(`Email "${email}" no tiene un formato válido`);
+          }
+          if (email.length > 100) {
+            validationErrors.push(`Email "${email}" no puede exceder 100 caracteres`);
+          }
+        }
+
+        // Validar puntos de lealtad si se proporciona
+        if (puntosLealtadIndex !== -1 && row[puntosLealtadIndex] !== undefined && row[puntosLealtadIndex] !== null && row[puntosLealtadIndex] !== '') {
+          const puntos = parseInt(row[puntosLealtadIndex]);
+          if (isNaN(puntos) || puntos < 0) {
+            validationErrors.push(`PuntosLealtad "${row[puntosLealtadIndex]}" debe ser un número entero positivo o cero`);
+          }
+        }
+
+        // Validar canal de contacto si se proporciona
+        if (canalContacto && canalContacto.length > 50) {
+          validationErrors.push(`CanalContacto "${canalContacto}" no puede exceder 50 caracteres`);
+        }
+
+        // Si hay errores de validación básicos, agregarlos y continuar
+        if (validationErrors.length > 0) {
+          results.errors.push({
+            row: rowNumber,
+            message: `Fila ${rowNumber}: ${validationErrors.join('; ')}`
+          });
+          continue;
+        }
+
+        try {
+          // Buscar ciudad en cache (con múltiples variaciones)
+          const plazaLower = plaza.toLowerCase().trim();
+          let ciudad = ciudadesCache.get(plazaLower);
+          
+          // Si no se encuentra, intentar variaciones
+          if (!ciudad) {
+            ciudad = ciudadesCache.get(plazaLower.replace(/\./g, '')) ||
+                     ciudadesCache.get(plazaLower.replace(/\s+/g, '')) ||
+                     ciudadesCache.get(plazaLower.replace(/\./g, '').replace(/\s+/g, ''));
+          }
+
+          // Si aún no se encuentra, buscar en la base de datos (solo una vez por ciudad única)
+          if (!ciudad) {
+            // Buscar en todas las ciudades precargadas con búsqueda flexible
+            ciudad = todasLasCiudades.find(c => {
+              const nombreLower = c.nombre.toLowerCase().trim();
+              return nombreLower === plazaLower ||
+                     nombreLower.includes(plazaLower) ||
+                     plazaLower.includes(nombreLower) ||
+                     nombreLower.replace(/\./g, '').replace(/\s+/g, '') === plazaLower.replace(/\./g, '').replace(/\s+/g, '');
+            });
+
+            // Si se encuentra, guardar en cache para futuras búsquedas
+            if (ciudad) {
+              ciudadesCache.set(plazaLower, ciudad);
+            }
+          }
+
+          if (!ciudad) {
+            // Solo agregar error si no está en el cache de "no encontradas" (evitar errores duplicados)
+            const errorKey = `error_${plazaLower}`;
+            if (!ciudadesCache.has(errorKey)) {
+              ciudadesCache.set(errorKey, null); // Marcar como "no encontrada"
+              results.errors.push({
+                row: rowNumber,
+                message: `Fila ${rowNumber}: No se encontró la ciudad "${plaza}". Verifica que la ciudad exista en el sistema.`
+              });
+            }
+            continue;
+          }
+
+          // Construir notas especiales con información adicional (si no se proporcionó)
+          let notasFinales = notasEspeciales;
+          if (!notasFinales) {
+            if (folio) {
+              notasFinales += `Folio: ${folio}. `;
+            }
+            if (compras) {
+              notasFinales += `Compras previas: ${compras}. `;
+            }
+            notasFinales = notasFinales.trim();
+          } else {
+            // Si hay notas del Excel, agregar información adicional si existe
+            let infoAdicional = '';
+            if (folio) {
+              infoAdicional += `Folio: ${folio}. `;
+            }
+            if (compras) {
+              infoAdicional += `Compras previas: ${compras}. `;
+            }
+            if (infoAdicional) {
+              notasFinales = `${notasFinales} | ${infoAdicional.trim()}`;
+            }
+          }
+
+          // Verificar si el cliente ya existe por teléfono o email ANTES de insertar
+          const clienteExistentePorTelefono = await Cliente.findOne({
+            where: { telefono }
+          });
+
+          const clienteExistentePorEmail = email ? await Cliente.findOne({
+            where: { email }
+          }) : null;
+
+          // Verificar duplicados
+          if (clienteExistentePorTelefono && clienteExistentePorEmail) {
+            // Si ambos existen pero son el mismo cliente, actualizar
+            if (clienteExistentePorTelefono.id === clienteExistentePorEmail.id) {
+              // Es el mismo cliente, actualizar
+              const updateData = {
+                fkid_ciudad: ciudad.id,
+                nombre_completo: nombreCompleto,
+              };
+              
+              if (email) {
+                updateData.email = email;
+              }
+              if (direccion) {
+                updateData.direccion_entrega = direccion;
+              }
+              if (canalContacto) {
+                updateData.canal_contacto = canalContacto;
+              }
+              if (puntosLealtad !== undefined && puntosLealtad !== null) {
+                updateData.puntos_lealtad = puntosLealtad;
+              }
+              if (notasFinales) {
+                updateData.notas_especiales = notasFinales;
+              }
+              
+              await clienteExistentePorTelefono.update(updateData);
+              results.updated++;
+              results.total++;
+              continue;
+            } else {
+              // Son clientes diferentes, error
+              results.errors.push({
+                row: rowNumber,
+                message: `Fila ${rowNumber}: Conflicto de duplicados - Ya existe un cliente con el teléfono "${telefono}" (ID: ${clienteExistentePorTelefono.id}) y otro cliente diferente con el email "${email}" (ID: ${clienteExistentePorEmail.id}). Verifica los datos.`
+              });
+              continue;
+            }
+          }
+
+          if (clienteExistentePorTelefono) {
+            // Cliente existe por teléfono, actualizar
+            try {
+              const updateData = {
+                fkid_ciudad: ciudad.id,
+                nombre_completo: nombreCompleto,
+              };
+              
+              if (email) {
+                updateData.email = email;
+              }
+              if (direccion) {
+                updateData.direccion_entrega = direccion;
+              }
+              if (canalContacto) {
+                updateData.canal_contacto = canalContacto;
+              }
+              if (puntosLealtad !== undefined && puntosLealtad !== null) {
+                updateData.puntos_lealtad = puntosLealtad;
+              }
+              if (notasFinales) {
+                updateData.notas_especiales = notasFinales;
+              }
+              
+              await clienteExistentePorTelefono.update(updateData);
+              results.updated++;
+              results.total++;
+            } catch (updateError) {
+              results.errors.push({
+                row: rowNumber,
+                message: `Fila ${rowNumber}: Error al actualizar cliente existente (Teléfono: ${telefono}, ID: ${clienteExistentePorTelefono.id}) - ${updateError.message || 'Error desconocido'}`
+              });
+            }
+            continue;
+          }
+
+          if (clienteExistentePorEmail) {
+            // Cliente existe por email pero no por teléfono, error
+            results.errors.push({
+              row: rowNumber,
+              message: `Fila ${rowNumber}: Ya existe un cliente con el email "${email}" (ID: ${clienteExistentePorEmail.id}). El teléfono "${telefono}" no coincide con ningún cliente existente.`
+            });
+            continue;
+          }
+
+          // Crear nuevo cliente solo si no existe
+          try {
+            await Cliente.create({
+              nombre_completo: nombreCompleto,
+              telefono,
+              email: email || null,
+              fkid_ciudad: ciudad.id,
+              direccion_entrega: direccion || null,
+              canal_contacto: canalContacto || 'WhatsApp',
+              notas_especiales: notasFinales || null,
+              puntos_lealtad: puntosLealtad || 0,
+              isActive: true
+            });
+            results.created++;
+            results.total++;
+          } catch (createError) {
+            let errorMessage = 'Error al crear el cliente';
+            
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+              if (createError.fields && createError.fields.includes('telefono')) {
+                errorMessage = `Ya existe un cliente con el teléfono "${telefono}"`;
+              } else if (createError.fields && createError.fields.includes('email')) {
+                errorMessage = `Ya existe un cliente con el email "${email}"`;
+              } else {
+                errorMessage = `Violación de unicidad: ${createError.message || 'Ya existe un registro con estos datos'}`;
+              }
+            } else if (createError.message) {
+              errorMessage = createError.message;
+            }
+            
+            results.errors.push({
+              row: rowNumber,
+              message: `Fila ${rowNumber}: ${errorMessage}`
+            });
+          }
+        } catch (error) {
+          console.error(`Error procesando fila ${rowNumber}:`, error);
+          
+          // Extraer mensaje de error más detallado
+          let errorMessage = 'Error al procesar la fila';
+          
+          if (error.name === 'SequelizeValidationError') {
+            const validationErrors = error.errors ? error.errors.map((e) => e.message).join(', ') : error.message;
+            errorMessage = `Error de validación: ${validationErrors}`;
+          } else if (error.name === 'SequelizeUniqueConstraintError') {
+            errorMessage = `Violación de unicidad: ${error.message || 'Ya existe un registro con estos datos'}`;
+          } else if (error.name === 'SequelizeForeignKeyConstraintError') {
+            errorMessage = `Error de referencia: ${error.message || 'La ciudad o referencia no existe'}`;
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+          
+          results.errors.push({
+            row: rowNumber,
+            message: `Fila ${rowNumber}: ${errorMessage}`
+          });
+        }
+
+        // Log de progreso cada 100 filas
+        if (i % 100 === 0) {
+          console.log(`Procesadas ${i} de ${totalRows} filas...`);
+        }
+      }
+
+      console.log(`Procesamiento completado. Creados: ${results.created}, Actualizados: ${results.updated}, Errores: ${results.errors.length}`);
+
+      res.json({
+        success: true,
+        message: `Procesamiento completado. ${results.created} creados, ${results.updated} actualizados.`,
+        data: results
+      });
+    } catch (error) {
+      console.error('Error en bulkUploadClientes:', error);
       next(error);
     }
   }
