@@ -568,7 +568,7 @@ class ClienteController {
       const templateData = [
         [
           'Plaza',                    // Obligatorio - Se mapea a fkid_ciudad
-          'NombreCompleto',           // Obligatorio - Se mapea a nombre_completo
+          'NombreCompleto',           // Opcional - Se mapea a nombre_completo (si no se proporciona, se genera "Cliente [Teléfono]")
           'NumeroTelefonico',         // Obligatorio - Se mapea a telefono
           'Email',                    // Opcional - Se mapea a email
           'Direccion',                // Opcional - Se mapea a direccion_entrega
@@ -592,7 +592,7 @@ class ClienteController {
         ],
         [
           'Cd. Juarez', 
-          'María González López', 
+          '',                         // Ejemplo sin nombre - se generará "Cliente 6567654321"
           '6567654321', 
           'maria.gonzalez@email.com', 
           'Avenida Principal 456, Fracc. Norte', 
@@ -833,9 +833,7 @@ class ClienteController {
         if (telefono && (telefono.length < 7 || telefono.length > 20)) {
           validationErrors.push(`NumeroTelefonico "${telefono}" debe tener entre 7 y 20 caracteres`);
         }
-        if (!nombreCompleto) {
-          validationErrors.push('NombreCompleto es obligatorio');
-        }
+        // NombreCompleto es opcional - si no se proporciona, se generará uno por defecto
         if (nombreCompleto && (nombreCompleto.length < 2 || nombreCompleto.length > 100)) {
           validationErrors.push(`NombreCompleto "${nombreCompleto}" debe tener entre 2 y 100 caracteres`);
         }
@@ -915,6 +913,9 @@ class ClienteController {
             continue;
           }
 
+          // Generar nombre completo si no se proporciona (usar teléfono como fallback)
+          const nombreFinal = nombreCompleto || `Cliente ${telefono}`;
+
           // Construir notas especiales con información adicional (si no se proporcionó)
           let notasFinales = notasEspeciales;
           if (!notasFinales) {
@@ -955,7 +956,7 @@ class ClienteController {
               // Es el mismo cliente, actualizar
               const updateData = {
                 fkid_ciudad: ciudad.id,
-                nombre_completo: nombreCompleto,
+                nombre_completo: nombreFinal,
               };
               
               if (email) {
@@ -993,7 +994,7 @@ class ClienteController {
             try {
               const updateData = {
                 fkid_ciudad: ciudad.id,
-                nombre_completo: nombreCompleto,
+                nombre_completo: nombreFinal,
               };
               
               if (email) {
@@ -1036,7 +1037,7 @@ class ClienteController {
           // Crear nuevo cliente solo si no existe
           try {
             await Cliente.create({
-              nombre_completo: nombreCompleto,
+              nombre_completo: nombreFinal,
               telefono,
               email: email || null,
               fkid_ciudad: ciudad.id,
