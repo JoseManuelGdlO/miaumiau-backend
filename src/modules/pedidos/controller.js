@@ -180,24 +180,101 @@ class PedidoController {
         metodo_pago,
         notas,
         productos = [],
-        codigo_promocion
+        codigo_promocion,
+        nombre_cliente // Opcional: nombre del cliente si se va a crear
       } = req.body;
 
-      // Verificar que el cliente existe
-      const cliente = await Cliente.findByPk(fkid_cliente);
-      if (!cliente) {
-        return res.status(400).json({
-          success: false,
-          message: 'El cliente especificado no existe'
-        });
+      let cliente = null;
+      let clienteId = fkid_cliente;
+
+      // Si se proporciona un fkid_cliente, verificar que existe
+      if (fkid_cliente) {
+        cliente = await Cliente.findByPk(fkid_cliente);
+        if (!cliente) {
+          // Si el cliente no existe, intentar buscar o crear uno nuevo
+          clienteId = null;
+        } else {
+          // Verificar que el cliente tiene telefono válido (requerido por el modelo)
+          if (!cliente.telefono) {
+            return res.status(400).json({
+              success: false,
+              message: 'El cliente no tiene un teléfono válido registrado'
+            });
+          }
+        }
       }
 
-      // Verificar que el cliente tiene telefono válido (requerido por el modelo)
-      if (!cliente.telefono) {
-        return res.status(400).json({
-          success: false,
-          message: 'El cliente no tiene un teléfono válido registrado'
-        });
+      // Si no hay cliente válido, buscar o crear uno nuevo
+      if (!cliente) {
+        // Buscar cliente por teléfono o email
+        const searchConditions = [];
+        if (telefono_referencia) {
+          searchConditions.push({ telefono: telefono_referencia });
+        }
+        if (email_referencia) {
+          searchConditions.push({ email: email_referencia });
+        }
+
+        if (searchConditions.length > 0) {
+          cliente = await Cliente.findOne({
+            where: {
+              [Op.or]: searchConditions
+            }
+          });
+        }
+
+        // Si no se encuentra el cliente, crear uno nuevo
+        if (!cliente) {
+          // Validar que tenemos los datos mínimos para crear un cliente
+          if (!telefono_referencia) {
+            return res.status(400).json({
+              success: false,
+              message: 'Se requiere un teléfono de referencia para crear un nuevo cliente'
+            });
+          }
+
+          if (!fkid_ciudad) {
+            return res.status(400).json({
+              success: false,
+              message: 'Se requiere una ciudad para crear un nuevo cliente'
+            });
+          }
+
+          // Verificar que la ciudad existe
+          const ciudad = await City.findByPk(fkid_ciudad);
+          if (!ciudad) {
+            return res.status(400).json({
+              success: false,
+              message: 'La ciudad especificada no existe'
+            });
+          }
+
+          // Verificar que no existe otro cliente con el mismo teléfono
+          const existingCliente = await Cliente.findOne({
+            where: { telefono: telefono_referencia }
+          });
+
+          if (existingCliente) {
+            cliente = existingCliente;
+            clienteId = cliente.id;
+          } else {
+            // Crear nuevo cliente
+            const nombreCompleto = nombre_cliente || `Cliente ${telefono_referencia}`;
+            
+            cliente = await Cliente.create({
+              nombre_completo: nombreCompleto,
+              telefono: telefono_referencia,
+              email: email_referencia || null,
+              fkid_ciudad: fkid_ciudad,
+              canal_contacto: 'WhatsApp', // Valor por defecto
+              direccion_entrega: direccion_entrega || null
+            });
+
+            clienteId = cliente.id;
+          }
+        } else {
+          clienteId = cliente.id;
+        }
       }
 
       // Verificar que la ciudad existe
@@ -259,7 +336,7 @@ class PedidoController {
       const numeroPedido = Pedido.generateNumeroPedido();
 
       const pedido = await Pedido.create({
-        fkid_cliente,
+        fkid_cliente: clienteId,
         telefono_referencia: telefono_referencia || null,
         email_referencia: email_referencia || null,
         direccion_entrega,
