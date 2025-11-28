@@ -53,23 +53,22 @@ const createClienteValidation = [
     .withMessage('El nombre completo es requerido')
     .isLength({ min: 2, max: 150 })
     .withMessage('El nombre debe tener entre 2 y 150 caracteres'),
-  // Aceptar correo_electronico o email
+  // Aceptar correo_electronico o email (opcional)
   body(['correo_electronico', 'email'])
+    .optional()
     .custom((value, { req }) => {
       const email = req.body.correo_electronico ?? req.body.email;
-      return typeof email === 'string' && email.length > 0;
-    })
-    .withMessage('El correo electrónico es requerido')
-    .bail()
-    .custom((value, { req }) => {
-      const email = req.body.correo_electronico ?? req.body.email;
-      // Validación simple de email
+      // Si no se proporciona email, está bien (es opcional)
+      if (!email || email === '') return true;
+      // Si se proporciona, debe ser válido
       return /.+@.+\..+/.test(email);
     })
     .withMessage('El correo electrónico debe ser válido')
     .bail()
     .custom((value, { req }) => {
       const email = req.body.correo_electronico ?? req.body.email;
+      // Si no se proporciona email, está bien
+      if (!email || email === '') return true;
       return typeof email === 'string' && email.length <= 100;
     })
     .withMessage('El correo no puede exceder 100 caracteres'),

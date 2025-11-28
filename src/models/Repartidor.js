@@ -124,7 +124,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     fecha_ingreso: {
       type: DataTypes.DATEONLY,
-      allowNull: false,
+      allowNull: true,
       validate: {
         isDate: true
       }
@@ -138,7 +138,10 @@ module.exports = (sequelize, DataTypes) => {
     },
     direccion: {
       type: DataTypes.TEXT,
-      allowNull: true
+      allowNull: false,
+      validate: {
+        notEmpty: true
+      }
     },
     documento_identidad: {
       type: DataTypes.STRING(50),
