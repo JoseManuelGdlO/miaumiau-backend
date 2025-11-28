@@ -1,4 +1,4 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
 
 class PedidoController {
@@ -81,12 +81,26 @@ class PedidoController {
           {
             model: ProductoPedido,
             as: 'productos',
-            attributes: ['id', 'cantidad', 'precio_unidad', 'precio_total'],
+            attributes: ['id', 'fkid_producto', 'cantidad', 'precio_unidad', 'precio_total', 'descuento_producto', 'notas_producto'],
             include: [
               {
                 model: Inventario,
                 as: 'producto',
-                attributes: ['id', 'nombre', 'sku'],
+                attributes: ['id', 'nombre', 'sku', 'descripcion'],
+                required: false
+              }
+            ],
+            required: false
+          },
+          {
+            model: PaquetePedido,
+            as: 'paquetes',
+            attributes: ['id', 'fkid_paquete', 'cantidad', 'precio_unidad', 'precio_total', 'descuento_paquete', 'notas_paquete'],
+            include: [
+              {
+                model: Paquete,
+                as: 'paquete',
+                attributes: ['id', 'nombre', 'descripcion', 'precio_final'],
                 required: false
               }
             ],
@@ -137,12 +151,26 @@ class PedidoController {
           {
             model: ProductoPedido,
             as: 'productos',
-            attributes: ['id', 'cantidad', 'precio_unidad', 'precio_total', 'descuento_producto', 'notas_producto'],
+            attributes: ['id', 'fkid_producto', 'cantidad', 'precio_unidad', 'precio_total', 'descuento_producto', 'notas_producto'],
             include: [
               {
                 model: Inventario,
                 as: 'producto',
                 attributes: ['id', 'nombre', 'sku', 'descripcion'],
+                required: false
+              }
+            ],
+            required: false
+          },
+          {
+            model: PaquetePedido,
+            as: 'paquetes',
+            attributes: ['id', 'fkid_paquete', 'cantidad', 'precio_unidad', 'precio_total', 'descuento_paquete', 'notas_paquete'],
+            include: [
+              {
+                model: Paquete,
+                as: 'paquete',
+                attributes: ['id', 'nombre', 'descripcion', 'precio_final'],
                 required: false
               }
             ],
@@ -180,6 +208,7 @@ class PedidoController {
         metodo_pago,
         notas,
         productos = [],
+        paquetes = [],
         codigo_promocion,
         nombre_cliente // Opcional: nombre del cliente si se va a crear
       } = req.body;
@@ -349,10 +378,11 @@ class PedidoController {
         descuento_promocion: descuentoPromocion
       });
 
+      // Calcular subtotal inicial
+      let subtotal = 0;
+
       // Agregar productos al pedido si se proporcionan
       if (productos && productos.length > 0) {
-        let subtotal = 0;
-        
         for (const producto of productos) {
           const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto } = producto;
           
@@ -381,17 +411,66 @@ class PedidoController {
 
           subtotal += precioFinal;
         }
-
-        // Aplicar descuento de promoción al subtotal
-        let totalConDescuento = subtotal;
-        if (descuentoPromocion > 0) {
-          const descuento = (subtotal * descuentoPromocion) / 100;
-          totalConDescuento = subtotal - descuento;
-        }
-
-        // Actualizar subtotal del pedido
-        await pedido.actualizarSubtotal(totalConDescuento);
       }
+
+      // Agregar paquetes al pedido si se proporcionan
+      if (paquetes && paquetes.length > 0) {
+        for (const paquete of paquetes) {
+          const { fkid_paquete, cantidad, precio_unidad, descuento_paquete = 0, notas_paquete } = paquete;
+          
+          // Verificar que el paquete existe y está activo
+          const paqueteData = await Paquete.findByPk(fkid_paquete);
+          if (!paqueteData) {
+            return res.status(400).json({
+              success: false,
+              message: `El paquete con ID ${fkid_paquete} no existe`
+            });
+          }
+
+          if (!paqueteData.is_active) {
+            return res.status(400).json({
+              success: false,
+              message: `El paquete con ID ${fkid_paquete} no está activo`
+            });
+          }
+
+          // Usar el precio del paquete si no se proporciona precio_unidad
+          const precioPaquete = precio_unidad || parseFloat(paqueteData.precio_final);
+          const precioTotal = precioPaquete * parseInt(cantidad);
+          const descuento = (precioTotal * parseFloat(descuento_paquete)) / 100;
+          const precioFinal = precioTotal - descuento;
+
+          await PaquetePedido.create({
+            fkid_pedido: pedido.id,
+            fkid_paquete,
+            cantidad,
+            precio_unidad: precioPaquete,
+            precio_total: precioFinal,
+            descuento_paquete,
+            notas_paquete
+          });
+
+          subtotal += precioFinal;
+        }
+      }
+
+      // Validar que hay al menos un producto o paquete
+      if (subtotal === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El pedido debe contener al menos un producto o paquete'
+        });
+      }
+
+      // Aplicar descuento de promoción al subtotal
+      let totalConDescuento = subtotal;
+      if (descuentoPromocion > 0) {
+        const descuento = (subtotal * descuentoPromocion) / 100;
+        totalConDescuento = subtotal - descuento;
+      }
+
+      // Actualizar subtotal del pedido
+      await pedido.actualizarSubtotal(totalConDescuento);
 
       // Obtener el pedido creado con sus relaciones
       const pedidoCompleto = await Pedido.findByPk(pedido.id, {
@@ -417,6 +496,20 @@ class PedidoController {
                 model: Inventario,
                 as: 'producto',
                 attributes: ['id', 'nombre', 'sku'],
+                required: false
+              }
+            ],
+            required: false
+          },
+          {
+            model: PaquetePedido,
+            as: 'paquetes',
+            attributes: ['id', 'cantidad', 'precio_unidad', 'precio_total'],
+            include: [
+              {
+                model: Paquete,
+                as: 'paquete',
+                attributes: ['id', 'nombre', 'descripcion', 'precio_final'],
                 required: false
               }
             ],
@@ -474,6 +567,101 @@ class PedidoController {
 
       await pedido.update(updateData);
 
+      // Actualizar productos si se proporcionan
+      if (updateData.productos && Array.isArray(updateData.productos)) {
+        // Eliminar productos existentes
+        await ProductoPedido.destroy({
+          where: { fkid_pedido: id }
+        });
+
+        // Crear nuevos productos
+        let subtotal = 0;
+        for (const producto of updateData.productos) {
+          const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto } = producto;
+          
+          const productoInventario = await Inventario.findByPk(fkid_producto);
+          if (!productoInventario) {
+            continue; // Saltar productos inválidos
+          }
+
+          const precioTotal = parseFloat(precio_unidad) * parseInt(cantidad);
+          const descuento = (precioTotal * parseFloat(descuento_producto)) / 100;
+          const precioFinal = precioTotal - descuento;
+
+          await ProductoPedido.create({
+            fkid_pedido: id,
+            fkid_producto,
+            cantidad,
+            precio_unidad,
+            precio_total: precioFinal,
+            descuento_producto,
+            notas_producto
+          });
+
+          subtotal += precioFinal;
+        }
+
+        // Actualizar subtotal del pedido
+        await pedido.actualizarSubtotal(subtotal);
+      }
+
+      // Actualizar paquetes si se proporcionan (incluso si es un array vacío)
+      if (updateData.paquetes !== undefined && Array.isArray(updateData.paquetes)) {
+        // Eliminar paquetes existentes
+        await PaquetePedido.destroy({
+          where: { fkid_pedido: id }
+        });
+
+        // Crear nuevos paquetes solo si el array no está vacío
+        let subtotalPaquetes = 0;
+        if (updateData.paquetes.length > 0) {
+          for (const paquete of updateData.paquetes) {
+            const { fkid_paquete, cantidad, precio_unidad, descuento_paquete = 0, notas_paquete } = paquete;
+            
+            const paqueteData = await Paquete.findByPk(fkid_paquete);
+            if (!paqueteData || !paqueteData.is_active) {
+              continue; // Saltar paquetes inválidos o inactivos
+            }
+
+            const precioPaquete = precio_unidad || parseFloat(paqueteData.precio_final);
+            const precioTotal = precioPaquete * parseInt(cantidad);
+            const descuento = (precioTotal * parseFloat(descuento_paquete)) / 100;
+            const precioFinal = precioTotal - descuento;
+
+            await PaquetePedido.create({
+              fkid_pedido: id,
+              fkid_paquete,
+              cantidad,
+              precio_unidad: precioPaquete,
+              precio_total: precioFinal,
+              descuento_paquete,
+              notas_paquete
+            });
+
+            subtotalPaquetes += precioFinal;
+          }
+        }
+
+        // Actualizar subtotal: si hay productos, sumar ambos; si no, solo paquetes
+        if (updateData.productos && Array.isArray(updateData.productos) && updateData.productos.length > 0) {
+          // Los productos ya fueron procesados arriba, obtener su subtotal
+          const productosTotal = await ProductoPedido.findAll({
+            attributes: [
+              [ProductoPedido.sequelize.fn('SUM', ProductoPedido.sequelize.col('precio_total')), 'total']
+            ],
+            where: { 
+              fkid_pedido: id,
+              baja_logica: false
+            }
+          });
+          const productosSum = parseFloat(productosTotal[0]?.dataValues?.total || 0);
+          await pedido.actualizarSubtotal(productosSum + subtotalPaquetes);
+        } else {
+          // Solo paquetes o sin productos
+          await pedido.actualizarSubtotal(subtotalPaquetes);
+        }
+      }
+
       // Obtener el pedido actualizado con sus relaciones
       const pedidoActualizado = await Pedido.findByPk(id, {
         include: [
@@ -498,6 +686,20 @@ class PedidoController {
                 model: Inventario,
                 as: 'producto',
                 attributes: ['id', 'nombre', 'sku'],
+                required: false
+              }
+            ],
+            required: false
+          },
+          {
+            model: PaquetePedido,
+            as: 'paquetes',
+            attributes: ['id', 'cantidad', 'precio_unidad', 'precio_total'],
+            include: [
+              {
+                model: Paquete,
+                as: 'paquete',
+                attributes: ['id', 'nombre', 'descripcion', 'precio_final'],
                 required: false
               }
             ],

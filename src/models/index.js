@@ -28,6 +28,7 @@ const Repartidor = require('./Repartidor');
 const Notificacion = require('./Notificacion');
 const Paquete = require('./Paquete');
 const ProductoPaquete = require('./ProductoPaquete');
+const PaquetePedido = require('./PaquetePedido');
 
 // Inicializar modelos
 const models = {
@@ -56,7 +57,8 @@ const models = {
   Repartidor: Repartidor(sequelize, DataTypes),
   Notificacion: Notificacion(sequelize, DataTypes),
   Paquete: Paquete(sequelize, DataTypes),
-  ProductoPaquete: ProductoPaquete(sequelize, DataTypes)
+  ProductoPaquete: ProductoPaquete(sequelize, DataTypes),
+  PaquetePedido: PaquetePedido(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -242,6 +244,11 @@ models.Pedido.hasMany(models.ProductoPedido, {
   as: 'productos'
 });
 
+models.Pedido.hasMany(models.PaquetePedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'paquetes'
+});
+
 // Asociaciones para ProductoPedido
 models.ProductoPedido.belongsTo(models.Pedido, {
   foreignKey: 'fkid_pedido',
@@ -406,6 +413,23 @@ models.ProductoPaquete.belongsTo(models.Inventario, {
 models.Inventario.hasMany(models.ProductoPaquete, {
   foreignKey: 'fkid_producto',
   as: 'paquetes'
+});
+
+// Asociaciones para PaquetePedido
+models.PaquetePedido.belongsTo(models.Pedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'pedido'
+});
+
+models.PaquetePedido.belongsTo(models.Paquete, {
+  foreignKey: 'fkid_paquete',
+  as: 'paquete'
+});
+
+// Asociaciones inversas
+models.Paquete.hasMany(models.PaquetePedido, {
+  foreignKey: 'fkid_paquete',
+  as: 'pedidos'
 });
 
 models.sequelize = sequelize;
