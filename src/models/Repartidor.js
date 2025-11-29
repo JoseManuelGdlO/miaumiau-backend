@@ -32,22 +32,23 @@ module.exports = (sequelize, DataTypes) => {
     },
     email: {
       type: DataTypes.STRING(100),
-      allowNull: true,
+      allowNull: false,
       unique: true,
       validate: {
+        notEmpty: true,
         isEmail: true,
-        len: [0, 100]
+        len: [1, 100]
       }
     },
     fkid_ciudad: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'cities',
         key: 'id'
       },
       onUpdate: 'CASCADE',
-      onDelete: 'RESTRICT'
+      onDelete: 'SET NULL'
     },
     fkid_usuario: {
       type: DataTypes.INTEGER,
@@ -138,10 +139,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     direccion: {
       type: DataTypes.TEXT,
-      allowNull: false,
-      validate: {
-        notEmpty: true
-      }
+      allowNull: true
     },
     documento_identidad: {
       type: DataTypes.STRING(50),

@@ -26,22 +26,23 @@ const validateRepartidor = [
     .isLength({ min: 10, max: 20 })
     .withMessage('El teléfono debe tener entre 10 y 20 caracteres'),
   
-  body('fkid_ciudad')
-    .isInt({ min: 1 })
-    .withMessage('La ciudad es requerida'),
-  
-  body('direccion')
-    .notEmpty()
-    .withMessage('La dirección es requerida')
-    .isLength({ min: 5, max: 255 })
-    .withMessage('La dirección debe tener entre 5 y 255 caracteres'),
-  
   body('email')
-    .optional()
+    .notEmpty()
+    .withMessage('El email es requerido')
     .isEmail()
     .withMessage('El email debe ser válido')
     .isLength({ max: 100 })
     .withMessage('El email no puede exceder 100 caracteres'),
+  
+  body('fkid_ciudad')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El ID de ciudad debe ser válido'),
+  
+  body('direccion')
+    .optional()
+    .isLength({ min: 5, max: 255 })
+    .withMessage('La dirección debe tener entre 5 y 255 caracteres'),
   
   body('fkid_usuario')
     .optional()
