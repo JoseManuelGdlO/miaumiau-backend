@@ -4,11 +4,13 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const { sequelize } = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
+const autoEntregarPedidos = require('./jobs/autoEntregarPedidos');
 
 // Importar rutas
 const authRoutes = require('./modules/auth/routes');
@@ -164,6 +166,22 @@ const startServer = async () => {
       console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
     });
+
+    // Iniciar jobs programados
+    // Job para auto-entregar pedidos: se ejecuta cada hora (al minuto 0 de cada hora)
+    cron.schedule('0 * * * *', async () => {
+      console.log(`[${new Date().toISOString()}] Ejecutando job: Auto-entregar pedidos...`);
+      try {
+        await autoEntregarPedidos();
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error ejecutando job auto-entregar pedidos:`, error);
+      }
+    }, {
+      scheduled: true,
+      timezone: "America/Mexico_City" // Ajusta según tu zona horaria
+    });
+    
+    console.log('✅ Jobs programados iniciados: Auto-entregar pedidos (cada hora)');
   } catch (error) {
     console.error('❌ Error al iniciar el servidor:', error);
     process.exit(1);
