@@ -98,6 +98,12 @@ module.exports = (sequelize, DataTypes) => {
         len: [0, 1000]
       }
     },
+    timezone: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      defaultValue: 'America/Mexico_City',
+      comment: 'Zona horaria de la ciudad (formato IANA, ej: America/Mexico_City, America/Bogota)'
+    },
     baja_logica: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
