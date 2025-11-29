@@ -1,4 +1,4 @@
-const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido } = require('../../models');
+const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 
@@ -197,15 +197,19 @@ class RutaController {
       const { fecha } = req.params;
       const { fkid_ciudad, estado } = req.query;
 
+      console.log(`[getRutasByDate] Obteniendo rutas para fecha: ${fecha}, ciudad: ${fkid_ciudad}, estado: ${estado}`);
+
       const where = {
         fecha_ruta: fecha,
-        baja_logica: false
+        baja_logica: false,
+        estado: 'planificada' // Solo rutas planificadas
       };
 
       if (fkid_ciudad) {
         where.fkid_ciudad = fkid_ciudad;
       }
 
+      // Si se especifica un estado diferente, se puede sobrescribir
       if (estado) {
         where.estado = estado;
       }
@@ -233,6 +237,32 @@ class RutaController {
                   {
                     model: Cliente,
                     as: 'cliente'
+                  },
+                  {
+                    model: ProductoPedido,
+                    as: 'productos',
+                    required: false,
+                    separate: true,
+                    include: [
+                      {
+                        model: Inventario,
+                        as: 'producto',
+                        required: false
+                      }
+                    ]
+                  },
+                  {
+                    model: PaquetePedido,
+                    as: 'paquetes',
+                    required: false,
+                    separate: true,
+                    include: [
+                      {
+                        model: Paquete,
+                        as: 'paquete',
+                        required: false
+                      }
+                    ]
                   }
                 ]
               }
@@ -243,11 +273,66 @@ class RutaController {
         order: [['created_at', 'ASC']]
       });
 
+      console.log(`[getRutasByDate] Encontradas ${rutas.length} rutas`);
+
+      // Cargar productos y paquetes para cada pedido manualmente
+      const rutasConDetalles = [];
+      for (const ruta of rutas) {
+        console.log(`[getRutasByDate] Procesando ruta ${ruta.id} con ${ruta.pedidos.length} pedidos`);
+        const rutaData = ruta.toJSON();
+        const pedidosConDetalles = [];
+        
+        for (const rutaPedido of ruta.pedidos) {
+          const rutaPedidoData = rutaPedido.toJSON();
+          
+          if (rutaPedidoData.pedido && rutaPedidoData.pedido.id) {
+            // Cargar productos manualmente
+            const productos = await ProductoPedido.findAll({
+              where: { fkid_pedido: rutaPedidoData.pedido.id },
+              include: [
+                {
+                  model: Inventario,
+                  as: 'producto',
+                  required: false
+                }
+              ]
+            });
+            
+            // Cargar paquetes manualmente
+            const paquetes = await PaquetePedido.findAll({
+              where: { fkid_pedido: rutaPedidoData.pedido.id },
+              include: [
+                {
+                  model: Paquete,
+                  as: 'paquete',
+                  required: false
+                }
+              ]
+            });
+            
+            // Asignar productos y paquetes al pedido
+            rutaPedidoData.pedido.productos = productos.map(p => p.toJSON());
+            rutaPedidoData.pedido.paquetes = paquetes.map(p => p.toJSON());
+            
+            // Log para depuración
+            console.log(`Pedido ${rutaPedidoData.pedido.id} (${rutaPedidoData.pedido.numero_pedido}): ${productos.length} productos, ${paquetes.length} paquetes`);
+          }
+          
+          pedidosConDetalles.push(rutaPedidoData);
+        }
+        
+        rutaData.pedidos = pedidosConDetalles;
+        rutasConDetalles.push(rutaData);
+      }
+
+      // Usar las rutas con detalles cargados manualmente
+      const rutasJSON = rutasConDetalles;
+
       res.json({
         success: true,
         data: {
           fecha,
-          rutas,
+          rutas: rutasJSON,
           total_rutas: rutas.length,
           total_pedidos: rutas.reduce((sum, ruta) => sum + ruta.pedidos.length, 0)
         }
