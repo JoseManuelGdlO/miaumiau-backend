@@ -10,22 +10,24 @@ class PedidoController {
         fkid_ciudad,
         estado,
         metodo_pago,
-        activos = 'true',
+        activos,
         search,
-        start_date,
-        end_date,
+        fecha_pedido,
+        fecha_entrega,
         page = 1,
         limit = 10
       } = req.query;
       
       let whereClause = {};
       
-      // Filtrar por activos/inactivos
+      // Filtrar por activos/inactivos (solo si se especifica el parámetro)
+      // Si no se proporciona, traer todos los pedidos (activos e inactivos)
       if (activos === 'true') {
         whereClause.baja_logica = false;
       } else if (activos === 'false') {
         whereClause.baja_logica = true;
       }
+      // Si activos no se proporciona, no se aplica filtro (trae todos)
       
       // Filtrar por cliente
       if (fkid_cliente) {
@@ -47,10 +49,33 @@ class PedidoController {
         whereClause.metodo_pago = metodo_pago;
       }
 
-      // Filtrar por rango de fechas
-      if (start_date && end_date) {
+      // Filtrar por fecha de pedido (día completo)
+      if (fecha_pedido) {
+        // Crear fechas usando el inicio del día y el inicio del día siguiente en UTC
+        // Esto evita problemas de zona horaria al usar UTC explícitamente
+        const fechaInicio = new Date(fecha_pedido + 'T00:00:00.000Z');
+        const fechaSiguiente = new Date(fechaInicio);
+        fechaSiguiente.setUTCDate(fechaSiguiente.getUTCDate() + 1);
+        
         whereClause.fecha_pedido = {
-          [Op.between]: [new Date(start_date), new Date(end_date)]
+          [Op.gte]: fechaInicio,
+          [Op.lt]: fechaSiguiente
+        };
+      }
+
+      // Filtrar por fecha de entrega estimada (día completo)
+      if (fecha_entrega) {
+        // Crear fechas usando el inicio del día y el inicio del día siguiente en UTC
+        // Esto asegura que una fecha como 2024-11-30 17:17 (almacenada en cualquier formato)
+        // se compare correctamente con el rango del día 30 en UTC
+        // Usamos >= inicio del día y < inicio del día siguiente para incluir todo el día
+        const fechaInicio = new Date(fecha_entrega + 'T00:00:00.000Z');
+        const fechaSiguiente = new Date(fechaInicio);
+        fechaSiguiente.setUTCDate(fechaSiguiente.getUTCDate() + 1);
+        
+        whereClause.fecha_entrega_estimada = {
+          [Op.gte]: fechaInicio,
+          [Op.lt]: fechaSiguiente
         };
       }
 
