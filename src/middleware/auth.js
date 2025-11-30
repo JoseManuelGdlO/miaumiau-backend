@@ -15,13 +15,35 @@ const authenticateToken = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Si el token incluye permisos, usarlos directamente (más eficiente)
+    // Si el token incluye permisos, cargar al menos la ciudad_id del usuario
     if (decoded.permissions) {
+      // Cargar solo la información esencial del usuario (ciudad_id)
+      const user = await User.findByPk(decoded.userId, {
+        attributes: ['id', 'ciudad_id'],
+        include: [
+          {
+            model: require('../models').City,
+            as: 'ciudad',
+            attributes: ['id', 'nombre', 'departamento'],
+            required: false
+          }
+        ]
+      });
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
+      }
+
       req.user = {
-        id: decoded.userId,
+        id: user.id,
         email: decoded.email,
         role: decoded.role,
-        permissions: decoded.permissions
+        permissions: decoded.permissions,
+        ciudad_id: user.ciudad_id,
+        ciudad: user.ciudad
       };
       req.userPermissions = decoded.permissions;
       return next();

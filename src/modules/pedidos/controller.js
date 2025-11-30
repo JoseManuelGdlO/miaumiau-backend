@@ -1,5 +1,6 @@
 const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
+const { applyCityFilter } = require('../../utils/cityFilter');
 
 class PedidoController {
   // Obtener todos los pedidos
@@ -34,10 +35,15 @@ class PedidoController {
         whereClause.fkid_cliente = fkid_cliente;
       }
       
-      // Filtrar por ciudad
+      // Filtrar por ciudad (si viene en query params)
       if (fkid_ciudad) {
         whereClause.fkid_ciudad = fkid_ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver pedidos de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los pedidos
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
       
       // Filtrar por estado
       if (estado) {

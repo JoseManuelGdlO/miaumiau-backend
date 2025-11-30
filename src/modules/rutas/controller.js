@@ -1,6 +1,7 @@
 const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
+const { applyCityFilter } = require('../../utils/cityFilter');
 
 class RutaController {
   // Crear nueva ruta
@@ -126,6 +127,11 @@ class RutaController {
         where.fkid_ciudad = fkid_ciudad;
       }
 
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver rutas de su ciudad
+      // Si no tiene ciudad asignada, puede ver todas las rutas
+      applyCityFilter(req, where, 'fkid_ciudad');
+
       if (fkid_repartidor) {
         where.fkid_repartidor = fkid_repartidor;
       }
@@ -208,6 +214,9 @@ class RutaController {
       if (fkid_ciudad) {
         where.fkid_ciudad = fkid_ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      applyCityFilter(req, where, 'fkid_ciudad');
 
       // Si se especifica un estado diferente, se puede sobrescribir
       if (estado) {
@@ -360,13 +369,25 @@ class RutaController {
       const fechaInicio = new Date(fecha + 'T00:00:00.000Z');
       const fechaFin = new Date(fecha + 'T23:59:59.999Z');
 
+      // Construir whereClause para pedidos
+      const pedidoWhere = {
+        fecha_entrega_estimada: {
+          [Op.between]: [fechaInicio, fechaFin]
+        },
+        baja_logica: false
+      };
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver pedidos de su ciudad
+      if (fkid_ciudad) {
+        pedidoWhere.fkid_ciudad = fkid_ciudad;
+      }
+      applyCityFilter(req, pedidoWhere, 'fkid_ciudad');
+
       // Buscar pedidos que no estén asignados a ninguna ruta para esa fecha de entrega
       const pedidosSinAsignar = await Pedido.findAll({
         where: {
-          fecha_entrega_estimada: {
-            [Op.between]: [fechaInicio, fechaFin]
-          },
-          baja_logica: false,
+          ...pedidoWhere,
           id: {
             [Op.notIn]: await RutaPedido.findAll({
               attributes: ['fkid_pedido'],
@@ -888,6 +909,9 @@ class RutaController {
       if (fkid_ciudad) {
         where.fkid_ciudad = fkid_ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      applyCityFilter(req, where, 'fkid_ciudad');
 
       const rutas = await Ruta.findAll({
         where,

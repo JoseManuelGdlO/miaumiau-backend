@@ -1,5 +1,6 @@
 const { Repartidor, City, User, Ruta } = require('../../models');
 const { Op } = require('sequelize');
+const { applyCityFilter } = require('../../utils/cityFilter');
 
 class RepartidorController {
   // Obtener todos los repartidores
@@ -30,6 +31,11 @@ class RepartidorController {
       if (ciudad) {
         whereClause.fkid_ciudad = ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver repartidores de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los repartidores
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
 
       if (disponibles === 'true') {
         whereClause.estado = 'disponible';

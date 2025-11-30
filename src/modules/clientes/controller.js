@@ -2,6 +2,7 @@ const { Cliente, Mascota, City, Pedido } = require('../../models');
 const { Op } = require('sequelize');
 const XLSX = require('xlsx');
 const multer = require('multer');
+const { applyCityFilter } = require('../../utils/cityFilter');
 
 class ClienteController {
   // Obtener todos los clientes
@@ -24,11 +25,16 @@ class ClienteController {
         whereClause.isActive = false;
       }
       
-      // Filtrar por ciudad
+      // Filtrar por ciudad (si viene en query params)
       const fkidCiudadQuery = ciudad_id ?? req.query.fkid_ciudad;
       if (fkidCiudadQuery) {
         whereClause.fkid_ciudad = fkidCiudadQuery;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver clientes de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los clientes
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
 
       // Búsqueda por nombre, email o teléfono
       if (search) {
@@ -459,6 +465,11 @@ class ClienteController {
   // Obtener clientes activos
   async getActiveClientes(req, res, next) {
     try {
+      const whereClause = { isActive: true };
+      
+      // Aplicar filtro de ciudad según el usuario autenticado
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
+
       const clientes = await Cliente.findAll({
         include: [
           {
@@ -474,7 +485,7 @@ class ClienteController {
             attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
           }
         ],
-        where: { isActive: true },
+        where: whereClause,
         order: [['nombre_completo', 'ASC']]
       });
 
