@@ -20,14 +20,14 @@ class PedidoController {
       
       let whereClause = {};
       
-      // Filtrar por activos/inactivos (solo si se especifica el parámetro)
-      // Si no se proporciona, traer todos los pedidos (activos e inactivos)
-      if (activos === 'true') {
+      // Filtrar por activos/inactivos
+      // Por defecto, solo mostrar pedidos activos (baja_logica: false)
+      if (activos === 'false') {
+        whereClause.baja_logica = true; // Solo inactivos
+      } else {
+        // Por defecto o si activos === 'true', solo mostrar activos
         whereClause.baja_logica = false;
-      } else if (activos === 'false') {
-        whereClause.baja_logica = true;
       }
-      // Si activos no se proporciona, no se aplica filtro (trae todos)
       
       // Filtrar por cliente
       if (fkid_cliente) {
