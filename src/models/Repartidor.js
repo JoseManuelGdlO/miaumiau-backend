@@ -199,6 +199,13 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    contrasena: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      validate: {
+        len: [0, 255]
+      }
     }
   }, {
     tableName: 'repartidores',
@@ -398,6 +405,13 @@ module.exports = (sequelize, DataTypes) => {
       },
       group: ['fkid_ciudad']
     });
+  };
+
+  // Método para ocultar la contraseña en las respuestas JSON
+  Repartidor.prototype.toJSON = function() {
+    const values = Object.assign({}, this.get());
+    delete values.contrasena;
+    return values;
   };
 
   return Repartidor;
