@@ -77,7 +77,8 @@ const validatePedido = [
     .withMessage('El descuento debe ser entre 0 y 100'),
   
   body('codigo_promocion')
-    .optional()
+    .optional({ nullable: true })
+    .if((value) => value !== null && value !== undefined && value !== '')
     .isLength({ min: 3, max: 50 })
     .withMessage('El código de promoción debe tener entre 3 y 50 caracteres'),
   
