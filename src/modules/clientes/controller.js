@@ -222,7 +222,63 @@ class ClienteController {
       }
 
       // Verificar que la ciudad existe
-      const ciudad = await City.findByPk(fkid_ciudad);
+      let ciudadAsignada = fkid_ciudad;
+      //Si viene en string, limpiar el texto y buscar la ciudad en la BD
+      if (typeof fkid_ciudad === 'string') {
+        // Limpiar el texto de entrada
+        const cleanCity = fkid_ciudad.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        
+        // Obtener todas las ciudades activas de la BD
+        const todasLasCiudades = await City.findAll({
+          where: { baja_logica: false },
+          attributes: ['id', 'nombre']
+        });
+
+        // Crear un mapa de ciudades normalizadas con sus IDs
+        const ciudadesMap = new Map();
+        todasLasCiudades.forEach(ciudad => {
+          const nombreLower = ciudad.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          
+          // Guardar con el nombre exacto normalizado
+          ciudadesMap.set(nombreLower, ciudad.id);
+          
+          // Guardar variaciones comunes (sin puntos, sin espacios, etc.)
+          ciudadesMap.set(nombreLower.replace(/\./g, ''), ciudad.id); // Sin puntos
+          ciudadesMap.set(nombreLower.replace(/\s+/g, ''), ciudad.id); // Sin espacios
+          ciudadesMap.set(nombreLower.replace(/\./g, '').replace(/\s+/g, ''), ciudad.id); // Sin puntos ni espacios
+          
+          // Guardar con "cd" en lugar de "ciudad" y viceversa
+          if (nombreLower.startsWith('ciudad')) {
+            ciudadesMap.set(nombreLower.replace('ciudad', 'cd'), ciudad.id);
+          }
+          if (nombreLower.startsWith('cd')) {
+            ciudadesMap.set(nombreLower.replace('cd', 'ciudad'), ciudad.id);
+          }
+        });
+
+        // Buscar la ciudad en el mapa
+        ciudadAsignada = ciudadesMap.get(cleanCity) || 
+                         ciudadesMap.get(cleanCity.replace(/\./g, '')) ||
+                         ciudadesMap.get(cleanCity.replace(/\s+/g, '')) ||
+                         ciudadesMap.get(cleanCity.replace(/\./g, '').replace(/\s+/g, '')) ||
+                         3; // Valor por defecto si no se encuentra
+
+        // Si aún no se encontró, hacer una búsqueda más flexible
+        if (ciudadAsignada === 3) {
+          const ciudadEncontrada = todasLasCiudades.find(c => {
+            const nombreLower = c.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            return nombreLower === cleanCity ||
+                   nombreLower.includes(cleanCity) ||
+                   cleanCity.includes(nombreLower) ||
+                   nombreLower.replace(/\./g, '').replace(/\s+/g, '') === cleanCity.replace(/\./g, '').replace(/\s+/g, '');
+          });
+          
+          if (ciudadEncontrada) {
+            ciudadAsignada = ciudadEncontrada.id;
+          }
+        }
+      }
+      const ciudad = await City.findByPk(ciudadAsignada);
       if (!ciudad) {
         return res.status(400).json({
           success: false,
@@ -234,7 +290,7 @@ class ClienteController {
         nombre_completo,
         telefono,
         email,
-        fkid_ciudad,
+        fkid_ciudad: ciudadAsignada,
         canal_contacto,
         direccion_entrega,
         notas_especiales
