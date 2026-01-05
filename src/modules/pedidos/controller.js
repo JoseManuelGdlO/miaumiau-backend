@@ -241,7 +241,8 @@ class PedidoController {
         productos = [],
         paquetes = [],
         codigo_promocion,
-        nombre_cliente // Opcional: nombre del cliente si se va a crear
+        nombre_cliente, // Opcional: nombre del cliente si se va a crear
+        stripe_link_id // Opcional: ID del link de pago de Stripe
       } = req.body;
 
       let cliente = null;
@@ -402,11 +403,13 @@ class PedidoController {
         direccion_entrega,
         fkid_ciudad,
         numero_pedido: numeroPedido,
+        estado: 'pendiente', // Estado inicial siempre pendiente
         fecha_entrega_estimada: fecha_entrega_estimada || null,
         metodo_pago: metodo_pago || null,
         notas: notas || null,
         codigo_promocion: codigo_promocion || null,
-        descuento_promocion: descuentoPromocion
+        descuento_promocion: descuentoPromocion,
+        stripe_link_id: stripe_link_id || null
       });
 
       // Calcular subtotal inicial

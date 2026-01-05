@@ -135,6 +135,14 @@ module.exports = (sequelize, DataTypes) => {
         max: 100
       }
     },
+    stripe_link_id: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: '',
+      validate: {
+        len: [0, 100]
+      }
+    },
     baja_logica: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
