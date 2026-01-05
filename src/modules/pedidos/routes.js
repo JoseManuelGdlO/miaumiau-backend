@@ -82,6 +82,11 @@ const validatePedido = [
     .isLength({ min: 3, max: 50 })
     .withMessage('El código de promoción debe tener entre 3 y 50 caracteres'),
   
+  body('stripe_link_id')
+    .optional({ nullable: true })
+    .isLength({ max: 100 })
+    .withMessage('El stripe_link_id no puede exceder 100 caracteres'),
+  
   handleValidationErrors
 ];
 
