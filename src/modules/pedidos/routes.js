@@ -33,9 +33,18 @@ const validatePedido = [
     .withMessage('La dirección de entrega no puede estar vacía'),
   
   body('fkid_ciudad')
-    .isInt({ min: 1 })
-    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
-  
+    .custom((value) => {
+      // Aceptar números enteros positivos o strings (nombres de ciudad)
+      if (typeof value === 'number') {
+        return Number.isInteger(value) && value >= 1;
+      }
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+      return false;
+    })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo o el nombre de una ciudad'),
+
   body('fecha_entrega_estimada')
     .optional()
     .isISO8601()

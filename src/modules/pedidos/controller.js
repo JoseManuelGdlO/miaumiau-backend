@@ -245,6 +245,76 @@ class PedidoController {
         stripe_link_id // Opcional: ID del link de pago de Stripe
       } = req.body;
 
+      // Convertir fkid_ciudad de string a ID si es necesario
+      let ciudadIdFinal = fkid_ciudad;
+      if (typeof fkid_ciudad === 'string') {
+        // Limpiar el texto de entrada
+        const cleanCity = fkid_ciudad.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        
+        // Obtener todas las ciudades activas de la BD
+        const todasLasCiudades = await City.findAll({
+          where: { baja_logica: false },
+          attributes: ['id', 'nombre']
+        });
+
+        // Crear un mapa de ciudades normalizadas con sus IDs
+        const ciudadesMap = new Map();
+        todasLasCiudades.forEach(ciudad => {
+          const nombreLower = ciudad.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          
+          // Guardar con el nombre exacto normalizado
+          ciudadesMap.set(nombreLower, ciudad.id);
+          
+          // Guardar variaciones comunes (sin puntos, sin espacios, etc.)
+          ciudadesMap.set(nombreLower.replace(/\./g, ''), ciudad.id); // Sin puntos
+          ciudadesMap.set(nombreLower.replace(/\s+/g, ''), ciudad.id); // Sin espacios
+          ciudadesMap.set(nombreLower.replace(/\./g, '').replace(/\s+/g, ''), ciudad.id); // Sin puntos ni espacios
+          
+          // Guardar con "cd" en lugar de "ciudad" y viceversa
+          if (nombreLower.startsWith('ciudad')) {
+            ciudadesMap.set(nombreLower.replace('ciudad', 'cd'), ciudad.id);
+          }
+          if (nombreLower.startsWith('cd')) {
+            ciudadesMap.set(nombreLower.replace('cd', 'ciudad'), ciudad.id);
+          }
+        });
+
+        // Buscar la ciudad en el mapa
+        ciudadIdFinal = ciudadesMap.get(cleanCity) || 
+                       ciudadesMap.get(cleanCity.replace(/\./g, '')) ||
+                       ciudadesMap.get(cleanCity.replace(/\s+/g, '')) ||
+                       ciudadesMap.get(cleanCity.replace(/\./g, '').replace(/\s+/g, '')) ||
+                       null; // null si no se encuentra
+
+        // Si aún no se encontró, hacer una búsqueda más flexible
+        if (!ciudadIdFinal) {
+          const ciudadEncontrada = todasLasCiudades.find(c => {
+            const nombreLower = c.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            return nombreLower === cleanCity ||
+                   nombreLower.includes(cleanCity) ||
+                   cleanCity.includes(nombreLower) ||
+                   nombreLower.replace(/\./g, '').replace(/\s+/g, '') === cleanCity.replace(/\./g, '').replace(/\s+/g, '');
+          });
+          
+          if (ciudadEncontrada) {
+            ciudadIdFinal = ciudadEncontrada.id;
+          }
+        }
+
+        // Si no se encontró, retornar error con información útil
+        if (!ciudadIdFinal) {
+          // Obtener lista de ciudades disponibles para el mensaje de error
+          const ciudadesDisponibles = todasLasCiudades.map(c => c.nombre).join(', ');
+          console.log(`[DEBUG] Ciudad buscada: "${fkid_ciudad}" (normalizada: "${cleanCity}")`);
+          console.log(`[DEBUG] Ciudades disponibles: ${ciudadesDisponibles}`);
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${fkid_ciudad}" no existe. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+      }
+
       let cliente = null;
       let clienteId = fkid_cliente;
 
@@ -294,7 +364,7 @@ class PedidoController {
             });
           }
 
-          if (!fkid_ciudad) {
+          if (!ciudadIdFinal) {
             return res.status(400).json({
               success: false,
               message: 'Se requiere una ciudad para crear un nuevo cliente'
@@ -302,7 +372,7 @@ class PedidoController {
           }
 
           // Verificar que la ciudad existe
-          const ciudad = await City.findByPk(fkid_ciudad);
+          const ciudad = await City.findByPk(ciudadIdFinal);
           if (!ciudad) {
             return res.status(400).json({
               success: false,
@@ -326,7 +396,7 @@ class PedidoController {
               nombre_completo: nombreCompleto,
               telefono: telefono_referencia,
               email: email_referencia || null,
-              fkid_ciudad: fkid_ciudad,
+              fkid_ciudad: ciudadIdFinal,
               canal_contacto: 'WhatsApp', // Valor por defecto
               direccion_entrega: direccion_entrega || null
             });
@@ -339,7 +409,7 @@ class PedidoController {
       }
 
       // Verificar que la ciudad existe
-      const ciudad = await City.findByPk(fkid_ciudad);
+      const ciudad = await City.findByPk(ciudadIdFinal);
       if (!ciudad) {
         return res.status(400).json({
           success: false,
@@ -350,17 +420,24 @@ class PedidoController {
       // Validar código de promoción si se proporciona
       let promocion = null;
       let descuentoPromocion = 0;
-      if (codigo_promocion) {
+      // Ignorar si es null, undefined, string vacío, o el string "null"
+      const codigoPromocionValido = codigo_promocion && 
+                                    codigo_promocion !== 'null' && 
+                                    codigo_promocion !== '' && 
+                                    typeof codigo_promocion === 'string' && 
+                                    codigo_promocion.trim().length > 0;
+      
+      if (codigoPromocionValido) {
         promocion = await Promotion.findOne({
           where: {
-            codigo: codigo_promocion,
+            codigo: codigo_promocion.trim(),
             baja_logica: false
           },
           include: [
             {
               model: City,
               as: 'ciudades',
-              where: { id: fkid_ciudad },
+              where: { id: ciudadIdFinal },
               required: false
             }
           ]
@@ -401,13 +478,13 @@ class PedidoController {
         telefono_referencia: telefono_referencia || null,
         email_referencia: email_referencia || null,
         direccion_entrega,
-        fkid_ciudad,
+        fkid_ciudad: ciudadIdFinal,
         numero_pedido: numeroPedido,
         estado: 'pendiente', // Estado inicial siempre pendiente
         fecha_entrega_estimada: fecha_entrega_estimada || null,
         metodo_pago: metodo_pago || null,
         notas: notas || null,
-        codigo_promocion: codigo_promocion || null,
+        codigo_promocion: codigoPromocionValido ? codigo_promocion.trim() : null,
         descuento_promocion: descuentoPromocion,
         stripe_link_id: stripe_link_id || null
       });
