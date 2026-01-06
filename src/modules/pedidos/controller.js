@@ -1,6 +1,7 @@
 const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
+const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
 class PedidoController {
   // Obtener todos los pedidos
@@ -245,74 +246,20 @@ class PedidoController {
         stripe_link_id // Opcional: ID del link de pago de Stripe
       } = req.body;
 
-      // Convertir fkid_ciudad de string a ID si es necesario
-      let ciudadIdFinal = fkid_ciudad;
-      if (typeof fkid_ciudad === 'string') {
-        // Limpiar el texto de entrada
-        const cleanCity = fkid_ciudad.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        
-        // Obtener todas las ciudades activas de la BD
+      // Convertir fkid_ciudad de string a ID si es necesario usando el utility
+      const ciudadIdFinal = await mapCityNameToId(fkid_ciudad);
+      if (!ciudadIdFinal) {
+        // Obtener lista de ciudades disponibles para el mensaje de error
         const todasLasCiudades = await City.findAll({
           where: { baja_logica: false },
-          attributes: ['id', 'nombre']
+          attributes: ['nombre']
         });
-
-        // Crear un mapa de ciudades normalizadas con sus IDs
-        const ciudadesMap = new Map();
-        todasLasCiudades.forEach(ciudad => {
-          const nombreLower = ciudad.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-          
-          // Guardar con el nombre exacto normalizado
-          ciudadesMap.set(nombreLower, ciudad.id);
-          
-          // Guardar variaciones comunes (sin puntos, sin espacios, etc.)
-          ciudadesMap.set(nombreLower.replace(/\./g, ''), ciudad.id); // Sin puntos
-          ciudadesMap.set(nombreLower.replace(/\s+/g, ''), ciudad.id); // Sin espacios
-          ciudadesMap.set(nombreLower.replace(/\./g, '').replace(/\s+/g, ''), ciudad.id); // Sin puntos ni espacios
-          
-          // Guardar con "cd" en lugar de "ciudad" y viceversa
-          if (nombreLower.startsWith('ciudad')) {
-            ciudadesMap.set(nombreLower.replace('ciudad', 'cd'), ciudad.id);
-          }
-          if (nombreLower.startsWith('cd')) {
-            ciudadesMap.set(nombreLower.replace('cd', 'ciudad'), ciudad.id);
-          }
+        const ciudadesDisponibles = todasLasCiudades.map(c => c.nombre).join(', ');
+        
+        return res.status(400).json({
+          success: false,
+          message: `La ciudad especificada "${fkid_ciudad}" no existe. Ciudades disponibles: ${ciudadesDisponibles}`
         });
-
-        // Buscar la ciudad en el mapa
-        ciudadIdFinal = ciudadesMap.get(cleanCity) || 
-                       ciudadesMap.get(cleanCity.replace(/\./g, '')) ||
-                       ciudadesMap.get(cleanCity.replace(/\s+/g, '')) ||
-                       ciudadesMap.get(cleanCity.replace(/\./g, '').replace(/\s+/g, '')) ||
-                       null; // null si no se encuentra
-
-        // Si aún no se encontró, hacer una búsqueda más flexible
-        if (!ciudadIdFinal) {
-          const ciudadEncontrada = todasLasCiudades.find(c => {
-            const nombreLower = c.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-            return nombreLower === cleanCity ||
-                   nombreLower.includes(cleanCity) ||
-                   cleanCity.includes(nombreLower) ||
-                   nombreLower.replace(/\./g, '').replace(/\s+/g, '') === cleanCity.replace(/\./g, '').replace(/\s+/g, '');
-          });
-          
-          if (ciudadEncontrada) {
-            ciudadIdFinal = ciudadEncontrada.id;
-          }
-        }
-
-        // Si no se encontró, retornar error con información útil
-        if (!ciudadIdFinal) {
-          // Obtener lista de ciudades disponibles para el mensaje de error
-          const ciudadesDisponibles = todasLasCiudades.map(c => c.nombre).join(', ');
-          console.log(`[DEBUG] Ciudad buscada: "${fkid_ciudad}" (normalizada: "${cleanCity}")`);
-          console.log(`[DEBUG] Ciudades disponibles: ${ciudadesDisponibles}`);
-          
-          return res.status(400).json({
-            success: false,
-            message: `La ciudad especificada "${fkid_ciudad}" no existe. Ciudades disponibles: ${ciudadesDisponibles}`
-          });
-        }
       }
 
       let cliente = null;
@@ -364,19 +311,11 @@ class PedidoController {
             });
           }
 
+          // ciudadIdFinal ya fue validado al inicio del método
           if (!ciudadIdFinal) {
             return res.status(400).json({
               success: false,
               message: 'Se requiere una ciudad para crear un nuevo cliente'
-            });
-          }
-
-          // Verificar que la ciudad existe
-          const ciudad = await City.findByPk(ciudadIdFinal);
-          if (!ciudad) {
-            return res.status(400).json({
-              success: false,
-              message: 'La ciudad especificada no existe'
             });
           }
 
@@ -408,14 +347,8 @@ class PedidoController {
         }
       }
 
-      // Verificar que la ciudad existe
+      // Obtener la ciudad (ya validada en el mapeo inicial)
       const ciudad = await City.findByPk(ciudadIdFinal);
-      if (!ciudad) {
-        return res.status(400).json({
-          success: false,
-          message: 'La ciudad especificada no existe'
-        });
-      }
 
       // Validar código de promoción si se proporciona
       let promocion = null;

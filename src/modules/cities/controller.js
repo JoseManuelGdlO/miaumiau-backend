@@ -1,5 +1,6 @@
 const { City } = require('../../models');
 const { Op } = require('sequelize');
+const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
 class CityController {
   // Obtener todas las ciudades
@@ -68,12 +69,21 @@ class CityController {
     }
   }
 
-  // Obtener una ciudad por ID
+  // Obtener una ciudad por ID o nombre
   async getCityById(req, res, next) {
     try {
       const { id } = req.params;
       
-      const city = await City.findByPk(id);
+      // Intentar convertir nombre a ID si es necesario
+      const cityId = await mapCityNameToId(id);
+      if (!cityId) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${id}" no encontrada`
+        });
+      }
+      
+      const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
@@ -150,7 +160,16 @@ class CityController {
       const { id } = req.params;
       const updateData = req.body;
 
-      const city = await City.findByPk(id);
+      // Intentar convertir nombre a ID si es necesario
+      const cityId = await mapCityNameToId(id);
+      if (!cityId) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${id}" no encontrada`
+        });
+      }
+
+      const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
@@ -165,7 +184,7 @@ class CityController {
           where: { 
             nombre: updateData.nombre,
             departamento: updateData.departamento,
-            id: { [Op.ne]: id }
+            id: { [Op.ne]: cityId }
           }
         });
         
@@ -194,7 +213,16 @@ class CityController {
     try {
       const { id } = req.params;
 
-      const city = await City.findByPk(id);
+      // Intentar convertir nombre a ID si es necesario
+      const cityId = await mapCityNameToId(id);
+      if (!cityId) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${id}" no encontrada`
+        });
+      }
+
+      const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
@@ -219,7 +247,16 @@ class CityController {
     try {
       const { id } = req.params;
 
-      const city = await City.findByPk(id);
+      // Intentar convertir nombre a ID si es necesario
+      const cityId = await mapCityNameToId(id);
+      if (!cityId) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${id}" no encontrada`
+        });
+      }
+
+      const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
@@ -245,7 +282,16 @@ class CityController {
     try {
       const { id } = req.params;
 
-      const city = await City.findByPk(id);
+      // Intentar convertir nombre a ID si es necesario
+      const cityId = await mapCityNameToId(id);
+      if (!cityId) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${id}" no encontrada`
+        });
+      }
+
+      const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
@@ -271,7 +317,16 @@ class CityController {
     try {
       const { id } = req.params;
 
-      const city = await City.findByPk(id);
+      // Intentar convertir nombre a ID si es necesario
+      const cityId = await mapCityNameToId(id);
+      if (!cityId) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${id}" no encontrada`
+        });
+      }
+
+      const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
