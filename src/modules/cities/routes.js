@@ -75,8 +75,21 @@ const validateCity = [
 
 const validateId = [
   param('id')
-    .isInt({ min: 1 })
-    .withMessage('El ID debe ser un número entero positivo'),
+    .custom((value) => {
+      // Aceptar números enteros positivos o strings (nombres de ciudad)
+      if (typeof value === 'string') {
+        // Si es string, intentar parsear como número primero
+        const numValue = parseInt(value, 10);
+        if (!isNaN(numValue) && numValue >= 1) {
+          return true; // Es un número válido como string
+        }
+        // Si no es número, debe ser un nombre de ciudad (no vacío)
+        return value.trim().length > 0;
+      }
+      // Si es número, debe ser entero positivo
+      return Number.isInteger(value) && value >= 1;
+    })
+    .withMessage('El ID debe ser un número entero positivo o el nombre de una ciudad'),
   
   handleValidationErrors
 ];
