@@ -1171,6 +1171,42 @@ class PedidoController {
         });
       }
 
+      // Convertir nombre de ciudad a ID si es necesario
+      let ciudadIdFinal = null;
+      if (ciudad_id) {
+        ciudadIdFinal = await mapCityNameToId(ciudad_id);
+        if (!ciudadIdFinal) {
+          // Obtener lista de ciudades disponibles para el mensaje de error
+          const todasLasCiudades = await City.findAll({
+            where: { baja_logica: false },
+            attributes: ['nombre']
+          });
+          const ciudadesDisponibles = todasLasCiudades.map(c => c.nombre).join(', ');
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${ciudad_id}" no existe. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+        
+        // Validar que la ciudad existe y está activa (puede ser que el ID sea válido pero la ciudad no exista o esté eliminada)
+        const ciudadExiste = await City.findByPk(ciudadIdFinal);
+        
+        if (!ciudadExiste || ciudadExiste.baja_logica) {
+          // Obtener lista de ciudades disponibles para el mensaje de error
+          const todasLasCiudades = await City.findAll({
+            where: { baja_logica: false },
+            attributes: ['id', 'nombre']
+          });
+          const ciudadesDisponibles = todasLasCiudades.map(c => `${c.nombre} (ID: ${c.id})`).join(', ');
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${ciudad_id}" no existe o está inactiva. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+      }
+
       // Calcular fecha de inicio (día siguiente)
       const fechaInicioDisponibilidad = new Date(fechaInicio);
       fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
@@ -1210,9 +1246,9 @@ class PedidoController {
           baja_logica: false
         };
         
-        // Filtrar por ciudad si se especifica
-        if (ciudad_id) {
-          whereClause.fkid_ciudad = ciudad_id;
+        // Filtrar por ciudad si se especifica (usar el ID convertido)
+        if (ciudadIdFinal) {
+          whereClause.fkid_ciudad = ciudadIdFinal;
         }
         
         // Contar pedidos por horario
@@ -1245,12 +1281,27 @@ class PedidoController {
         });
       }
 
+      // Obtener información de la ciudad si se especificó
+      let ciudadInfo = null;
+      if (ciudadIdFinal) {
+        const ciudad = await City.findByPk(ciudadIdFinal, {
+          attributes: ['id', 'nombre']
+        });
+        if (ciudad) {
+          ciudadInfo = {
+            id: ciudad.id,
+            nombre: ciudad.nombre,
+            input_original: ciudad_id // Mantener el valor original (puede ser nombre o ID)
+          };
+        }
+      }
+
       res.json({
         success: true,
         data: {
           disponibilidad,
           fecha_consulta: fecha_inicio,
-          ciudad_id: ciudad_id || null,
+          ciudad: ciudadInfo || null,
           total_dias: disponibilidad.length
         }
       });
