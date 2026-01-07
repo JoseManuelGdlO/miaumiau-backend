@@ -83,12 +83,13 @@ class CityController {
         });
       }
       
+      // Validar que la ciudad existe (puede ser que el ID sea válido pero la ciudad no exista)
       const city = await City.findByPk(cityId);
       
       if (!city) {
         return res.status(404).json({
           success: false,
-          message: 'Ciudad no encontrada'
+          message: `Ciudad "${id}" no encontrada`
         });
       }
 
@@ -174,7 +175,7 @@ class CityController {
       if (!city) {
         return res.status(404).json({
           success: false,
-          message: 'Ciudad no encontrada'
+          message: `Ciudad "${id}" no encontrada`
         });
       }
 
@@ -227,7 +228,7 @@ class CityController {
       if (!city) {
         return res.status(404).json({
           success: false,
-          message: 'Ciudad no encontrada'
+          message: `Ciudad "${id}" no encontrada`
         });
       }
 
@@ -261,7 +262,7 @@ class CityController {
       if (!city) {
         return res.status(404).json({
           success: false,
-          message: 'Ciudad no encontrada'
+          message: `Ciudad "${id}" no encontrada`
         });
       }
 
@@ -296,7 +297,7 @@ class CityController {
       if (!city) {
         return res.status(404).json({
           success: false,
-          message: 'Ciudad no encontrada'
+          message: `Ciudad "${id}" no encontrada`
         });
       }
 
@@ -331,7 +332,7 @@ class CityController {
       if (!city) {
         return res.status(404).json({
           success: false,
-          message: 'Ciudad no encontrada'
+          message: `Ciudad "${id}" no encontrada`
         });
       }
 

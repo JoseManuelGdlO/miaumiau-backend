@@ -21,7 +21,15 @@ async function mapCityNameToId(cityInput, options = {}) {
     return null;
   }
 
-  // Limpiar el texto de entrada
+  // Si el string es un número válido (ej: "9", "5"), tratarlo como ID
+  const trimmedInput = cityInput.trim();
+  const numValue = parseInt(trimmedInput, 10);
+  if (!isNaN(numValue) && numValue >= 1 && String(numValue) === trimmedInput) {
+    // Es un número válido como string, retornarlo directamente
+    return numValue;
+  }
+
+  // Limpiar el texto de entrada (solo si no es un número)
   const cleanCity = cityInput.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
   if (!cleanCity) {
