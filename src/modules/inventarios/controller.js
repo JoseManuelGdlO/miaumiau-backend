@@ -1,6 +1,7 @@
 const { Inventario, Peso, CategoriaProducto, City, Proveedor } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
+const { mapCityNameToId } = require('../../utils/cityMapper');
 
 class InventarioController {
   // Obtener todos los inventarios
@@ -36,7 +37,38 @@ class InventarioController {
       
       // Filtrar por ciudad (si viene en query params)
       if (ciudad) {
-        whereClause.fkid_ciudad = ciudad;
+        // Convertir nombre de ciudad a ID si es necesario
+        const ciudadIdFinal = await mapCityNameToId(ciudad);
+        if (!ciudadIdFinal) {
+          // Obtener lista de ciudades disponibles para el mensaje de error
+          const todasLasCiudades = await City.findAll({
+            where: { baja_logica: false },
+            attributes: ['id', 'nombre']
+          });
+          const ciudadesDisponibles = todasLasCiudades.map(c => `${c.nombre} (ID: ${c.id})`).join(', ');
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${ciudad}" no existe o está inactiva. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+        
+        // Validar que la ciudad existe y está activa
+        const ciudadExiste = await City.findByPk(ciudadIdFinal);
+        if (!ciudadExiste || ciudadExiste.baja_logica) {
+          const todasLasCiudades = await City.findAll({
+            where: { baja_logica: false },
+            attributes: ['id', 'nombre']
+          });
+          const ciudadesDisponibles = todasLasCiudades.map(c => `${c.nombre} (ID: ${c.id})`).join(', ');
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${ciudad}" no existe o está inactiva. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+        
+        whereClause.fkid_ciudad = ciudadIdFinal;
       }
 
       // Aplicar filtro de ciudad según el usuario autenticado
@@ -524,23 +556,43 @@ class InventarioController {
     try {
       const { ciudadId } = req.params;
 
+      // Convertir nombre de ciudad a ID si es necesario
+      const ciudadIdFinal = await mapCityNameToId(ciudadId);
+      if (!ciudadIdFinal) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${ciudadId}" no encontrada`
+        });
+      }
+      
+      // Validar que la ciudad existe
+      const ciudadExiste = await City.findByPk(ciudadIdFinal);
+      if (!ciudadExiste) {
+        return res.status(404).json({
+          success: false,
+          message: `Ciudad "${ciudadId}" no encontrada`
+        });
+      }
+
       // Verificar que el usuario tenga acceso a esta ciudad
       const userCityId = req.user?.ciudad_id || req.user?.ciudad?.id;
-      if (userCityId !== null && parseInt(ciudadId) !== userCityId) {
+      if (userCityId !== null && ciudadIdFinal !== userCityId) {
         return res.status(403).json({
           success: false,
           message: 'No tienes permiso para ver inventario de esta ciudad'
         });
       }
 
-      const inventarios = await Inventario.findByCity(ciudadId);
+      const inventarios = await Inventario.findByCity(ciudadIdFinal);
 
       res.json({
         success: true,
         data: {
           inventarios,
           total: inventarios.length,
-          ciudadId
+          ciudadId: ciudadIdFinal,
+          ciudadNombre: ciudadExiste.nombre,
+          inputOriginal: ciudadId
         }
       });
     } catch (error) {

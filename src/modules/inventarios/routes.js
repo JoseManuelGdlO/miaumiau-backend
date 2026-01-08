@@ -29,9 +29,18 @@ const validateInventario = [
     .withMessage('El ID de la categoría debe ser un número entero positivo'),
   
   body('fkid_ciudad')
-    .isInt({ min: 1 })
-    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
-  
+    .custom((value) => {
+      // Aceptar números enteros positivos o strings (nombres de ciudad)
+      if (typeof value === 'number') {
+        return Number.isInteger(value) && value >= 1;
+      }
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+      return false;
+    })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo o el nombre de una ciudad'),
+
   body('descripcion')
     .optional()
     .isLength({ max: 1000 })
@@ -91,8 +100,18 @@ const validateQuery = [
   
   query('ciudad')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
+    .custom((value) => {
+      // Aceptar números enteros positivos o strings (nombres de ciudad)
+      if (typeof value === 'string') {
+        const numValue = parseInt(value, 10);
+        if (!isNaN(numValue) && numValue >= 1) {
+          return true; // Es un número válido como string
+        }
+        return value.trim().length > 0; // Es un nombre de ciudad
+      }
+      return Number.isInteger(value) && value >= 1;
+    })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo o el nombre de una ciudad'),
   
   query('proveedor')
     .optional()
@@ -160,8 +179,18 @@ const validateCategoryId = [
 
 const validateCityId = [
   param('ciudadId')
-    .isInt({ min: 1 })
-    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
+    .custom((value) => {
+      // Aceptar números enteros positivos o strings (nombres de ciudad)
+      if (typeof value === 'string') {
+        const numValue = parseInt(value, 10);
+        if (!isNaN(numValue) && numValue >= 1) {
+          return true; // Es un número válido como string
+        }
+        return value.trim().length > 0; // Es un nombre de ciudad
+      }
+      return Number.isInteger(value) && value >= 1;
+    })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo o el nombre de una ciudad'),
   
   handleValidationErrors
 ];
