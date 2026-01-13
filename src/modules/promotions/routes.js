@@ -176,6 +176,26 @@ const validateCode = [
   handleValidationErrors
 ];
 
+const validateValidarPromocion = [
+  body('telefono')
+    .notEmpty()
+    .withMessage('El teléfono es requerido')
+    .isString()
+    .withMessage('El teléfono debe ser una cadena de texto')
+    .isLength({ min: 7, max: 20 })
+    .withMessage('El teléfono debe tener entre 7 y 20 caracteres'),
+  
+  body('codigo')
+    .notEmpty()
+    .withMessage('El código de promoción es requerido')
+    .isString()
+    .withMessage('El código debe ser una cadena de texto')
+    .matches(/^[A-Z0-9_-]+$/)
+    .withMessage('El código solo puede contener letras mayúsculas, números, guiones y guiones bajos'),
+  
+  handleValidationErrors
+];
+
 // Rutas públicas
 router.get('/types', promotionController.getPromotionTypes);
 router.get('/active', promotionController.getActivePromotions);
@@ -185,6 +205,9 @@ router.get('/city/:city_id', validateCityId, promotionController.getPromotionsBy
 
 // Rutas protegidas (requieren autenticación)
 router.use(authenticateToken);
+
+// Ruta para validar promoción con datos de PostgreSQL
+router.post('/validar', validateValidarPromocion, promotionController.validarPromocion);
 
 // Rutas de administración (requieren rol admin o super_admin)
 router.get('/', promotionController.getAllPromotions);
