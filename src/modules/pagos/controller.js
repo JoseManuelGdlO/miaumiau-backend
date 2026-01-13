@@ -8,6 +8,7 @@ class PagosController {
    */
   async generarLinkStripe(req, res, next) {
     try {
+      
       const { telefono, productos, promocion_aplicada } = req.body;
 
       // Validar que productos existan y tengan estructura correcta
@@ -22,10 +23,21 @@ class PagosController {
       // 1. Calcular subtotal
       // --------------------
       let subtotal = 0;
+      const productosProcesados = [];
+      
       for (const producto of productos) {
         const precio = Number(producto?.precio) || 0;
         const cantidad = Number(producto?.cantidad) || 0;
-        subtotal += precio * cantidad;
+        const subtotalProducto = precio * cantidad;
+        subtotal += subtotalProducto;
+        
+        productosProcesados.push({
+          id: producto?.id || null,
+          nombre: producto?.nombre || 'Sin nombre',
+          precio: precio,
+          cantidad: cantidad,
+          subtotal: Math.round(subtotalProducto)
+        });
       }
       subtotal = Math.max(0, Math.round(subtotal));
 
@@ -34,17 +46,23 @@ class PagosController {
       // --------------------
       let total = subtotal;
       let descuentoAplicado = 0;
+      let tipoPromocion = null;
+      let valorDescuento = 0;
+      let promocionValida = false;
 
       if (promocion_aplicada?.valido === true) {
-        const tipoPromocion = promocion_aplicada.tipo_promocion || '';
-        const valorDescuento = Number(promocion_aplicada.valor_descuento) || 0;
+        promocionValida = true;
+        // Soportar estructura anidada (detalle_promocion) o plana
+        const detallePromocion = promocion_aplicada.detalle_promocion || promocion_aplicada;
+        tipoPromocion = detallePromocion.tipo_promocion || '';
+        valorDescuento = Number(detallePromocion.valor_descuento) || 0;
 
         if (valorDescuento > 0) {
           if (tipoPromocion === 'porcentaje') {
             descuentoAplicado = Math.round(subtotal * (valorDescuento / 100));
             total -= descuentoAplicado;
           } else if (tipoPromocion === 'monto_fijo') {
-            descuentoAplicado = valorDescuento;
+            descuentoAplicado = Math.round(valorDescuento);
             total -= descuentoAplicado;
           }
         }
@@ -107,12 +125,32 @@ class PagosController {
         }
 
         // --------------------
-        // 4. Retornar formato específico para n8n
+        // 4. Retornar formato específico para n8n con información de debug
         // --------------------
         return res.json({
           precioTotal: total,
           url: paymentLinkUrl,
-          stripe_link_id: paymentLinkId
+          stripe_link_id: paymentLinkId,
+          debug: {
+            calculo: {
+              productos: productosProcesados,
+              subtotal: subtotal,
+              promocion: {
+                aplicada: promocionValida,
+                tipo: tipoPromocion,
+                valor_descuento: valorDescuento,
+                descuento_aplicado: descuentoAplicado
+              },
+              total: total,
+              formula: promocionValida && descuentoAplicado > 0
+                ? `${subtotal} - ${descuentoAplicado} = ${total}`
+                : `${subtotal} = ${total}`
+            },
+            stripe: {
+              unit_amount_centavos: unitAmount,
+              currency: 'mxn'
+            }
+          }
         });
 
       } catch (stripeError) {
