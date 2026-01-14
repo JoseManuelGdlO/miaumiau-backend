@@ -1,5 +1,8 @@
 const { Promotion, City, PromotionCity } = require('../../models');
 const { Op } = require('sequelize');
+const { query } = require('../../config/postgres');
+const { mapCityNameToId } = require('../../utils/cityMapper');
+const { aplicarLogicaDescuento, calcularTotalCarrito } = require('../descuentos/aplicarDescuentos');
 
 class PromotionController {
   // Obtener todas las promociones
@@ -462,6 +465,335 @@ class PromotionController {
         data: { promotion }
       });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // Validar promoción con datos de PostgreSQL (n8n)
+  async validarPromocion(req, res, next) {
+    try {
+      const { telefono, codigo } = req.body;
+
+      // Validar que se proporcionen los parámetros requeridos
+      if (!telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'El teléfono es requerido'
+        });
+      }
+
+      if (!codigo) {
+        return res.status(400).json({
+          success: false,
+          message: 'El código de promoción es requerido'
+        });
+      }
+
+      // 1. Consultar PostgreSQL solo para obtener la ciudad
+      let ciudadNombre = null;
+      try {
+        const pgQuery = 'SELECT ciudad, productos FROM pedido_sesion WHERE session_id = $1';
+        const result = await query(pgQuery, [telefono]);
+
+        if (!result.rows || result.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No se encontró una sesión activa para este teléfono'
+          });
+        }
+
+        const sessionData = result.rows[0];
+        
+        // Obtener ciudad del campo ciudad directamente
+        if (sessionData.ciudad) {
+          ciudadNombre = sessionData.ciudad;
+        } else if (sessionData.productos) {
+          // Si no está en ciudad, intentar obtenerla del JSON de productos
+          try {
+            const productosData = typeof sessionData.productos === 'string' 
+              ? JSON.parse(sessionData.productos) 
+              : sessionData.productos;
+            
+            if (productosData && productosData.ciudad) {
+              ciudadNombre = productosData.ciudad;
+            }
+          } catch (parseError) {
+            // Si falla el parseo, continuar sin ciudad (se validará después)
+          }
+        }
+      } catch (pgError) {
+        console.error('Error consultando PostgreSQL:', pgError);
+        return res.status(503).json({
+          success: false,
+          message: 'Error al consultar la base de datos de sesiones. Por favor, intenta de nuevo más tarde.'
+        });
+      }
+
+      if (!ciudadNombre) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se pudo determinar la ciudad del usuario'
+        });
+      }
+
+      // 2. Convertir nombre de ciudad a ID
+      const ciudadId = await mapCityNameToId(ciudadNombre);
+      if (!ciudadId) {
+        return res.status(400).json({
+          success: false,
+          message: `La ciudad "${ciudadNombre}" no está registrada en el sistema`
+        });
+      }
+
+      // 3. Buscar la promoción por código
+      const promotion = await Promotion.findByCode(codigo);
+      if (!promotion) {
+        return res.status(400).json({
+          success: false,
+          valid: false,
+          message: 'Código de promoción no válido'
+        });
+      }
+
+      // 4. Validar vigencia temporal (fecha_inicio <= hoy <= fecha_fin)
+      const fechaActual = new Date();
+      const fechaInicio = new Date(promotion.fecha_inicio);
+      const fechaFin = new Date(promotion.fecha_fin);
+
+      if (fechaActual < fechaInicio) {
+        return res.status(400).json({
+          success: true,
+          valid: false,
+          message: `La promoción aún no está vigente. Inicia el ${fechaInicio.toLocaleDateString('es-MX')}`,
+          data: {
+            promotion: {
+              id: promotion.id,
+              nombre: promotion.nombre,
+              codigo: promotion.codigo,
+              fecha_inicio: promotion.fecha_inicio,
+              fecha_fin: promotion.fecha_fin
+            },
+            ciudad_usuario: ciudadNombre,
+            ciudad_id: ciudadId
+          }
+        });
+      }
+
+      if (fechaActual > fechaFin) {
+        return res.status(400).json({
+          success: true,
+          valid: false,
+          message: `La promoción ha expirado. Finalizó el ${fechaFin.toLocaleDateString('es-MX')}`,
+          data: {
+            promotion: {
+              id: promotion.id,
+              nombre: promotion.nombre,
+              codigo: promotion.codigo,
+              fecha_inicio: promotion.fecha_inicio,
+              fecha_fin: promotion.fecha_fin
+            },
+            ciudad_usuario: ciudadNombre,
+            ciudad_id: ciudadId
+          }
+        });
+      }
+
+      // 5. Validar aplicabilidad de ciudad
+      // Si la promoción tiene ciudades asociadas, verificar que la ciudad del usuario esté incluida
+      const cityPromotions = await PromotionCity.findAll({
+        where: {
+          promotion_id: promotion.id
+        }
+      });
+
+      // Si hay ciudades asociadas, la promoción solo aplica a esas ciudades
+      if (cityPromotions.length > 0) {
+        const ciudadesAplicables = cityPromotions.map(cp => cp.city_id);
+        if (!ciudadesAplicables.includes(ciudadId)) {
+          return res.status(400).json({
+            success: true,
+            valid: false,
+            message: 'La promoción no está disponible en tu ciudad',
+            data: {
+              promotion: {
+                id: promotion.id,
+                nombre: promotion.nombre,
+                codigo: promotion.codigo
+              },
+              ciudad_usuario: ciudadNombre,
+              ciudad_id: ciudadId
+            }
+          });
+        }
+      }
+
+      // Si llegamos aquí, la promoción es válida
+      res.json({
+        success: true,
+        valid: true,
+        message: 'Código de promoción válido',
+        data: {
+          promotion: promotion.toJSON(),
+          ciudad_usuario: ciudadNombre,
+          ciudad_id: ciudadId
+        }
+      });
+
+    } catch (error) {
+      console.error('Error en validarPromocion:', error);
+      next(error);
+    }
+  }
+
+  // Aplicar código de promoción a productos en sesión
+  async aplicarCodigo(req, res, next) {
+    try {
+      const { telefono, logica_aplicar } = req.body;
+
+      // Validar parámetros requeridos
+      if (!telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'El teléfono es requerido'
+        });
+      }
+
+      if (!logica_aplicar) {
+        return res.status(400).json({
+          success: false,
+          message: 'La lógica de aplicación es requerida'
+        });
+      }
+
+      const { tipo_accion, valor, unidad_valor, condiciones, efecto } = logica_aplicar;
+
+      if (!tipo_accion) {
+        return res.status(400).json({
+          success: false,
+          message: 'El tipo de acción es requerido'
+        });
+      }
+
+      const tiposAccionValidos = ['descuento_global', 'descuento_producto', 'segunda_unidad', 'producto_regalo'];
+      if (!tiposAccionValidos.includes(tipo_accion)) {
+        return res.status(400).json({
+          success: false,
+          message: `Tipo de acción inválido. Debe ser uno de: ${tiposAccionValidos.join(', ')}`
+        });
+      }
+
+      // 1. Consultar PostgreSQL para obtener productos actuales
+      let sessionData;
+      try {
+        const pgQuery = 'SELECT session_id, productos FROM pedido_sesion WHERE session_id = $1';
+        const result = await query(pgQuery, [telefono]);
+
+        if (!result.rows || result.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No se encontró una sesión activa para este teléfono'
+          });
+        }
+
+        sessionData = result.rows[0];
+      } catch (pgError) {
+        console.error('Error consultando PostgreSQL:', pgError);
+        return res.status(503).json({
+          success: false,
+          message: 'Error al consultar la base de datos de sesiones. Por favor, intenta de nuevo más tarde.'
+        });
+      }
+
+      // 2. Parsear el JSON de productos
+      let productosData;
+      try {
+        if (typeof sessionData.productos === 'string') {
+          productosData = JSON.parse(sessionData.productos);
+        } else {
+          productosData = sessionData.productos;
+        }
+
+        if (!productosData || !productosData.productos || !Array.isArray(productosData.productos)) {
+          return res.status(400).json({
+            success: false,
+            message: 'La estructura de productos en la sesión no es válida'
+          });
+        }
+      } catch (parseError) {
+        console.error('Error parseando productos:', parseError);
+        return res.status(400).json({
+          success: false,
+          message: 'Error al procesar los datos de la sesión'
+        });
+      }
+
+      const productos = productosData.productos;
+      const totalAntes = calcularTotalCarrito(productos);
+
+      // 3. Aplicar la lógica según el tipo de acción usando el módulo de descuentos
+      const resultado = aplicarLogicaDescuento(productos, logica_aplicar);
+      
+      if (!resultado.aplicado && resultado.mensaje && resultado.mensaje.includes('Tipo de acción no soportado')) {
+        return res.status(400).json({
+          success: false,
+          message: resultado.mensaje
+        });
+      }
+
+      if (!resultado.aplicado) {
+        return res.status(400).json({
+          success: false,
+          message: resultado.mensaje || 'No se pudo aplicar la promoción',
+          data: {
+            productos: productos,
+            condiciones_cumplidas: false
+          }
+        });
+      }
+
+      // 4. Actualizar productos en PostgreSQL
+      const productosModificados = resultado.productos;
+      const totalDespues = calcularTotalCarrito(productosModificados);
+      
+      // Preservar otros campos del objeto original
+      const productosActualizados = {
+        ...productosData,
+        productos: productosModificados
+      };
+
+      try {
+        const updateQuery = 'UPDATE pedido_sesion SET productos = $1 WHERE session_id = $2';
+        await query(updateQuery, [JSON.stringify(productosActualizados), telefono]);
+      } catch (updateError) {
+        console.error('Error actualizando PostgreSQL:', updateError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error al actualizar los productos en la sesión'
+        });
+      }
+
+      // 5. Retornar respuesta con productos modificados
+      res.json({
+        success: true,
+        message: 'Promoción aplicada exitosamente',
+        data: {
+          productos_modificados: productosModificados,
+          total_antes: Math.round(totalAntes * 100) / 100,
+          total_despues: Math.round(totalDespues * 100) / 100,
+          descuento_total: resultado.descuento_total || (totalAntes - totalDespues),
+          debug: {
+            tipo_accion: tipo_accion,
+            productos_afectados: productosModificados.filter(p => 
+              p.descuento_aplicado || p.descuento_segunda_unidad || p.es_regalo
+            ).length,
+            condiciones_cumplidas: true,
+            producto_agregado: resultado.producto_agregado || false
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error en aplicarCodigo:', error);
       next(error);
     }
   }
