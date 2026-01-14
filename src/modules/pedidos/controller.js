@@ -1,4 +1,4 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion, PaquetePedido, Paquete } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
@@ -350,57 +350,15 @@ class PedidoController {
       // Obtener la ciudad (ya validada en el mapeo inicial)
       const ciudad = await City.findByPk(ciudadIdFinal);
 
-      // Validar código de promoción si se proporciona
-      let promocion = null;
-      let descuentoPromocion = 0;
-      // Ignorar si es null, undefined, string vacío, o el string "null"
-      const codigoPromocionValido = codigo_promocion && 
-                                    codigo_promocion !== 'null' && 
-                                    codigo_promocion !== '' && 
-                                    typeof codigo_promocion === 'string' && 
-                                    codigo_promocion.trim().length > 0;
-      
-      if (codigoPromocionValido) {
-        promocion = await Promotion.findOne({
-          where: {
-            codigo: codigo_promocion.trim(),
-            baja_logica: false
-          },
-          include: [
-            {
-              model: City,
-              as: 'ciudades',
-              where: { id: ciudadIdFinal },
-              required: false
-            }
-          ]
-        });
-
-        if (!promocion) {
-          return res.status(400).json({
-            success: false,
-            message: 'El código de promoción no es válido'
-          });
-        }
-
-        // Verificar si la promoción está activa
-        const ahora = new Date();
-        if (promocion.fecha_inicio > ahora || promocion.fecha_fin < ahora) {
-          return res.status(400).json({
-            success: false,
-            message: 'El código de promoción no está activo'
-          });
-        }
-
-        // Verificar si la promoción aplica para esta ciudad
-        if (promocion.ciudades && promocion.ciudades.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: 'El código de promoción no aplica para esta ciudad'
-          });
-        }
-
-        descuentoPromocion = promocion.descuento_porcentaje || 0;
+      // Normalizar código de promoción (solo guardarlo, sin validar)
+      // Los descuentos ahora se aplican mediante el endpoint /aplicarCodigo
+      let codigoPromocionNormalizado = null;
+      if (codigo_promocion && 
+          codigo_promocion !== 'null' && 
+          codigo_promocion !== '' && 
+          typeof codigo_promocion === 'string' && 
+          codigo_promocion.trim().length > 0) {
+        codigoPromocionNormalizado = codigo_promocion.trim();
       }
 
       // Generar número de pedido único
@@ -417,8 +375,8 @@ class PedidoController {
         fecha_entrega_estimada: fecha_entrega_estimada || null,
         metodo_pago: metodo_pago || null,
         notas: notas || null,
-        codigo_promocion: codigoPromocionValido ? codigo_promocion.trim() : null,
-        descuento_promocion: descuentoPromocion,
+        codigo_promocion: codigoPromocionNormalizado,
+        descuento_promocion: 0, // Los descuentos se aplican antes de crear el pedido
         stripe_link_id: stripe_link_id || null
       });
 
@@ -506,15 +464,9 @@ class PedidoController {
         });
       }
 
-      // Aplicar descuento de promoción al subtotal
-      let totalConDescuento = subtotal;
-      if (descuentoPromocion > 0) {
-        const descuento = (subtotal * descuentoPromocion) / 100;
-        totalConDescuento = subtotal - descuento;
-      }
-
       // Actualizar subtotal del pedido
-      await pedido.actualizarSubtotal(totalConDescuento);
+      // Los descuentos ya fueron aplicados a los productos antes de crear el pedido
+      await pedido.actualizarSubtotal(subtotal);
 
       // Obtener el pedido creado con sus relaciones
       const pedidoCompleto = await Pedido.findByPk(pedido.id, {
@@ -1213,7 +1165,7 @@ class PedidoController {
       
       // Generar los próximos 7 días
       const disponibilidad = [];
-      const maxPedidosPorHorario = 5; // Máximo 5 pedidos por horario
+      const maxPedidosPorHorario = 10; // Máximo 5 pedidos por horario
       
       for (let i = 0; i < 7; i++) {
         const fecha = new Date(fechaInicioDisponibilidad);

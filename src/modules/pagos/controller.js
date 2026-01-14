@@ -20,16 +20,18 @@ class PagosController {
       }
 
       // --------------------
-      // 1. Calcular subtotal
+      // 1. Calcular total basado en productos
+      // Los descuentos ya fueron aplicados a los productos antes de llegar aquí
+      // mediante el endpoint /aplicarCodigo
       // --------------------
-      let subtotal = 0;
+      let total = 0;
       const productosProcesados = [];
       
       for (const producto of productos) {
         const precio = Number(producto?.precio) || 0;
         const cantidad = Number(producto?.cantidad) || 0;
         const subtotalProducto = precio * cantidad;
-        subtotal += subtotalProducto;
+        total += subtotalProducto;
         
         productosProcesados.push({
           id: producto?.id || null,
@@ -39,35 +41,6 @@ class PagosController {
           subtotal: Math.round(subtotalProducto)
         });
       }
-      subtotal = Math.max(0, Math.round(subtotal));
-
-      // --------------------
-      // 2. Aplicar promoción
-      // --------------------
-      let total = subtotal;
-      let descuentoAplicado = 0;
-      let tipoPromocion = null;
-      let valorDescuento = 0;
-      let promocionValida = false;
-
-      if (promocion_aplicada?.valido === true) {
-        promocionValida = true;
-        // Soportar estructura anidada (detalle_promocion) o plana
-        const detallePromocion = promocion_aplicada.detalle_promocion || promocion_aplicada;
-        tipoPromocion = detallePromocion.tipo_promocion || '';
-        valorDescuento = Number(detallePromocion.valor_descuento) || 0;
-
-        if (valorDescuento > 0) {
-          if (tipoPromocion === 'porcentaje') {
-            descuentoAplicado = Math.round(subtotal * (valorDescuento / 100));
-            total -= descuentoAplicado;
-          } else if (tipoPromocion === 'monto_fijo') {
-            descuentoAplicado = Math.round(valorDescuento);
-            total -= descuentoAplicado;
-          }
-        }
-      }
-
       total = Math.max(0, Math.round(total));
 
       // Validar que el precio total sea mayor a 0
@@ -134,17 +107,8 @@ class PagosController {
           debug: {
             calculo: {
               productos: productosProcesados,
-              subtotal: subtotal,
-              promocion: {
-                aplicada: promocionValida,
-                tipo: tipoPromocion,
-                valor_descuento: valorDescuento,
-                descuento_aplicado: descuentoAplicado
-              },
               total: total,
-              formula: promocionValida && descuentoAplicado > 0
-                ? `${subtotal} - ${descuentoAplicado} = ${total}`
-                : `${subtotal} = ${total}`
+              nota: 'Los descuentos ya fueron aplicados a los precios de los productos mediante /aplicarCodigo'
             },
             stripe: {
               unit_amount_centavos: unitAmount,
