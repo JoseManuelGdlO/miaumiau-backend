@@ -23,11 +23,26 @@ class PagosController {
       // 1. Calcular total basado en productos
       // Los descuentos ya fueron aplicados a los productos antes de llegar aquí
       // mediante el endpoint /aplicarCodigo
+      // Ignorar productos con es_regalo = true (no se cobran)
       // --------------------
       let total = 0;
       const productosProcesados = [];
       
       for (const producto of productos) {
+        // Ignorar productos regalo (es_regalo = true)
+        if (producto?.es_regalo === true) {
+          productosProcesados.push({
+            id: producto?.id || null,
+            nombre: producto?.nombre || 'Sin nombre',
+            precio: 0,
+            cantidad: Number(producto?.cantidad) || 0,
+            subtotal: 0,
+            es_regalo: true,
+            nota: 'Producto regalo - no se incluye en el total'
+          });
+          continue; // No sumar al total
+        }
+        
         const precio = Number(producto?.precio) || 0;
         const cantidad = Number(producto?.cantidad) || 0;
         const subtotalProducto = precio * cantidad;

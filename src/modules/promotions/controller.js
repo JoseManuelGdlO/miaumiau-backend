@@ -1,4 +1,4 @@
-const { Promotion, City, PromotionCity } = require('../../models');
+const { Promotion, City, PromotionCity, Inventario } = require('../../models');
 const { Op } = require('sequelize');
 const { query } = require('../../config/postgres');
 const { mapCityNameToId } = require('../../utils/cityMapper');
@@ -751,8 +751,70 @@ class PromotionController {
         });
       }
 
-      // 4. Actualizar productos en PostgreSQL
-      const productosModificados = resultado.productos;
+      // 4. Si es producto_regalo, buscar el ID en inventarios para productos sin ID
+      let productosModificados = resultado.productos;
+      if (tipo_accion === 'producto_regalo' && logica_aplicar.efecto && logica_aplicar.efecto.producto_target_keywords) {
+        const keywords = logica_aplicar.efecto.producto_target_keywords;
+        
+        if (keywords && keywords.length > 0) {
+          // Buscar productos regalo que no tengan ID (tanto si se agregaron como si ya existían)
+          const productosRegaloSinId = productosModificados.filter(p => 
+            (p.es_regalo === true || p.precio === 0) && 
+            (p.id === null || p.id === undefined)
+          );
+          
+          if (productosRegaloSinId.length > 0) {
+            try {
+              // Construir condiciones de búsqueda con todos los keywords
+              // Buscar productos que contengan cualquiera de los keywords en el nombre
+              const condicionesNombre = keywords.map(keyword => ({
+                nombre: { [Op.like]: `%${keyword.trim()}%` }
+              }));
+              
+              const whereClause = {
+                baja_logica: false,
+                [Op.or]: condicionesNombre
+              };
+              
+              // Buscar el producto en inventarios
+              let productoInventario = await Inventario.findOne({
+                where: whereClause,
+                order: [['nombre', 'ASC']]
+              });
+              
+              // Si no se encuentra, intentar buscar con el primer keyword completo
+              if (!productoInventario) {
+                const primerKeyword = keywords[0]?.trim();
+                if (primerKeyword) {
+                  productoInventario = await Inventario.findOne({
+                    where: {
+                      baja_logica: false,
+                      nombre: { [Op.like]: `%${primerKeyword}%` }
+                    },
+                    order: [['nombre', 'ASC']]
+                  });
+                }
+              }
+              
+              // Asignar el ID a todos los productos regalo sin ID
+              if (productoInventario) {
+                productosRegaloSinId.forEach(producto => {
+                  producto.id = productoInventario.id;
+                  // Actualizar el nombre si no coincide exactamente
+                  if (!producto.nombre || producto.nombre !== productoInventario.nombre) {
+                    producto.nombre = productoInventario.nombre;
+                  }
+                });
+              }
+            } catch (searchError) {
+              console.error('Error buscando producto en inventarios:', searchError);
+              // Continuar sin asignar ID si hay error en la búsqueda
+            }
+          }
+        }
+      }
+
+      // 5. Actualizar productos en PostgreSQL
       const totalDespues = calcularTotalCarrito(productosModificados);
       
       // Preservar otros campos del objeto original
@@ -772,7 +834,7 @@ class PromotionController {
         });
       }
 
-      // 5. Retornar respuesta con productos modificados
+      // 6. Retornar respuesta con productos modificados
       res.json({
         success: true,
         message: 'Promoción aplicada exitosamente',
