@@ -386,32 +386,39 @@ class PedidoController {
       // Agregar productos al pedido si se proporcionan
       if (productos && productos.length > 0) {
         for (const producto of productos) {
-          const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto } = producto;
+          const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto, es_regalo } = producto;
           
-          // Verificar que el producto existe
-          const productoInventario = await Inventario.findByPk(fkid_producto);
-          if (!productoInventario) {
-            return res.status(400).json({
-              success: false,
-              message: `El producto con ID ${fkid_producto} no existe`
-            });
+          // Para productos regalo, permitir fkid_producto null
+          // Para productos normales, verificar que el producto existe
+          if (!es_regalo && fkid_producto) {
+            const productoInventario = await Inventario.findByPk(fkid_producto);
+            if (!productoInventario) {
+              return res.status(400).json({
+                success: false,
+                message: `El producto con ID ${fkid_producto} no existe`
+              });
+            }
           }
 
-          const precioTotal = parseFloat(precio_unidad) * parseInt(cantidad);
-          const descuento = (precioTotal * parseFloat(descuento_producto)) / 100;
-          const precioFinal = precioTotal - descuento;
+          // Los precios ya vienen aplicados desde aplicarCodigo, no calcular descuentos aquí
+          const precioUnidad = parseFloat(precio_unidad) || 0;
+          const precioTotal = precioUnidad * parseInt(cantidad);
+          
+          // El descuento_producto debe ser 0 ya que los descuentos se aplicaron en aplicarCodigo
+          // Solo usar descuento_producto si viene explícitamente en el request (para compatibilidad)
+          const descuentoProducto = parseFloat(descuento_producto) || 0;
 
           await ProductoPedido.create({
             fkid_pedido: pedido.id,
-            fkid_producto,
+            fkid_producto: fkid_producto || null,
             cantidad,
-            precio_unidad,
-            precio_total: precioFinal,
-            descuento_producto,
+            precio_unidad: precioUnidad,
+            precio_total: precioTotal, // Precio ya viene con descuentos aplicados
+            descuento_producto: descuentoProducto,
             notas_producto
           });
 
-          subtotal += precioFinal;
+          subtotal += precioTotal;
         }
       }
 
