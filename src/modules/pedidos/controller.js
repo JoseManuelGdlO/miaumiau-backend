@@ -385,7 +385,18 @@ class PedidoController {
 
       // Agregar productos al pedido si se proporcionan
       if (productos && productos.length > 0) {
-        for (const producto of productos) {
+        // Detectar si la estructura es anidada (objetos con propiedad 'productos' dentro)
+        // o plana (productos directos)
+        const esEstructuraAnidada = typeof productos[0] === 'object' && 
+          productos[0] !== null &&
+          Array.isArray(productos[0].productos);
+        
+        // Si es estructura anidada, extraer los productos de cada objeto
+        const productosAProcesar = esEstructuraAnidada 
+          ? productos.flatMap(item => item.productos || [])
+          : productos;
+        
+        for (const producto of productosAProcesar) {
           const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto, es_regalo } = producto;
           
           // Para productos regalo, permitir fkid_producto null
@@ -1172,7 +1183,7 @@ class PedidoController {
       
       // Generar los próximos 7 días
       const disponibilidad = [];
-      const maxPedidosPorHorario = 10; // Máximo 5 pedidos por horario
+      const maxPedidosPorHorario = 5; // Máximo 5 pedidos por horario
       
       for (let i = 0; i < 7; i++) {
         const fecha = new Date(fechaInicioDisponibilidad);

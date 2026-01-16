@@ -55,27 +55,73 @@ function aplicarDescuentoGlobal(productos, logica) {
     descuentoTotal = Math.min(valor, totalCarrito);
   }
 
-  // Distribuir descuento proporcionalmente
-  const productosModificados = productos.map(producto => {
+  // Distribuir descuento proporcionalmente con algoritmo que asegura suma exacta
+  // Primero calcular descuentos sin redondear
+  const descuentosCalculados = productos.map(producto => {
     const precioOriginal = Number(producto.precio) || 0;
     const cantidad = Number(producto.cantidad) || 0;
     const subtotalProducto = precioOriginal * cantidad;
     const proporcion = totalCarrito > 0 ? subtotalProducto / totalCarrito : 0;
-    const descuentoProducto = Math.round(descuentoTotal * proporcion * 100) / 100;
-    const nuevoPrecio = cantidad > 0 ? Math.max(0, precioOriginal - (descuentoProducto / cantidad)) : precioOriginal;
+    const descuentoProducto = descuentoTotal * proporcion;
     
     return {
-      ...producto,
-      precio_original: precioOriginal,
+      producto,
+      precioOriginal,
+      cantidad,
+      subtotalProducto,
+      descuentoProducto,
+      descuentoProductoRedondeado: 0 // Se calculará después
+    };
+  });
+
+  // Calcular descuentos redondeados y ajustar el último para que la suma sea exacta
+  const descuentosRedondeados = descuentosCalculados.map(item => ({
+    ...item,
+    descuentoProductoRedondeado: Math.round(item.descuentoProducto * 100) / 100
+  }));
+
+  // Calcular diferencia entre suma de redondeados y descuento total
+  const sumaRedondeados = descuentosRedondeados.reduce((sum, item) => 
+    sum + item.descuentoProductoRedondeado, 0
+  );
+  const diferencia = Math.round((descuentoTotal - sumaRedondeados) * 100) / 100;
+
+  // Ajustar el último producto con mayor descuento para que la suma sea exacta
+  if (Math.abs(diferencia) > 0.01) {
+    // Encontrar el producto con mayor descuento (en valor absoluto)
+    const indiceAjustar = descuentosRedondeados.reduce((maxIdx, item, idx) => {
+      return Math.abs(item.descuentoProducto) > Math.abs(descuentosRedondeados[maxIdx].descuentoProducto) 
+        ? idx 
+        : maxIdx;
+    }, 0);
+    
+    descuentosRedondeados[indiceAjustar].descuentoProductoRedondeado = 
+      Math.round((descuentosRedondeados[indiceAjustar].descuentoProductoRedondeado + diferencia) * 100) / 100;
+  }
+
+  // Aplicar descuentos a productos
+  const productosModificados = descuentosRedondeados.map(item => {
+    const descuentoProducto = item.descuentoProductoRedondeado;
+    const nuevoPrecio = item.cantidad > 0 
+      ? Math.max(0, item.precioOriginal - (descuentoProducto / item.cantidad)) 
+      : item.precioOriginal;
+    
+    return {
+      ...item.producto,
+      precio_original: item.precioOriginal,
       precio: Math.round(nuevoPrecio * 100) / 100,
       descuento_aplicado: Math.round(descuentoProducto * 100) / 100
     };
   });
 
+  // Verificar que el total sea exacto
+  const totalDespues = calcularTotalCarrito(productosModificados);
+  const descuentoReal = totalCarrito - totalDespues;
+
   return {
     aplicado: true,
     productos: productosModificados,
-    descuento_total: Math.round(descuentoTotal * 100) / 100
+    descuento_total: Math.round(descuentoReal * 100) / 100
   };
 }
 
@@ -290,18 +336,23 @@ function aplicarProductoRegalo(productos, logica) {
 
   if (productoRegaloExistente) {
     // Si ya existe, marcar como regalo (precio 0)
+    // IMPORTANTE: Preservar TODAS las propiedades originales, especialmente el ID
     const productosModificados = productos.map(producto => {
       if (productoCoincideConKeywords(producto, keywordsTarget)) {
+        // Este es el producto regalo - marcar como regalo pero preservar ID original
         return {
           ...producto,
           precio_original: Number(producto.precio) || 0,
           precio: 0,
           es_regalo: true
+          // El ID se preserva automáticamente con el spread operator
         };
       }
+      // Para productos que NO son el regalo, NO modificar nada excepto precio_original
       return {
         ...producto,
         precio_original: Number(producto.precio) || 0
+        // Todas las demás propiedades (incluyendo ID) se preservan con el spread
       };
     });
 
@@ -324,9 +375,16 @@ function aplicarProductoRegalo(productos, logica) {
       es_regalo: true
     };
 
+    // IMPORTANTE: Preservar TODAS las propiedades de los productos originales, especialmente el ID
+    const productosConPrecioOriginal = productos.map(p => ({
+      ...p,
+      precio_original: Number(p.precio) || 0
+      // Todas las demás propiedades (incluyendo ID) se preservan con el spread
+    }));
+
     return {
       aplicado: true,
-      productos: [...productos.map(p => ({ ...p, precio_original: Number(p.precio) || 0 })), nuevoProducto],
+      productos: [...productosConPrecioOriginal, nuevoProducto],
       producto_agregado: true
     };
   }
