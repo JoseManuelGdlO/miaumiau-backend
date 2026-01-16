@@ -1,4 +1,4 @@
-const { Promotion, City, PromotionCity, Inventario } = require('../../models');
+const { Promotion, City, PromotionCity, Inventario, PromotionUsage } = require('../../models');
 const { Op } = require('sequelize');
 const { query } = require('../../config/postgres');
 const { mapCityNameToId } = require('../../utils/cityMapper');
@@ -627,6 +627,34 @@ class PromotionController {
         }
       }
 
+      // 6. Validar límite de uso por usuario
+      let vecesUsado = 0;
+      if (promotion.limite_uso > 0) {
+        vecesUsado = await PromotionUsage.countByPromotionAndTelefono(
+          promotion.id, 
+          telefono
+        );
+
+        if (vecesUsado >= promotion.limite_uso) {
+          return res.status(400).json({
+            success: true,
+            valid: false,
+            message: `Has alcanzado el límite de uso para este código. Ya lo has usado ${vecesUsado} ${vecesUsado === 1 ? 'vez' : 'veces'} de ${promotion.limite_uso} permitidas.`,
+            data: {
+              promotion: {
+                id: promotion.id,
+                nombre: promotion.nombre,
+                codigo: promotion.codigo
+              },
+              veces_usado: vecesUsado,
+              limite_uso: promotion.limite_uso,
+              ciudad_usuario: ciudadNombre,
+              ciudad_id: ciudadId
+            }
+          });
+        }
+      }
+
       // Si llegamos aquí, la promoción es válida
       res.json({
         success: true,
@@ -635,7 +663,10 @@ class PromotionController {
         data: {
           promotion: promotion.toJSON(),
           ciudad_usuario: ciudadNombre,
-          ciudad_id: ciudadId
+          ciudad_id: ciudadId,
+          // Mostrar cuántas veces ha usado el código si tiene límite
+          veces_usado: promotion.limite_uso > 0 ? vecesUsado : null,
+          limite_uso: promotion.limite_uso
         }
       });
 

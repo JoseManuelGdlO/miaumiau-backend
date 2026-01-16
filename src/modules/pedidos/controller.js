@@ -1,4 +1,4 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, Promotion, PromotionUsage } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
@@ -480,6 +480,25 @@ class PedidoController {
           success: false,
           message: 'El pedido debe contener al menos un producto o paquete'
         });
+      }
+
+      // Registrar uso del código de promoción si existe
+      if (codigoPromocionNormalizado) {
+        try {
+          const promotion = await Promotion.findByCode(codigoPromocionNormalizado);
+          if (promotion) {
+            await PromotionUsage.create({
+              promotion_id: promotion.id,
+              telefono: telefono_referencia || cliente?.telefono,
+              fkid_cliente: clienteId,
+              fkid_pedido: pedido.id
+            });
+          }
+        } catch (usageError) {
+          // No fallar el pedido si hay error al registrar el uso
+          // Solo loguear el error para debugging
+          console.error('Error al registrar uso de promoción:', usageError);
+        }
       }
 
       // Actualizar subtotal del pedido
