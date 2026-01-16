@@ -9,6 +9,7 @@ const RolePermission = require('./RolePermission');
 const City = require('./City');
 const Promotion = require('./Promotion');
 const PromotionCity = require('./PromotionCity');
+const PromotionUsage = require('./PromotionUsage');
 const Peso = require('./Peso');
 const CategoriaProducto = require('./CategoriaProducto');
 const Proveedor = require('./Proveedor');
@@ -39,6 +40,7 @@ const models = {
   City: City(sequelize, DataTypes),
   Promotion: Promotion(sequelize, DataTypes),
   PromotionCity: PromotionCity(sequelize, DataTypes),
+  PromotionUsage: PromotionUsage(sequelize, DataTypes),
   Peso: Peso(sequelize, DataTypes),
   CategoriaProducto: CategoriaProducto(sequelize, DataTypes),
   Proveedor: Proveedor(sequelize, DataTypes),
@@ -140,6 +142,38 @@ models.PromotionCity.belongsTo(models.Promotion, {
 models.PromotionCity.belongsTo(models.City, {
   foreignKey: 'city_id',
   as: 'city'
+});
+
+// Asociaciones para PromotionUsage
+models.PromotionUsage.belongsTo(models.Promotion, {
+  foreignKey: 'promotion_id',
+  as: 'promotion'
+});
+
+models.PromotionUsage.belongsTo(models.Cliente, {
+  foreignKey: 'fkid_cliente',
+  as: 'cliente'
+});
+
+models.PromotionUsage.belongsTo(models.Pedido, {
+  foreignKey: 'fkid_pedido',
+  as: 'pedido'
+});
+
+// Asociaciones inversas
+models.Promotion.hasMany(models.PromotionUsage, {
+  foreignKey: 'promotion_id',
+  as: 'usages'
+});
+
+models.Cliente.hasMany(models.PromotionUsage, {
+  foreignKey: 'fkid_cliente',
+  as: 'promociones_usadas'
+});
+
+models.Pedido.hasOne(models.PromotionUsage, {
+  foreignKey: 'fkid_pedido',
+  as: 'promocion_usada'
 });
 
 // Asociaciones para Inventario
