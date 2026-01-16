@@ -67,9 +67,21 @@ const validatePedido = [
     .custom((productos) => {
       if (!Array.isArray(productos)) return true;
       
+      // Detectar si la estructura es anidada (objetos con propiedad 'productos' dentro)
+      // o plana (productos directos)
+      const esEstructuraAnidada = productos.length > 0 && 
+        typeof productos[0] === 'object' && 
+        productos[0] !== null &&
+        Array.isArray(productos[0].productos);
+      
+      // Si es estructura anidada, extraer los productos de cada objeto
+      const productosAValidar = esEstructuraAnidada 
+        ? productos.flatMap(item => item.productos || [])
+        : productos;
+      
       // Validar cada producto del array
-      for (let i = 0; i < productos.length; i++) {
-        const producto = productos[i];
+      for (let i = 0; i < productosAValidar.length; i++) {
+        const producto = productosAValidar[i];
         
         // Validar precio_unidad
         const precioUnidad = parseFloat(producto?.precio_unidad);

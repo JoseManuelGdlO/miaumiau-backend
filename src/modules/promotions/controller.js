@@ -2,7 +2,7 @@ const { Promotion, City, PromotionCity, Inventario } = require('../../models');
 const { Op } = require('sequelize');
 const { query } = require('../../config/postgres');
 const { mapCityNameToId } = require('../../utils/cityMapper');
-const { aplicarLogicaDescuento, calcularTotalCarrito } = require('../descuentos/aplicarDescuentos');
+const { aplicarLogicaDescuento, calcularTotalCarrito, productoCoincideConKeywords } = require('../descuentos/aplicarDescuentos');
 
 class PromotionController {
   // Obtener todas las promociones
@@ -752,16 +752,41 @@ class PromotionController {
       }
 
       // 4. Si es producto_regalo, buscar el ID en inventarios para productos sin ID
-      let productosModificados = resultado.productos;
+      // IMPORTANTE: Crear una copia profunda para evitar mutaciones accidentales
+      let productosModificados = resultado.productos.map(p => ({ ...p }));
+      
       if (tipo_accion === 'producto_regalo' && logica_aplicar.efecto && logica_aplicar.efecto.producto_target_keywords) {
         const keywords = logica_aplicar.efecto.producto_target_keywords;
+        const keywordsTrigger = logica_aplicar.condiciones?.producto_trigger_keywords || [];
         
         if (keywords && keywords.length > 0) {
-          // Buscar productos regalo que no tengan ID (tanto si se agregaron como si ya existían)
-          const productosRegaloSinId = productosModificados.filter(p => 
-            (p.es_regalo === true || p.precio === 0) && 
-            (p.id === null || p.id === undefined)
-          );
+          // Buscar productos regalo que coincidan con los keywords target Y no tengan ID
+          // IMPORTANTE: Solo modificar productos que:
+          // 1. Tienen la bandera es_regalo === true (no solo precio === 0)
+          // 2. No tienen ID (null o undefined)
+          // 3. Coinciden con keywords target
+          const productosRegaloSinId = productosModificados.filter(p => {
+            // Debe tener explícitamente es_regalo === true
+            const esRegalo = p.es_regalo === true;
+            // No debe tener ID
+            const sinId = p.id === null || p.id === undefined;
+            // Debe coincidir con keywords target
+            const coincideConKeywordsTarget = productoCoincideConKeywords(p, keywords);
+            
+            // Solo incluir si cumple TODAS las condiciones
+            const debeIncluir = esRegalo && sinId && coincideConKeywordsTarget;
+            
+            // Log para debugging si un producto con ID está siendo considerado
+            if (esRegalo && coincideConKeywordsTarget && !sinId) {
+              console.warn('Producto regalo con ID existente detectado (no se modificará):', {
+                nombre: p.nombre,
+                id: p.id,
+                es_regalo: p.es_regalo
+              });
+            }
+            
+            return debeIncluir;
+          });
           
           if (productosRegaloSinId.length > 0) {
             try {
@@ -796,15 +821,58 @@ class PromotionController {
                 }
               }
               
-              // Asignar el ID a todos los productos regalo sin ID
+              // Asignar el ID SOLO a productos regalo que coincidan con keywords target
+              // Verificar que no haya duplicados de ID en el carrito antes de asignar
               if (productoInventario) {
-                productosRegaloSinId.forEach(producto => {
-                  producto.id = productoInventario.id;
-                  // Actualizar el nombre si no coincide exactamente
-                  if (!producto.nombre || producto.nombre !== productoInventario.nombre) {
-                    producto.nombre = productoInventario.nombre;
-                  }
-                });
+                const idProductoRegalo = productoInventario.id;
+                
+                // Verificar que no exista ya otro producto con este ID (excepto si es el mismo producto regalo)
+                const existeIdDuplicado = productosModificados.some(p => 
+                  p.id === idProductoRegalo && 
+                  !productosRegaloSinId.includes(p) &&
+                  !(p.es_regalo === true && productoCoincideConKeywords(p, keywords))
+                );
+                
+                if (!existeIdDuplicado) {
+                  productosRegaloSinId.forEach(producto => {
+                    // Verificar múltiples condiciones antes de asignar el ID:
+                    // 1. El producto debe coincidir con el inventario encontrado
+                    // 2. El producto NO debe tener un ID válido (null o undefined)
+                    // 3. El producto debe ser explícitamente un regalo
+                    const coincideConInventario = productoCoincideConKeywords(producto, [productoInventario.nombre]);
+                    const noTieneId = producto.id === null || producto.id === undefined;
+                    const esRegalo = producto.es_regalo === true;
+                    
+                    // VERIFICACIÓN FINAL: Si el producto tiene un ID válido, NO MODIFICAR
+                    if (producto.id !== null && producto.id !== undefined) {
+                      console.error('ERROR: Intento de modificar ID de producto que ya tiene ID:', {
+                        nombre: producto.nombre,
+                        id_actual: producto.id,
+                        id_intentado: idProductoRegalo
+                      });
+                      return; // NO MODIFICAR este producto
+                    }
+                    
+                    if (coincideConInventario && noTieneId && esRegalo) {
+                      producto.id = idProductoRegalo;
+                      // Actualizar el nombre si no coincide exactamente
+                      if (!producto.nombre || producto.nombre !== productoInventario.nombre) {
+                        producto.nombre = productoInventario.nombre;
+                      }
+                    } else {
+                      console.warn('No se asignó ID al producto porque no cumple todas las condiciones:', {
+                        nombre: producto.nombre,
+                        id_actual: producto.id,
+                        es_regalo: producto.es_regalo,
+                        coincide_con_inventario: coincideConInventario,
+                        no_tiene_id: noTieneId,
+                        es_regalo_flag: esRegalo,
+                      });
+                    }
+                  });
+                } else {
+                  console.warn(`No se asignó ID ${idProductoRegalo} al producto regalo porque ya existe otro producto con ese ID en el carrito`);
+                }
               }
             } catch (searchError) {
               console.error('Error buscando producto en inventarios:', searchError);
@@ -814,7 +882,34 @@ class PromotionController {
         }
       }
 
-      // 5. Actualizar productos en PostgreSQL
+      // 5. Verificación final: Asegurar que los productos originales mantengan su ID
+      // Comparar con los productos originales para detectar cambios no deseados
+      if (tipo_accion === 'producto_regalo') {
+        productos.forEach((productoOriginal) => {
+          // Solo verificar productos que NO son regalo y tienen ID
+          if (!productoOriginal.es_regalo && productoOriginal.id) {
+            // Buscar el producto modificado por ID y nombre (más robusto que por índice)
+            const productoModificado = productosModificados.find(p => 
+              p.id === productoOriginal.id || 
+              (p.nombre === productoOriginal.nombre && !p.es_regalo)
+            );
+            
+            if (productoModificado && productoModificado.id !== productoOriginal.id) {
+              console.error('ERROR CRÍTICO: ID de producto original fue modificado:', {
+                nombre: productoOriginal.nombre,
+                id_original: productoOriginal.id,
+                id_modificado: productoModificado.id,
+                es_regalo_original: productoOriginal.es_regalo,
+                es_regalo_modificado: productoModificado.es_regalo
+              });
+              // Restaurar el ID original
+              productoModificado.id = productoOriginal.id;
+            }
+          }
+        });
+      }
+      
+      // 6. Actualizar productos en PostgreSQL
       const totalDespues = calcularTotalCarrito(productosModificados);
       
       // Preservar otros campos del objeto original
