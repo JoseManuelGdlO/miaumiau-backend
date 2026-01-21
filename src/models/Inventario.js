@@ -173,12 +173,12 @@ module.exports = (sequelize, DataTypes) => {
   // Métodos de instancia
   Inventario.prototype.softDelete = function() {
     this.baja_logica = true;
-    return this.save();
+    return this.save({ fields: ['baja_logica'], validate: false });
   };
 
   Inventario.prototype.restore = function() {
     this.baja_logica = false;
-    return this.save();
+    return this.save({ fields: ['baja_logica'], validate: false });
   };
 
   Inventario.prototype.activate = function() {
