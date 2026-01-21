@@ -12,7 +12,7 @@ class InventarioController {
         ciudad,
         proveedor,
         peso,
-        activos = 'true',
+        activos,
         low_stock = 'false',
         search,
         min_price,
