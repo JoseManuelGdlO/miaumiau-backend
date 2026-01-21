@@ -588,7 +588,15 @@ class NotificacionController {
       }
 
       // Ordenar todas las actividades por fecha descendente
-      actividades.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      // Manejar casos donde fecha pueda ser null o undefined
+      actividades.sort((a, b) => {
+        const fechaA = a.fecha ? new Date(a.fecha) : new Date(0);
+        const fechaB = b.fecha ? new Date(b.fecha) : new Date(0);
+        // Si alguna fecha es inválida, usar fecha muy antigua (1970)
+        const fechaAValida = isNaN(fechaA.getTime()) ? new Date(0) : fechaA;
+        const fechaBValida = isNaN(fechaB.getTime()) ? new Date(0) : fechaB;
+        return fechaBValida - fechaAValida;
+      });
 
       // Limitar resultados
       const actividadesLimitadas = actividades.slice(0, parseInt(limit));
@@ -596,8 +604,13 @@ class NotificacionController {
       // Calcular tiempo relativo (hace X minutos/horas)
       const actividadesConTiempo = actividadesLimitadas.map(act => {
         const ahora = new Date();
-        const fechaAct = new Date(act.fecha);
-        const diffMs = ahora - fechaAct;
+        // Validar que la fecha exista y sea válida
+        const fechaAct = act.fecha ? new Date(act.fecha) : new Date();
+        
+        // Verificar si la fecha es válida, si no usar fecha actual
+        const fechaValida = isNaN(fechaAct.getTime()) ? new Date() : fechaAct;
+        
+        const diffMs = ahora - fechaValida;
         const diffMins = Math.floor(diffMs / 60000);
         const diffHours = Math.floor(diffMs / 3600000);
         const diffDays = Math.floor(diffMs / 86400000);
@@ -616,7 +629,7 @@ class NotificacionController {
         return {
           ...act,
           tiempoRelativo,
-          fechaFormateada: fechaAct.toISOString()
+          fechaFormateada: fechaValida.toISOString()
         };
       });
 

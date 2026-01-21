@@ -1,4 +1,4 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, Promotion, PromotionUsage } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
@@ -382,6 +382,7 @@ class PedidoController {
 
       // Calcular subtotal inicial
       let subtotal = 0;
+      let productosAProcesar = [];
 
       // Agregar productos al pedido si se proporcionan
       if (productos && productos.length > 0) {
@@ -392,7 +393,7 @@ class PedidoController {
           Array.isArray(productos[0].productos);
         
         // Si es estructura anidada, extraer los productos de cada objeto
-        const productosAProcesar = esEstructuraAnidada 
+        productosAProcesar = esEstructuraAnidada 
           ? productos.flatMap(item => item.productos || [])
           : productos;
         
@@ -480,6 +481,122 @@ class PedidoController {
           success: false,
           message: 'El pedido debe contener al menos un producto o paquete'
         });
+      }
+
+      // Función helper para calcular productos por paquete
+      const calcularProductosPorPaquete = async (paquetesArray) => {
+        const productosPorPaquete = {};
+        for (const paqueteItem of paquetesArray) {
+          if (!paqueteItem.fkid_paquete) continue;
+          
+          const productosPaquete = await ProductoPaquete.findAll({
+            where: {
+              fkid_paquete: paqueteItem.fkid_paquete
+            }
+          });
+
+          for (const productoPaquete of productosPaquete) {
+            const cantidadTotal = paqueteItem.cantidad * productoPaquete.cantidad;
+            if (!productosPorPaquete[productoPaquete.fkid_producto]) {
+              productosPorPaquete[productoPaquete.fkid_producto] = 0;
+            }
+            productosPorPaquete[productoPaquete.fkid_producto] += cantidadTotal;
+          }
+        }
+        return productosPorPaquete;
+      };
+
+      // Calcular cantidad de productos por paquete
+      const productosPorPaquete = paquetes && paquetes.length > 0 
+        ? await calcularProductosPorPaquete(paquetes) 
+        : {};
+
+      // Validar y restar stock al crear el pedido
+      const erroresStock = [];
+      
+      // Validar stock de productos directos (sumando si también están en paquetes)
+      for (const producto of productosAProcesar) {
+        if (!producto.fkid_producto) {
+          // Producto regalo sin ID - omitir (se registra pero no se puede actualizar stock)
+          continue;
+        }
+
+        const productoInventario = await Inventario.findByPk(producto.fkid_producto);
+        if (!productoInventario) {
+          erroresStock.push(`Producto con ID ${producto.fkid_producto} no encontrado en inventario`);
+          continue;
+        }
+
+        const cantidadDirecta = parseInt(producto.cantidad);
+        const cantidadDePaquetes = productosPorPaquete[producto.fkid_producto] || 0;
+        const cantidadRequerida = cantidadDirecta + cantidadDePaquetes;
+
+        if (productoInventario.stock_inicial < cantidadRequerida) {
+          erroresStock.push(
+            `Stock insuficiente para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Disponible: ${productoInventario.stock_inicial}, Requerido: ${cantidadRequerida}`
+          );
+        }
+      }
+
+      // Validar stock de productos solo en paquetes (que no están como productos directos)
+      const productosDirectosIds = productosAProcesar
+        .map(p => p.fkid_producto)
+        .filter(id => id !== null);
+      
+      for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
+        // Solo validar si no está ya como producto directo
+        if (productosDirectosIds.includes(parseInt(productoId))) {
+          continue; // Ya se validó arriba
+        }
+
+        const producto = await Inventario.findByPk(productoId);
+        if (!producto) {
+          erroresStock.push(`Producto con ID ${productoId} no encontrado en inventario`);
+          continue;
+        }
+
+        if (producto.stock_inicial < cantidadTotal) {
+          erroresStock.push(
+            `Stock insuficiente para ${producto.nombre} (SKU: ${producto.sku}) en paquetes. Disponible: ${producto.stock_inicial}, Requerido: ${cantidadTotal}`
+          );
+        }
+      }
+
+      // Si hay errores de stock, retornar error y eliminar el pedido creado
+      if (erroresStock.length > 0) {
+        // Eliminar el pedido creado ya que no se puede completar
+        await pedido.destroy();
+        return res.status(400).json({
+          success: false,
+          message: 'Stock insuficiente para crear el pedido',
+          errors: erroresStock
+        });
+      }
+
+      // Recalcular productos por paquete para restar stock
+      const productosPorPaqueteParaRestar = paquetes && paquetes.length > 0 
+        ? await calcularProductosPorPaquete(paquetes) 
+        : {};
+
+      // Restar stock de productos directos
+      for (const producto of productosAProcesar) {
+        if (!producto.fkid_producto) continue; // Omitir productos regalo sin ID
+
+        const productoInventario = await Inventario.findByPk(producto.fkid_producto);
+        if (!productoInventario) continue;
+
+        const cantidadDirecta = parseInt(producto.cantidad);
+        if (cantidadDirecta > 0) {
+          await productoInventario.reducirStock(cantidadDirecta);
+        }
+      }
+
+      // Restar stock de productos en paquetes (sin importar si también están como directos)
+      for (const [productoId, cantidadTotal] of Object.entries(productosPorPaqueteParaRestar)) {
+        const producto = await Inventario.findByPk(productoId);
+        if (producto && cantidadTotal > 0) {
+          await producto.reducirStock(cantidadTotal);
+        }
       }
 
       // Registrar uso del código de promoción si existe
@@ -897,12 +1014,103 @@ class PedidoController {
         });
       }
 
+      // Guardar estado anterior antes de cancelar
+      const estadoAnterior = pedido.estado;
+
+      // Restaurar stock si el pedido estaba en pendiente o confirmado
+      // (ya que el stock se resta al crear el pedido)
+      if (estadoAnterior === 'pendiente' || estadoAnterior === 'confirmado') {
+        // Obtener todos los productos del pedido
+        const productosPedido = await ProductoPedido.findAll({
+          where: {
+            fkid_pedido: id,
+            baja_logica: false
+          },
+          include: [
+            {
+              model: Inventario,
+              as: 'producto',
+              required: false
+            }
+          ]
+        });
+
+        // Obtener todos los paquetes del pedido
+        const paquetesPedido = await PaquetePedido.findAll({
+          where: {
+            fkid_pedido: id
+          },
+          include: [
+            {
+              model: Paquete,
+              as: 'paquete',
+              required: false
+            }
+          ]
+        });
+
+        // Calcular cantidad de productos por paquete
+        const productosPorPaquete = {};
+        for (const paquetePedido of paquetesPedido) {
+          if (!paquetePedido.fkid_paquete) continue;
+          
+          const productosPaquete = await ProductoPaquete.findAll({
+            where: {
+              fkid_paquete: paquetePedido.fkid_paquete
+            }
+          });
+
+          for (const productoPaquete of productosPaquete) {
+            const cantidadTotal = paquetePedido.cantidad * productoPaquete.cantidad;
+            if (!productosPorPaquete[productoPaquete.fkid_producto]) {
+              productosPorPaquete[productoPaquete.fkid_producto] = 0;
+            }
+            productosPorPaquete[productoPaquete.fkid_producto] += cantidadTotal;
+          }
+        }
+
+        // Restaurar stock de productos directos
+        for (const productoPedido of productosPedido) {
+          if (!productoPedido.fkid_producto) continue; // Omitir productos regalo sin ID
+
+          const producto = productoPedido.producto;
+          if (!producto) continue;
+
+          const cantidadARestaurar = productoPedido.cantidad;
+          if (cantidadARestaurar > 0) {
+            try {
+              await producto.restaurarStock(cantidadARestaurar);
+            } catch (error) {
+              // Log error pero continuar restaurando otros productos
+              console.error(`Error al restaurar stock del producto ${producto.id}:`, error.message);
+            }
+          }
+        }
+
+        // Restaurar stock de productos en paquetes
+        for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
+          const producto = await Inventario.findByPk(productoId);
+          if (producto && cantidadTotal > 0) {
+            try {
+              await producto.restaurarStock(cantidadTotal);
+            } catch (error) {
+              // Log error pero continuar restaurando otros productos
+              console.error(`Error al restaurar stock del producto ${producto.id} desde paquetes:`, error.message);
+            }
+          }
+        }
+      }
+
+      // Cancelar el pedido
       await pedido.cancelar();
+
+      // Recargar el pedido para obtener el estado actualizado
+      const pedidoActualizado = await Pedido.findByPk(id);
 
       res.json({
         success: true,
         message: 'Pedido cancelado exitosamente',
-        data: { pedido }
+        data: { pedido: pedidoActualizado }
       });
     } catch (error) {
       next(error);
