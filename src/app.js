@@ -35,6 +35,7 @@ const repartidorRoutes = require('./modules/repartidores/routes');
 const rutaRoutes = require('./modules/rutas/routes');
 const notificacionRoutes = require('./modules/notificaciones/routes');
 const paqueteRoutes = require('./modules/paquetes/routes');
+const mensajeriaRoutes = require('./modules/mensajeria/routes');
 
 const app = express();
 
@@ -131,6 +132,7 @@ app.use('/api/repartidores', repartidorRoutes);
 app.use('/api/rutas', rutaRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
 app.use('/api/paquetes', paqueteRoutes);
+app.use('/api/mensajeria', mensajeriaRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

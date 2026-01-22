@@ -29,6 +29,7 @@ const Notificacion = require('./Notificacion');
 const Paquete = require('./Paquete');
 const ProductoPaquete = require('./ProductoPaquete');
 const PaquetePedido = require('./PaquetePedido');
+const WhatsAppPhoneNumber = require('./WhatsAppPhoneNumber');
 
 // Inicializar modelos
 const models = {
@@ -58,7 +59,8 @@ const models = {
   Notificacion: Notificacion(sequelize, DataTypes),
   Paquete: Paquete(sequelize, DataTypes),
   ProductoPaquete: ProductoPaquete(sequelize, DataTypes),
-  PaquetePedido: PaquetePedido(sequelize, DataTypes)
+  PaquetePedido: PaquetePedido(sequelize, DataTypes),
+  WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes)
 };
 
 // Definir asociaciones

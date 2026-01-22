@@ -38,6 +38,13 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL'
     },
+    whatsapp_phone_number_id: {
+      type: DataTypes.STRING(64),
+      allowNull: true,
+      validate: {
+        len: [1, 64]
+      }
+    },
     tipo_usuario: {
       type: DataTypes.ENUM('cliente', 'agente', 'bot', 'sistema'),
       allowNull: false,
@@ -64,6 +71,9 @@ module.exports = (sequelize, DataTypes) => {
       },
       {
         fields: ['id_pedido']
+      },
+      {
+        fields: ['whatsapp_phone_number_id']
       },
       {
         fields: ['tipo_usuario']

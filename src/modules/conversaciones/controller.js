@@ -1,5 +1,26 @@
-const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario } = require('../../models');
+const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario, WhatsAppPhoneNumber } = require('../../models');
 const { Op } = require('sequelize');
+
+const normalizePhone = (value) => {
+  if (!value) return null;
+  const normalized = String(value).replace(/\D/g, '');
+  return normalized || null;
+};
+
+const extractPhone = (value) => {
+  if (!value) return null;
+  const match = String(value).match(/\+?\d+/);
+  return match ? match[0] : null;
+};
+
+const resolvePhoneNumberId = async (rawPhone) => {
+  const normalized = normalizePhone(rawPhone);
+  if (!normalized) return null;
+  const mapping = await WhatsAppPhoneNumber.findOne({
+    where: { telefono: normalized }
+  });
+  return mapping?.phoneid || null;
+};
 
 class ConversacionController {
   // Obtener todas las conversaciones
@@ -190,9 +211,10 @@ class ConversacionController {
       // Normalizar id_cliente: si viene 0 o '0', tratar como null
       const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
 
+      let cliente = null;
       // Verificar que el cliente existe si se proporciona
       if (clienteIdNormalizado) {
-        const cliente = await Cliente.findByPk(clienteIdNormalizado);
+        cliente = await Cliente.findByPk(clienteIdNormalizado);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -201,11 +223,15 @@ class ConversacionController {
         }
       }
 
+      const telefonoOrigen = extractPhone(cliente?.telefono || from);
+      const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
+
       const conversacion = await Conversacion.create({
         from,
         status,
         id_cliente: clienteIdNormalizado,
-        tipo_usuario
+        tipo_usuario,
+        whatsapp_phone_number_id
       });
 
       // Crear log de inicio de conversación
@@ -264,9 +290,10 @@ class ConversacionController {
         });
       }
 
+      let cliente = null;
       // Verificar que el cliente existe si se proporciona
       if (clienteIdNormalizado) {
-        const cliente = await Cliente.findByPk(clienteIdNormalizado);
+        cliente = await Cliente.findByPk(clienteIdNormalizado);
         if (!cliente) {
           return res.status(400).json({
             success: false,
@@ -296,11 +323,14 @@ class ConversacionController {
 
       // Si no existe, crear una nueva
       if (!conversacion) {
+        const telefonoOrigen = extractPhone(cliente?.telefono || from);
+        const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
         conversacion = await Conversacion.create({
           from,
           status,
           id_cliente: clienteIdNormalizado,
-          tipo_usuario
+          tipo_usuario,
+          whatsapp_phone_number_id
         });
 
         // Crear log de inicio de conversación
@@ -329,6 +359,12 @@ class ConversacionController {
         });
 
         fueCreada = true;
+      } else if (!conversacion.whatsapp_phone_number_id) {
+        const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
+        const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
+        if (whatsapp_phone_number_id) {
+          await conversacion.update({ whatsapp_phone_number_id });
+        }
       }
 
       res.status(fueCreada ? 201 : 200).json({
