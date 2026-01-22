@@ -1,5 +1,8 @@
-const { Promotion, City, PromotionCity } = require('../../models');
+const { Promotion, City, PromotionCity, Inventario, PromotionUsage } = require('../../models');
 const { Op } = require('sequelize');
+const { query } = require('../../config/postgres');
+const { mapCityNameToId } = require('../../utils/cityMapper');
+const { aplicarLogicaDescuento, calcularTotalCarrito, productoCoincideConKeywords } = require('../descuentos/aplicarDescuentos');
 
 class PromotionController {
   // Obtener todas las promociones
@@ -462,6 +465,523 @@ class PromotionController {
         data: { promotion }
       });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // Validar promoción con datos de PostgreSQL (n8n)
+  async validarPromocion(req, res, next) {
+    try {
+      const { telefono, codigo } = req.body;
+
+      // Validar que se proporcionen los parámetros requeridos
+      if (!telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'El teléfono es requerido'
+        });
+      }
+
+      if (!codigo) {
+        return res.status(400).json({
+          success: false,
+          message: 'El código de promoción es requerido'
+        });
+      }
+
+      // 1. Consultar PostgreSQL solo para obtener la ciudad
+      let ciudadNombre = null;
+      try {
+        const pgQuery = 'SELECT ciudad, productos FROM pedido_sesion WHERE session_id = $1';
+        const result = await query(pgQuery, [telefono]);
+
+        if (!result.rows || result.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No se encontró una sesión activa para este teléfono'
+          });
+        }
+
+        const sessionData = result.rows[0];
+        
+        // Obtener ciudad del campo ciudad directamente
+        if (sessionData.ciudad) {
+          ciudadNombre = sessionData.ciudad;
+        } else if (sessionData.productos) {
+          // Si no está en ciudad, intentar obtenerla del JSON de productos
+          try {
+            const productosData = typeof sessionData.productos === 'string' 
+              ? JSON.parse(sessionData.productos) 
+              : sessionData.productos;
+            
+            if (productosData && productosData.ciudad) {
+              ciudadNombre = productosData.ciudad;
+            }
+          } catch (parseError) {
+            // Si falla el parseo, continuar sin ciudad (se validará después)
+          }
+        }
+      } catch (pgError) {
+        console.error('Error consultando PostgreSQL:', pgError);
+        return res.status(503).json({
+          success: false,
+          message: 'Error al consultar la base de datos de sesiones. Por favor, intenta de nuevo más tarde.'
+        });
+      }
+
+      if (!ciudadNombre) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se pudo determinar la ciudad del usuario'
+        });
+      }
+
+      // 2. Convertir nombre de ciudad a ID
+      const ciudadId = await mapCityNameToId(ciudadNombre);
+      if (!ciudadId) {
+        return res.status(400).json({
+          success: false,
+          message: `La ciudad "${ciudadNombre}" no está registrada en el sistema`
+        });
+      }
+
+      // 3. Buscar la promoción por código
+      const promotion = await Promotion.findByCode(codigo);
+      if (!promotion) {
+        return res.status(400).json({
+          success: false,
+          valid: false,
+          message: 'Código de promoción no válido'
+        });
+      }
+
+      // 4. Validar vigencia temporal (fecha_inicio <= hoy <= fecha_fin)
+      const fechaActual = new Date();
+      const fechaInicio = new Date(promotion.fecha_inicio);
+      const fechaFin = new Date(promotion.fecha_fin);
+
+      if (fechaActual < fechaInicio) {
+        return res.status(400).json({
+          success: true,
+          valid: false,
+          message: `La promoción aún no está vigente. Inicia el ${fechaInicio.toLocaleDateString('es-MX')}`,
+          data: {
+            promotion: {
+              id: promotion.id,
+              nombre: promotion.nombre,
+              codigo: promotion.codigo,
+              fecha_inicio: promotion.fecha_inicio,
+              fecha_fin: promotion.fecha_fin
+            },
+            ciudad_usuario: ciudadNombre,
+            ciudad_id: ciudadId
+          }
+        });
+      }
+
+      if (fechaActual > fechaFin) {
+        return res.status(400).json({
+          success: true,
+          valid: false,
+          message: `La promoción ha expirado. Finalizó el ${fechaFin.toLocaleDateString('es-MX')}`,
+          data: {
+            promotion: {
+              id: promotion.id,
+              nombre: promotion.nombre,
+              codigo: promotion.codigo,
+              fecha_inicio: promotion.fecha_inicio,
+              fecha_fin: promotion.fecha_fin
+            },
+            ciudad_usuario: ciudadNombre,
+            ciudad_id: ciudadId
+          }
+        });
+      }
+
+      // 5. Validar aplicabilidad de ciudad
+      // Si la promoción tiene ciudades asociadas, verificar que la ciudad del usuario esté incluida
+      const cityPromotions = await PromotionCity.findAll({
+        where: {
+          promotion_id: promotion.id
+        }
+      });
+
+      // Si hay ciudades asociadas, la promoción solo aplica a esas ciudades
+      if (cityPromotions.length > 0) {
+        const ciudadesAplicables = cityPromotions.map(cp => cp.city_id);
+        if (!ciudadesAplicables.includes(ciudadId)) {
+          return res.status(400).json({
+            success: true,
+            valid: false,
+            message: 'La promoción no está disponible en tu ciudad',
+            data: {
+              promotion: {
+                id: promotion.id,
+                nombre: promotion.nombre,
+                codigo: promotion.codigo
+              },
+              ciudad_usuario: ciudadNombre,
+              ciudad_id: ciudadId
+            }
+          });
+        }
+      }
+
+      // 6. Validar límite de uso por usuario
+      let vecesUsado = 0;
+      if (promotion.limite_uso > 0) {
+        vecesUsado = await PromotionUsage.countByPromotionAndTelefono(
+          promotion.id, 
+          telefono
+        );
+
+        if (vecesUsado >= promotion.limite_uso) {
+          return res.status(400).json({
+            success: true,
+            valid: false,
+            message: `Has alcanzado el límite de uso para este código. Ya lo has usado ${vecesUsado} ${vecesUsado === 1 ? 'vez' : 'veces'} de ${promotion.limite_uso} permitidas.`,
+            data: {
+              promotion: {
+                id: promotion.id,
+                nombre: promotion.nombre,
+                codigo: promotion.codigo
+              },
+              veces_usado: vecesUsado,
+              limite_uso: promotion.limite_uso,
+              ciudad_usuario: ciudadNombre,
+              ciudad_id: ciudadId
+            }
+          });
+        }
+      }
+
+      // Si llegamos aquí, la promoción es válida
+      res.json({
+        success: true,
+        valid: true,
+        message: 'Código de promoción válido',
+        data: {
+          promotion: promotion.toJSON(),
+          ciudad_usuario: ciudadNombre,
+          ciudad_id: ciudadId,
+          // Mostrar cuántas veces ha usado el código si tiene límite
+          veces_usado: promotion.limite_uso > 0 ? vecesUsado : null,
+          limite_uso: promotion.limite_uso
+        }
+      });
+
+    } catch (error) {
+      console.error('Error en validarPromocion:', error);
+      next(error);
+    }
+  }
+
+  // Aplicar código de promoción a productos en sesión
+  async aplicarCodigo(req, res, next) {
+    try {
+      const { telefono, logica_aplicar } = req.body;
+
+      // Validar parámetros requeridos
+      if (!telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'El teléfono es requerido'
+        });
+      }
+
+      if (!logica_aplicar) {
+        return res.status(400).json({
+          success: false,
+          message: 'La lógica de aplicación es requerida'
+        });
+      }
+
+      const { tipo_accion, valor, unidad_valor, condiciones, efecto } = logica_aplicar;
+
+      if (!tipo_accion) {
+        return res.status(400).json({
+          success: false,
+          message: 'El tipo de acción es requerido'
+        });
+      }
+
+      const tiposAccionValidos = ['descuento_global', 'descuento_producto', 'segunda_unidad', 'producto_regalo'];
+      if (!tiposAccionValidos.includes(tipo_accion)) {
+        return res.status(400).json({
+          success: false,
+          message: `Tipo de acción inválido. Debe ser uno de: ${tiposAccionValidos.join(', ')}`
+        });
+      }
+
+      // 1. Consultar PostgreSQL para obtener productos actuales
+      let sessionData;
+      try {
+        const pgQuery = 'SELECT session_id, productos FROM pedido_sesion WHERE session_id = $1';
+        const result = await query(pgQuery, [telefono]);
+
+        if (!result.rows || result.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No se encontró una sesión activa para este teléfono'
+          });
+        }
+
+        sessionData = result.rows[0];
+      } catch (pgError) {
+        console.error('Error consultando PostgreSQL:', pgError);
+        return res.status(503).json({
+          success: false,
+          message: 'Error al consultar la base de datos de sesiones. Por favor, intenta de nuevo más tarde.'
+        });
+      }
+
+      // 2. Parsear el JSON de productos
+      let productosData;
+      try {
+        if (typeof sessionData.productos === 'string') {
+          productosData = JSON.parse(sessionData.productos);
+        } else {
+          productosData = sessionData.productos;
+        }
+
+        if (!productosData || !productosData.productos || !Array.isArray(productosData.productos)) {
+          return res.status(400).json({
+            success: false,
+            message: 'La estructura de productos en la sesión no es válida'
+          });
+        }
+      } catch (parseError) {
+        console.error('Error parseando productos:', parseError);
+        return res.status(400).json({
+          success: false,
+          message: 'Error al procesar los datos de la sesión'
+        });
+      }
+
+      const productos = productosData.productos;
+      const totalAntes = calcularTotalCarrito(productos);
+
+      // 3. Aplicar la lógica según el tipo de acción usando el módulo de descuentos
+      const resultado = aplicarLogicaDescuento(productos, logica_aplicar);
+      
+      if (!resultado.aplicado && resultado.mensaje && resultado.mensaje.includes('Tipo de acción no soportado')) {
+        return res.status(400).json({
+          success: false,
+          message: resultado.mensaje
+        });
+      }
+
+      if (!resultado.aplicado) {
+        return res.status(400).json({
+          success: false,
+          message: resultado.mensaje || 'No se pudo aplicar la promoción',
+          data: {
+            productos: productos,
+            condiciones_cumplidas: false
+          }
+        });
+      }
+
+      // 4. Si es producto_regalo, buscar el ID en inventarios para productos sin ID
+      // IMPORTANTE: Crear una copia profunda para evitar mutaciones accidentales
+      let productosModificados = resultado.productos.map(p => ({ ...p }));
+      
+      if (tipo_accion === 'producto_regalo' && logica_aplicar.efecto && logica_aplicar.efecto.producto_target_keywords) {
+        const keywords = logica_aplicar.efecto.producto_target_keywords;
+        const keywordsTrigger = logica_aplicar.condiciones?.producto_trigger_keywords || [];
+        
+        if (keywords && keywords.length > 0) {
+          // Buscar productos regalo que coincidan con los keywords target Y no tengan ID
+          // IMPORTANTE: Solo modificar productos que:
+          // 1. Tienen la bandera es_regalo === true (no solo precio === 0)
+          // 2. No tienen ID (null o undefined)
+          // 3. Coinciden con keywords target
+          const productosRegaloSinId = productosModificados.filter(p => {
+            // Debe tener explícitamente es_regalo === true
+            const esRegalo = p.es_regalo === true;
+            // No debe tener ID
+            const sinId = p.id === null || p.id === undefined;
+            // Debe coincidir con keywords target
+            const coincideConKeywordsTarget = productoCoincideConKeywords(p, keywords);
+            
+            // Solo incluir si cumple TODAS las condiciones
+            const debeIncluir = esRegalo && sinId && coincideConKeywordsTarget;
+            
+            // Log para debugging si un producto con ID está siendo considerado
+            if (esRegalo && coincideConKeywordsTarget && !sinId) {
+              console.warn('Producto regalo con ID existente detectado (no se modificará):', {
+                nombre: p.nombre,
+                id: p.id,
+                es_regalo: p.es_regalo
+              });
+            }
+            
+            return debeIncluir;
+          });
+          
+          if (productosRegaloSinId.length > 0) {
+            try {
+              // Construir condiciones de búsqueda con todos los keywords
+              // Buscar productos que contengan cualquiera de los keywords en el nombre
+              const condicionesNombre = keywords.map(keyword => ({
+                nombre: { [Op.like]: `%${keyword.trim()}%` }
+              }));
+              
+              const whereClause = {
+                baja_logica: false,
+                [Op.or]: condicionesNombre
+              };
+              
+              // Buscar el producto en inventarios
+              let productoInventario = await Inventario.findOne({
+                where: whereClause,
+                order: [['nombre', 'ASC']]
+              });
+              
+              // Si no se encuentra, intentar buscar con el primer keyword completo
+              if (!productoInventario) {
+                const primerKeyword = keywords[0]?.trim();
+                if (primerKeyword) {
+                  productoInventario = await Inventario.findOne({
+                    where: {
+                      baja_logica: false,
+                      nombre: { [Op.like]: `%${primerKeyword}%` }
+                    },
+                    order: [['nombre', 'ASC']]
+                  });
+                }
+              }
+              
+              // Asignar el ID SOLO a productos regalo que coincidan con keywords target
+              // Verificar que no haya duplicados de ID en el carrito antes de asignar
+              if (productoInventario) {
+                const idProductoRegalo = productoInventario.id;
+                
+                // Verificar que no exista ya otro producto con este ID (excepto si es el mismo producto regalo)
+                const existeIdDuplicado = productosModificados.some(p => 
+                  p.id === idProductoRegalo && 
+                  !productosRegaloSinId.includes(p) &&
+                  !(p.es_regalo === true && productoCoincideConKeywords(p, keywords))
+                );
+                
+                if (!existeIdDuplicado) {
+                  productosRegaloSinId.forEach(producto => {
+                    // Verificar múltiples condiciones antes de asignar el ID:
+                    // 1. El producto debe coincidir con el inventario encontrado
+                    // 2. El producto NO debe tener un ID válido (null o undefined)
+                    // 3. El producto debe ser explícitamente un regalo
+                    const coincideConInventario = productoCoincideConKeywords(producto, [productoInventario.nombre]);
+                    const noTieneId = producto.id === null || producto.id === undefined;
+                    const esRegalo = producto.es_regalo === true;
+                    
+                    // VERIFICACIÓN FINAL: Si el producto tiene un ID válido, NO MODIFICAR
+                    if (producto.id !== null && producto.id !== undefined) {
+                      console.error('ERROR: Intento de modificar ID de producto que ya tiene ID:', {
+                        nombre: producto.nombre,
+                        id_actual: producto.id,
+                        id_intentado: idProductoRegalo
+                      });
+                      return; // NO MODIFICAR este producto
+                    }
+                    
+                    if (coincideConInventario && noTieneId && esRegalo) {
+                      producto.id = idProductoRegalo;
+                      // Actualizar el nombre si no coincide exactamente
+                      if (!producto.nombre || producto.nombre !== productoInventario.nombre) {
+                        producto.nombre = productoInventario.nombre;
+                      }
+                    } else {
+                      console.warn('No se asignó ID al producto porque no cumple todas las condiciones:', {
+                        nombre: producto.nombre,
+                        id_actual: producto.id,
+                        es_regalo: producto.es_regalo,
+                        coincide_con_inventario: coincideConInventario,
+                        no_tiene_id: noTieneId,
+                        es_regalo_flag: esRegalo,
+                      });
+                    }
+                  });
+                } else {
+                  console.warn(`No se asignó ID ${idProductoRegalo} al producto regalo porque ya existe otro producto con ese ID en el carrito`);
+                }
+              }
+            } catch (searchError) {
+              console.error('Error buscando producto en inventarios:', searchError);
+              // Continuar sin asignar ID si hay error en la búsqueda
+            }
+          }
+        }
+      }
+
+      // 5. Verificación final: Asegurar que los productos originales mantengan su ID
+      // Comparar con los productos originales para detectar cambios no deseados
+      if (tipo_accion === 'producto_regalo') {
+        productos.forEach((productoOriginal) => {
+          // Solo verificar productos que NO son regalo y tienen ID
+          if (!productoOriginal.es_regalo && productoOriginal.id) {
+            // Buscar el producto modificado por ID y nombre (más robusto que por índice)
+            const productoModificado = productosModificados.find(p => 
+              p.id === productoOriginal.id || 
+              (p.nombre === productoOriginal.nombre && !p.es_regalo)
+            );
+            
+            if (productoModificado && productoModificado.id !== productoOriginal.id) {
+              console.error('ERROR CRÍTICO: ID de producto original fue modificado:', {
+                nombre: productoOriginal.nombre,
+                id_original: productoOriginal.id,
+                id_modificado: productoModificado.id,
+                es_regalo_original: productoOriginal.es_regalo,
+                es_regalo_modificado: productoModificado.es_regalo
+              });
+              // Restaurar el ID original
+              productoModificado.id = productoOriginal.id;
+            }
+          }
+        });
+      }
+      
+      // 6. Actualizar productos en PostgreSQL
+      const totalDespues = calcularTotalCarrito(productosModificados);
+      
+      // Preservar otros campos del objeto original
+      const productosActualizados = {
+        ...productosData,
+        productos: productosModificados
+      };
+
+      try {
+        const updateQuery = 'UPDATE pedido_sesion SET productos = $1 WHERE session_id = $2';
+        await query(updateQuery, [JSON.stringify(productosActualizados), telefono]);
+      } catch (updateError) {
+        console.error('Error actualizando PostgreSQL:', updateError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error al actualizar los productos en la sesión'
+        });
+      }
+
+      // 6. Retornar respuesta con productos modificados
+      res.json({
+        success: true,
+        message: 'Promoción aplicada exitosamente',
+        data: {
+          productos_modificados: productosModificados,
+          total_antes: Math.round(totalAntes * 100) / 100,
+          total_despues: Math.round(totalDespues * 100) / 100,
+          descuento_total: resultado.descuento_total || (totalAntes - totalDespues),
+          debug: {
+            tipo_accion: tipo_accion,
+            productos_afectados: productosModificados.filter(p => 
+              p.descuento_aplicado || p.descuento_segunda_unidad || p.es_regalo
+            ).length,
+            condiciones_cumplidas: true,
+            producto_agregado: resultado.producto_agregado || false
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error en aplicarCodigo:', error);
       next(error);
     }
   }

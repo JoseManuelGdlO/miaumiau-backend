@@ -36,6 +36,8 @@ const rutaRoutes = require('./modules/rutas/routes');
 const notificacionRoutes = require('./modules/notificaciones/routes');
 const paqueteRoutes = require('./modules/paquetes/routes');
 const mensajeriaRoutes = require('./modules/mensajeria/routes');
+const mapsRoutes = require('./modules/maps/routes');
+const pagosRoutes = require('./modules/pagos/routes');
 
 const app = express();
 
@@ -133,6 +135,8 @@ app.use('/api/rutas', rutaRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
 app.use('/api/paquetes', paqueteRoutes);
 app.use('/api/mensajeria', mensajeriaRoutes);
+app.use('/api/maps', mapsRoutes);
+app.use('/api/pagos', pagosRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {

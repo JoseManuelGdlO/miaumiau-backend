@@ -173,12 +173,12 @@ module.exports = (sequelize, DataTypes) => {
   // Métodos de instancia
   Inventario.prototype.softDelete = function() {
     this.baja_logica = true;
-    return this.save();
+    return this.save({ fields: ['baja_logica'], validate: false });
   };
 
   Inventario.prototype.restore = function() {
     this.baja_logica = false;
-    return this.save();
+    return this.save({ fields: ['baja_logica'], validate: false });
   };
 
   Inventario.prototype.activate = function() {
@@ -200,6 +200,37 @@ module.exports = (sequelize, DataTypes) => {
     }
     this.stock_inicial = newStock;
     return this.save();
+  };
+
+  Inventario.prototype.reducirStock = function(cantidad) {
+    if (cantidad < 0) {
+      throw new Error('La cantidad a reducir debe ser positiva');
+    }
+    if (this.stock_inicial < cantidad) {
+      throw new Error(`Stock insuficiente. Disponible: ${this.stock_inicial}, Requerido: ${cantidad}`);
+    }
+    const nuevoStock = this.stock_inicial - cantidad;
+    if (nuevoStock < 0) {
+      throw new Error('El stock resultante no puede ser negativo');
+    }
+    this.stock_inicial = nuevoStock;
+    // Usar validate: false porque solo estamos modificando stock_inicial
+    // No queremos validar otras propiedades como precio_venta vs costo_unitario
+    return this.save({ validate: false, fields: ['stock_inicial'] });
+  };
+
+  Inventario.prototype.restaurarStock = function(cantidad) {
+    if (cantidad < 0) {
+      throw new Error('La cantidad a restaurar debe ser positiva');
+    }
+    const nuevoStock = this.stock_inicial + cantidad;
+    if (nuevoStock > this.stock_maximo) {
+      throw new Error(`El stock restaurado excedería el stock máximo. Máximo permitido: ${this.stock_maximo}, Resultado: ${nuevoStock}`);
+    }
+    this.stock_inicial = nuevoStock;
+    // Usar validate: false porque solo estamos modificando stock_inicial
+    // No queremos validar otras propiedades como precio_venta vs costo_unitario
+    return this.save({ validate: false, fields: ['stock_inicial'] });
   };
 
   Inventario.prototype.isLowStock = function() {

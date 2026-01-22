@@ -33,9 +33,18 @@ const validatePedido = [
     .withMessage('La dirección de entrega no puede estar vacía'),
   
   body('fkid_ciudad')
-    .isInt({ min: 1 })
-    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
-  
+    .custom((value) => {
+      // Aceptar números enteros positivos o strings (nombres de ciudad)
+      if (typeof value === 'number') {
+        return Number.isInteger(value) && value >= 1;
+      }
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+      return false;
+    })
+    .withMessage('El ID de la ciudad debe ser un número entero positivo o el nombre de una ciudad'),
+
   body('fecha_entrega_estimada')
     .optional()
     .isISO8601()
@@ -54,22 +63,75 @@ const validatePedido = [
   body('productos')
     .optional()
     .isArray()
-    .withMessage('Los productos deben ser un array'),
+    .withMessage('Los productos deben ser un array')
+    .custom((productos) => {
+      if (!Array.isArray(productos)) return true;
+      
+      // Detectar si la estructura es anidada (objetos con propiedad 'productos' dentro)
+      // o plana (productos directos)
+      const esEstructuraAnidada = productos.length > 0 && 
+        typeof productos[0] === 'object' && 
+        productos[0] !== null &&
+        Array.isArray(productos[0].productos);
+      
+      // Si es estructura anidada, extraer los productos de cada objeto
+      const productosAValidar = esEstructuraAnidada 
+        ? productos.flatMap(item => item.productos || [])
+        : productos;
+      
+      // Validar cada producto del array
+      for (let i = 0; i < productosAValidar.length; i++) {
+        const producto = productosAValidar[i];
+        
+        // Validar precio_unidad
+        const precioUnidad = parseFloat(producto?.precio_unidad);
+        // Considerar como regalo si tiene es_regalo=true O si precio es 0 (productos regalo pueden venir sin el flag)
+        const esRegalo = producto?.es_regalo === true || precioUnidad === 0;
+        
+        // Si es un producto regalo, permitir precio 0
+        if (esRegalo) {
+          if (isNaN(precioUnidad) || precioUnidad < 0) {
+            throw new Error(`El precio unitario del producto regalo en la posición ${i} debe ser mayor o igual a 0`);
+          }
+        } else {
+          // Para productos normales, requerir precio mínimo de 0.01
+          if (isNaN(precioUnidad) || precioUnidad < 0.01) {
+            throw new Error(`El precio unitario del producto en la posición ${i} debe ser mayor a 0.01`);
+          }
+        }
+        
+        // Validar fkid_producto
+        const fkidProducto = producto?.fkid_producto;
+        if (fkidProducto === null || fkidProducto === undefined) {
+          // Permitir null solo si es un producto regalo (precio 0)
+          if (!esRegalo) {
+            throw new Error(`El ID del producto en la posición ${i} es requerido (o null si es un producto regalo)`);
+          }
+        } else {
+          // Para valores no nulos, debe ser un entero positivo
+          if (!Number.isInteger(Number(fkidProducto)) || Number(fkidProducto) < 1) {
+            throw new Error(`El ID del producto en la posición ${i} debe ser un número entero positivo`);
+          }
+        }
+        
+        // Validar cantidad
+        const cantidad = parseInt(producto?.cantidad);
+        if (isNaN(cantidad) || cantidad < 1 || cantidad > 9999) {
+          throw new Error(`La cantidad del producto en la posición ${i} debe ser entre 1 y 9999`);
+        }
+      }
+      
+      return true;
+    }),
   
   body('productos.*.fkid_producto')
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage('El ID del producto debe ser un número entero positivo'),
+    .optional(),
   
   body('productos.*.cantidad')
-    .optional()
-    .isInt({ min: 1, max: 9999 })
-    .withMessage('La cantidad debe ser entre 1 y 9999'),
+    .optional(),
   
   body('productos.*.precio_unidad')
-    .optional()
-    .isFloat({ min: 0.01 })
-    .withMessage('El precio unitario debe ser mayor a 0.01'),
+    .optional(),
   
   body('productos.*.descuento_producto')
     .optional()
@@ -77,9 +139,15 @@ const validatePedido = [
     .withMessage('El descuento debe ser entre 0 y 100'),
   
   body('codigo_promocion')
-    .optional()
+    .optional({ nullable: true })
+    .if((value) => value !== null && value !== undefined && value !== '')
     .isLength({ min: 3, max: 50 })
     .withMessage('El código de promoción debe tener entre 3 y 50 caracteres'),
+  
+  body('stripe_link_id')
+    .optional({ nullable: true })
+    .isLength({ max: 100 })
+    .withMessage('El stripe_link_id no puede exceder 100 caracteres'),
   
   handleValidationErrors
 ];

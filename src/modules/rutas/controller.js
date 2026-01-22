@@ -1,6 +1,7 @@
 const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
+const { applyCityFilter } = require('../../utils/cityFilter');
 
 class RutaController {
   // Crear nueva ruta
@@ -126,6 +127,11 @@ class RutaController {
         where.fkid_ciudad = fkid_ciudad;
       }
 
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver rutas de su ciudad
+      // Si no tiene ciudad asignada, puede ver todas las rutas
+      applyCityFilter(req, where, 'fkid_ciudad');
+
       if (fkid_repartidor) {
         where.fkid_repartidor = fkid_repartidor;
       }
@@ -208,6 +214,9 @@ class RutaController {
       if (fkid_ciudad) {
         where.fkid_ciudad = fkid_ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      applyCityFilter(req, where, 'fkid_ciudad');
 
       // Si se especifica un estado diferente, se puede sobrescribir
       if (estado) {
@@ -360,13 +369,25 @@ class RutaController {
       const fechaInicio = new Date(fecha + 'T00:00:00.000Z');
       const fechaFin = new Date(fecha + 'T23:59:59.999Z');
 
+      // Construir whereClause para pedidos
+      const pedidoWhere = {
+        fecha_entrega_estimada: {
+          [Op.between]: [fechaInicio, fechaFin]
+        },
+        baja_logica: false
+      };
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver pedidos de su ciudad
+      if (fkid_ciudad) {
+        pedidoWhere.fkid_ciudad = fkid_ciudad;
+      }
+      applyCityFilter(req, pedidoWhere, 'fkid_ciudad');
+
       // Buscar pedidos que no estén asignados a ninguna ruta para esa fecha de entrega
       const pedidosSinAsignar = await Pedido.findAll({
         where: {
-          fecha_entrega_estimada: {
-            [Op.between]: [fechaInicio, fechaFin]
-          },
-          baja_logica: false,
+          ...pedidoWhere,
           id: {
             [Op.notIn]: await RutaPedido.findAll({
               attributes: ['fkid_pedido'],
@@ -388,7 +409,21 @@ class RutaController {
           {
             model: Cliente,
             as: 'cliente',
-            include: ['ciudad']
+            attributes: ['id', 'nombre_completo', 'telefono', 'email', 'fkid_ciudad'],
+            include: [
+              {
+                model: City,
+                as: 'ciudad',
+                attributes: ['id', 'nombre', 'departamento']
+              }
+            ],
+            required: false
+          },
+          {
+            model: City,
+            as: 'ciudad',
+            attributes: ['id', 'nombre', 'departamento'],
+            required: false
           },
           {
             model: ProductoPedido,
@@ -707,30 +742,77 @@ class RutaController {
       }
 
       // Crear las asignaciones de pedidos
-      const rutaPedidos = await Promise.all(
-        pedidos.map(pedido => 
-          RutaPedido.create({
-            fkid_ruta: id,
-            fkid_pedido: pedido.fkid_pedido,
-            orden_entrega: pedido.orden_entrega,
-            lat: pedido.lat || null,
-            lng: pedido.lng || null,
+      console.log(`[RUTAS] Asignando ${pedidos.length} pedidos a la ruta ${id}`);
+      console.log(`[RUTAS] Datos recibidos:`, JSON.stringify(pedidos, null, 2));
+      console.log(`[RUTAS] ID de ruta (tipo): ${typeof id}, valor: ${id}`);
+      
+      const rutaPedidos = [];
+      const errores = [];
+      
+      for (const pedido of pedidos) {
+        try {
+          console.log(`[RUTAS] Intentando crear RutaPedido para pedido ${pedido.fkid_pedido}...`);
+          const rutaPedido = await RutaPedido.create({
+            fkid_ruta: parseInt(id),
+            fkid_pedido: parseInt(pedido.fkid_pedido),
+            orden_entrega: parseInt(pedido.orden_entrega),
+            lat: pedido.lat !== undefined && pedido.lat !== null ? parseFloat(pedido.lat) : null,
+            lng: pedido.lng !== undefined && pedido.lng !== null ? parseFloat(pedido.lng) : null,
             link_ubicacion: pedido.link_ubicacion || null,
             estado_entrega: 'pendiente',
             notas_entrega: pedido.notas_entrega || null
-          })
-        )
-      );
+          });
+          console.log(`[RUTAS] ✅ Pedido ${pedido.fkid_pedido} asignado exitosamente (orden ${pedido.orden_entrega}), ID: ${rutaPedido.id}`);
+          rutaPedidos.push(rutaPedido);
+          } catch (error) {
+            console.error(`[RUTAS] ❌ Error asignando pedido ${pedido.fkid_pedido}:`, error);
+            console.error(`[RUTAS] Error details:`, {
+              message: error.message,
+              name: error.name,
+              stack: error.stack,
+              parent: error.parent ? error.parent.message : undefined
+            });
+          errores.push({
+            pedido_id: pedido.fkid_pedido,
+            error: error.message
+          });
+        }
+      }
+      
+      console.log(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
+      
+      if (errores.length > 0) {
+        console.error(`[RUTAS] Errores al asignar pedidos:`, errores);
+        return res.status(400).json({
+          success: false,
+          message: `Error al asignar algunos pedidos. ${rutaPedidos.length} asignados, ${errores.length} fallaron`,
+          pedidos_asignados: rutaPedidos.length,
+          errores: errores
+        });
+      }
+      
+      if (rutaPedidos.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se pudo asignar ningún pedido a la ruta'
+        });
+      }
 
       // Actualizar el total de pedidos en la ruta
+      const nuevoTotal = ruta.total_pedidos + rutaPedidos.length;
       await ruta.update({
-        total_pedidos: ruta.total_pedidos + pedidos.length
+        total_pedidos: nuevoTotal
       });
+      
+      // Recargar la ruta para obtener el valor actualizado
+      await ruta.reload();
+      
+      console.log(`[RUTAS] Total de pedidos en ruta actualizado a: ${ruta.total_pedidos}`);
 
       // Obtener los pedidos asignados con sus detalles
       const pedidosAsignadosCompletos = await RutaPedido.findAll({
         where: {
-          fkid_ruta: id
+          fkid_ruta: parseInt(id)
         },
         include: [
           {
@@ -747,14 +829,16 @@ class RutaController {
         ],
         order: [['orden_entrega', 'ASC']]
       });
+      
+      console.log(`[RUTAS] Pedidos encontrados en BD después de asignar: ${pedidosAsignadosCompletos.length}`);
 
       res.json({
         success: true,
         message: 'Pedidos asignados a la ruta exitosamente',
         data: {
-          ruta_id: id,
-          pedidos_asignados: pedidos.length,
-          total_pedidos_ruta: ruta.total_pedidos,
+          ruta_id: parseInt(id),
+          pedidos_asignados: rutaPedidos.length,
+          total_pedidos_ruta: ruta.total_pedidos + rutaPedidos.length,
           pedidos: pedidosAsignadosCompletos
         }
       });
@@ -888,6 +972,9 @@ class RutaController {
       if (fkid_ciudad) {
         where.fkid_ciudad = fkid_ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      applyCityFilter(req, where, 'fkid_ciudad');
 
       const rutas = await Ruta.findAll({
         where,

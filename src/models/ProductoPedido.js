@@ -17,7 +17,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     fkid_producto: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true, // Permitir null para productos regalo
       references: {
         model: 'inventarios',
         key: 'id'
@@ -37,14 +37,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       validate: {
-        min: 0.01
+        min: 0 // Permitir 0 para productos regalo
       }
     },
     precio_total: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       validate: {
-        min: 0.01
+        min: 0 // Permitir 0 para productos regalo
       }
     },
     descuento_producto: {

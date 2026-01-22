@@ -176,6 +176,109 @@ const validateCode = [
   handleValidationErrors
 ];
 
+const validateValidarPromocion = [
+  body('telefono')
+    .notEmpty()
+    .withMessage('El teléfono es requerido')
+    .isString()
+    .withMessage('El teléfono debe ser una cadena de texto')
+    .isLength({ min: 7, max: 20 })
+    .withMessage('El teléfono debe tener entre 7 y 20 caracteres'),
+  
+  body('codigo')
+    .notEmpty()
+    .withMessage('El código de promoción es requerido')
+    .isString()
+    .withMessage('El código debe ser una cadena de texto')
+    .matches(/^[A-Z0-9_-]+$/)
+    .withMessage('El código solo puede contener letras mayúsculas, números, guiones y guiones bajos'),
+  
+  handleValidationErrors
+];
+
+const validateAplicarCodigo = [
+  body('telefono')
+    .notEmpty()
+    .withMessage('El teléfono es requerido')
+    .isString()
+    .withMessage('El teléfono debe ser una cadena de texto')
+    .isLength({ min: 7, max: 20 })
+    .withMessage('El teléfono debe tener entre 7 y 20 caracteres'),
+  
+  body('logica_aplicar')
+    .notEmpty()
+    .withMessage('La lógica de aplicación es requerida')
+    .isObject()
+    .withMessage('La lógica de aplicación debe ser un objeto'),
+  
+  body('logica_aplicar.tipo_accion')
+    .notEmpty()
+    .withMessage('El tipo de acción es requerido')
+    .isIn(['descuento_global', 'descuento_producto', 'segunda_unidad', 'producto_regalo'])
+    .withMessage('El tipo de acción debe ser uno de: descuento_global, descuento_producto, segunda_unidad, producto_regalo'),
+  
+  body('logica_aplicar.valor')
+    .notEmpty()
+    .withMessage('El valor es requerido')
+    .custom((value) => {
+      const numValue = parseFloat(value);
+      return !isNaN(numValue) && numValue >= 0;
+    })
+    .withMessage('El valor debe ser un número positivo'),
+  
+  body('logica_aplicar.unidad_valor')
+    .notEmpty()
+    .withMessage('La unidad de valor es requerida')
+    .isIn(['porcentaje', 'monto'])
+    .withMessage('La unidad de valor debe ser "porcentaje" o "monto"'),
+  
+  body('logica_aplicar.condiciones')
+    .optional()
+    .isObject()
+    .withMessage('Las condiciones deben ser un objeto'),
+  
+  body('logica_aplicar.condiciones.monto_minimo_carrito')
+    .optional()
+    .custom((value) => {
+      if (value === null || value === undefined) return true;
+      const numValue = parseFloat(value);
+      return !isNaN(numValue) && numValue >= 0;
+    })
+    .withMessage('El monto mínimo del carrito debe ser un número positivo'),
+  
+  body('logica_aplicar.condiciones.producto_trigger_keywords')
+    .optional()
+    .isArray()
+    .withMessage('Los keywords de trigger deben ser un array'),
+  
+  body('logica_aplicar.condiciones.producto_trigger_keywords.*')
+    .optional()
+    .isString()
+    .withMessage('Cada keyword debe ser una cadena de texto'),
+  
+  body('logica_aplicar.condiciones.cantidad_trigger')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('La cantidad trigger debe ser un número entero positivo'),
+  
+  body('logica_aplicar.efecto')
+    .optional()
+    .isObject()
+    .withMessage('El efecto debe ser un objeto'),
+  
+  body('logica_aplicar.efecto.producto_target_keywords')
+    .optional()
+    .isArray()
+    .withMessage('Los keywords de target deben ser un array'),
+  
+  body('logica_aplicar.efecto.producto_target_keywords.*')
+    .optional()
+    .isString()
+    .withMessage('Cada keyword debe ser una cadena de texto'),
+  
+  handleValidationErrors
+];
+
 // Rutas públicas
 router.get('/types', promotionController.getPromotionTypes);
 router.get('/active', promotionController.getActivePromotions);
@@ -185,6 +288,12 @@ router.get('/city/:city_id', validateCityId, promotionController.getPromotionsBy
 
 // Rutas protegidas (requieren autenticación)
 router.use(authenticateToken);
+
+// Ruta para validar promoción con datos de PostgreSQL
+router.post('/validar', validateValidarPromocion, promotionController.validarPromocion);
+
+// Ruta para aplicar código de promoción a productos en sesión
+router.post('/aplicarCodigo', validateAplicarCodigo, promotionController.aplicarCodigo);
 
 // Rutas de administración (requieren rol admin o super_admin)
 router.get('/', promotionController.getAllPromotions);

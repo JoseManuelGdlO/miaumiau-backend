@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const repartidorController = require('./controller');
 const { authenticateToken } = require('../../middleware/auth');
+const { authenticateRepartidor } = require('../../middleware/repartidorAuth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
@@ -60,14 +61,24 @@ const validateRepartidor = [
     .withMessage('La capacidad de carga debe ser un número positivo'),
   
   body('zona_cobertura')
-    .optional()
-    .isObject()
-    .withMessage('La zona de cobertura debe ser un objeto JSON válido'),
+    .optional({ nullable: true, checkFalsy: true })
+    .custom((value) => {
+      if (value === null || value === undefined) {
+        return true; // Permitir null/undefined
+      }
+      return typeof value === 'object' && !Array.isArray(value);
+    })
+    .withMessage('La zona de cobertura debe ser un objeto JSON válido o null'),
   
   body('horario_trabajo')
-    .optional()
-    .isObject()
-    .withMessage('El horario de trabajo debe ser un objeto JSON válido'),
+    .optional({ nullable: true, checkFalsy: true })
+    .custom((value) => {
+      if (value === null || value === undefined) {
+        return true; // Permitir null/undefined
+      }
+      return typeof value === 'object' && !Array.isArray(value);
+    })
+    .withMessage('El horario de trabajo debe ser un objeto JSON válido o null'),
   
   body('tarifa_base')
     .optional()
@@ -88,6 +99,11 @@ const validateRepartidor = [
     .optional()
     .isDate()
     .withMessage('La fecha de nacimiento debe ser válida'),
+  
+  body('contrasena')
+    .optional()
+    .isLength({ min: 6, max: 255 })
+    .withMessage('La contraseña debe tener entre 6 y 255 caracteres'),
   
   handleValidationErrors
 ];
@@ -161,7 +177,37 @@ const validateQueryParams = [
   handleValidationErrors
 ];
 
+// Validaciones para login de repartidor
+const validateRepartidorLogin = [
+  body('contrasena')
+    .notEmpty()
+    .withMessage('La contraseña es requerida'),
+  
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('El email debe ser válido'),
+  
+  body('codigo_repartidor')
+    .optional()
+    .isLength({ min: 3, max: 20 })
+    .withMessage('El código de repartidor debe tener entre 3 y 20 caracteres'),
+  
+  body()
+    .custom((value) => {
+      if (!value.email && !value.codigo_repartidor) {
+        throw new Error('Debes proporcionar email o código de repartidor');
+      }
+      return true;
+    })
+    .withMessage('Debes proporcionar email o código de repartidor'),
+  
+  handleValidationErrors
+];
+
 // Rutas públicas (solo para obtener información básica)
+// IMPORTANTE: La ruta /login debe estar ANTES de cualquier ruta con parámetros como /:id
+router.post('/login', validateRepartidorLogin, repartidorController.loginRepartidor);
 router.get('/disponibles', validateQueryParams, repartidorController.getRepartidoresDisponibles);
 router.get('/estadisticas', repartidorController.getEstadisticas);
 router.get('/estadisticas/ciudad', repartidorController.getEstadisticasPorCiudad);
@@ -244,6 +290,51 @@ router.get('/:id/horario-trabajo',
   requireSuperAdminOrPermission('ver_repartidores'),
   validateId,
   repartidorController.checkHorarioTrabajo
+);
+
+// Rutas para repartidores autenticados
+// Esta ruta puede ser usada por repartidores autenticados o por admins que envíen el ID
+router.get('/mis-pedidos/del-dia',
+  authenticateRepartidor,
+  [
+    query('repartidor_id')
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage('El ID de repartidor debe ser un número válido'),
+    handleValidationErrors
+  ],
+  repartidorController.getPedidosDelDia
+);
+
+// Ruta alternativa para obtener pedidos del día de un repartidor específico (para admins)
+router.get('/pedidos/del-dia',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_pedidos'),
+  [
+    query('repartidor_id')
+      .isInt({ min: 1 })
+      .withMessage('El ID de repartidor es requerido y debe ser un número válido'),
+    handleValidationErrors
+  ],
+  repartidorController.getPedidosDelDia
+);
+
+router.patch('/pedidos/:id/estado',
+  authenticateRepartidor,
+  [
+    param('id')
+      .isInt({ min: 1 })
+      .withMessage('ID de pedido inválido'),
+    body('estado')
+      .isIn(['pendiente', 'en_camino', 'en_ubicacion', 'entregado', 'no_entregado'])
+      .withMessage('Estado inválido'),
+    body('notas')
+      .optional()
+      .isLength({ max: 500 })
+      .withMessage('Las notas no pueden exceder 500 caracteres'),
+    handleValidationErrors
+  ],
+  repartidorController.updateEstadoPedido
 );
 
 module.exports = router;

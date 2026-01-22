@@ -1,5 +1,6 @@
 const { User, Role, City } = require('../../models');
 const { Op } = require('sequelize');
+const { applyCityFilter } = require('../../utils/cityFilter');
 
 class UsersController {
   // Obtener todos los usuarios
@@ -32,10 +33,15 @@ class UsersController {
         whereClause.rol_id = rol_id;
       }
       
-      // Filtrar por ciudad
+      // Filtrar por ciudad (si viene en query params)
       if (ciudad_id) {
         whereClause.ciudad_id = ciudad_id;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver usuarios de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los usuarios
+      applyCityFilter(req, whereClause, 'ciudad_id');
 
       // Búsqueda por nombre o email
       if (search) {

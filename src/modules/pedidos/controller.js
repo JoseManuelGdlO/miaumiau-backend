@@ -1,5 +1,7 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, Promotion, PaquetePedido, Paquete } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage } = require('../../models');
 const { Op } = require('sequelize');
+const { applyCityFilter } = require('../../utils/cityFilter');
+const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
 class PedidoController {
   // Obtener todos los pedidos
@@ -20,24 +22,29 @@ class PedidoController {
       
       let whereClause = {};
       
-      // Filtrar por activos/inactivos (solo si se especifica el parámetro)
-      // Si no se proporciona, traer todos los pedidos (activos e inactivos)
-      if (activos === 'true') {
+      // Filtrar por activos/inactivos
+      // Por defecto, solo mostrar pedidos activos (baja_logica: false)
+      if (activos === 'false') {
+        whereClause.baja_logica = true; // Solo inactivos
+      } else {
+        // Por defecto o si activos === 'true', solo mostrar activos
         whereClause.baja_logica = false;
-      } else if (activos === 'false') {
-        whereClause.baja_logica = true;
       }
-      // Si activos no se proporciona, no se aplica filtro (trae todos)
       
       // Filtrar por cliente
       if (fkid_cliente) {
         whereClause.fkid_cliente = fkid_cliente;
       }
       
-      // Filtrar por ciudad
+      // Filtrar por ciudad (si viene en query params)
       if (fkid_ciudad) {
         whereClause.fkid_ciudad = fkid_ciudad;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver pedidos de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los pedidos
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
       
       // Filtrar por estado
       if (estado) {
@@ -235,8 +242,25 @@ class PedidoController {
         productos = [],
         paquetes = [],
         codigo_promocion,
-        nombre_cliente // Opcional: nombre del cliente si se va a crear
+        nombre_cliente, // Opcional: nombre del cliente si se va a crear
+        stripe_link_id // Opcional: ID del link de pago de Stripe
       } = req.body;
+
+      // Convertir fkid_ciudad de string a ID si es necesario usando el utility
+      const ciudadIdFinal = await mapCityNameToId(fkid_ciudad);
+      if (!ciudadIdFinal) {
+        // Obtener lista de ciudades disponibles para el mensaje de error
+        const todasLasCiudades = await City.findAll({
+          where: { baja_logica: false },
+          attributes: ['nombre']
+        });
+        const ciudadesDisponibles = todasLasCiudades.map(c => c.nombre).join(', ');
+        
+        return res.status(400).json({
+          success: false,
+          message: `La ciudad especificada "${fkid_ciudad}" no existe. Ciudades disponibles: ${ciudadesDisponibles}`
+        });
+      }
 
       let cliente = null;
       let clienteId = fkid_cliente;
@@ -287,19 +311,11 @@ class PedidoController {
             });
           }
 
-          if (!fkid_ciudad) {
+          // ciudadIdFinal ya fue validado al inicio del método
+          if (!ciudadIdFinal) {
             return res.status(400).json({
               success: false,
               message: 'Se requiere una ciudad para crear un nuevo cliente'
-            });
-          }
-
-          // Verificar que la ciudad existe
-          const ciudad = await City.findByPk(fkid_ciudad);
-          if (!ciudad) {
-            return res.status(400).json({
-              success: false,
-              message: 'La ciudad especificada no existe'
             });
           }
 
@@ -319,7 +335,7 @@ class PedidoController {
               nombre_completo: nombreCompleto,
               telefono: telefono_referencia,
               email: email_referencia || null,
-              fkid_ciudad: fkid_ciudad,
+              fkid_ciudad: ciudadIdFinal,
               canal_contacto: 'WhatsApp', // Valor por defecto
               direccion_entrega: direccion_entrega || null
             });
@@ -331,59 +347,18 @@ class PedidoController {
         }
       }
 
-      // Verificar que la ciudad existe
-      const ciudad = await City.findByPk(fkid_ciudad);
-      if (!ciudad) {
-        return res.status(400).json({
-          success: false,
-          message: 'La ciudad especificada no existe'
-        });
-      }
+      // Obtener la ciudad (ya validada en el mapeo inicial)
+      const ciudad = await City.findByPk(ciudadIdFinal);
 
-      // Validar código de promoción si se proporciona
-      let promocion = null;
-      let descuentoPromocion = 0;
-      if (codigo_promocion) {
-        promocion = await Promotion.findOne({
-          where: {
-            codigo: codigo_promocion,
-            baja_logica: false
-          },
-          include: [
-            {
-              model: City,
-              as: 'ciudades',
-              where: { id: fkid_ciudad },
-              required: false
-            }
-          ]
-        });
-
-        if (!promocion) {
-          return res.status(400).json({
-            success: false,
-            message: 'El código de promoción no es válido'
-          });
-        }
-
-        // Verificar si la promoción está activa
-        const ahora = new Date();
-        if (promocion.fecha_inicio > ahora || promocion.fecha_fin < ahora) {
-          return res.status(400).json({
-            success: false,
-            message: 'El código de promoción no está activo'
-          });
-        }
-
-        // Verificar si la promoción aplica para esta ciudad
-        if (promocion.ciudades && promocion.ciudades.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: 'El código de promoción no aplica para esta ciudad'
-          });
-        }
-
-        descuentoPromocion = promocion.descuento_porcentaje || 0;
+      // Normalizar código de promoción (solo guardarlo, sin validar)
+      // Los descuentos ahora se aplican mediante el endpoint /aplicarCodigo
+      let codigoPromocionNormalizado = null;
+      if (codigo_promocion && 
+          codigo_promocion !== 'null' && 
+          codigo_promocion !== '' && 
+          typeof codigo_promocion === 'string' && 
+          codigo_promocion.trim().length > 0) {
+        codigoPromocionNormalizado = codigo_promocion.trim();
       }
 
       // Generar número de pedido único
@@ -394,47 +369,68 @@ class PedidoController {
         telefono_referencia: telefono_referencia || null,
         email_referencia: email_referencia || null,
         direccion_entrega,
-        fkid_ciudad,
+        fkid_ciudad: ciudadIdFinal,
         numero_pedido: numeroPedido,
+        estado: 'pendiente', // Estado inicial siempre pendiente
         fecha_entrega_estimada: fecha_entrega_estimada || null,
         metodo_pago: metodo_pago || null,
         notas: notas || null,
-        codigo_promocion: codigo_promocion || null,
-        descuento_promocion: descuentoPromocion
+        codigo_promocion: codigoPromocionNormalizado,
+        descuento_promocion: 0, // Los descuentos se aplican antes de crear el pedido
+        stripe_link_id: stripe_link_id || null
       });
 
       // Calcular subtotal inicial
       let subtotal = 0;
+      let productosAProcesar = [];
 
       // Agregar productos al pedido si se proporcionan
       if (productos && productos.length > 0) {
-        for (const producto of productos) {
-          const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto } = producto;
+        // Detectar si la estructura es anidada (objetos con propiedad 'productos' dentro)
+        // o plana (productos directos)
+        const esEstructuraAnidada = typeof productos[0] === 'object' && 
+          productos[0] !== null &&
+          Array.isArray(productos[0].productos);
+        
+        // Si es estructura anidada, extraer los productos de cada objeto
+        productosAProcesar = esEstructuraAnidada 
+          ? productos.flatMap(item => item.productos || [])
+          : productos;
+        
+        for (const producto of productosAProcesar) {
+          const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto, es_regalo } = producto;
           
-          // Verificar que el producto existe
-          const productoInventario = await Inventario.findByPk(fkid_producto);
-          if (!productoInventario) {
-            return res.status(400).json({
-              success: false,
-              message: `El producto con ID ${fkid_producto} no existe`
-            });
+          // Para productos regalo, permitir fkid_producto null
+          // Para productos normales, verificar que el producto existe
+          if (!es_regalo && fkid_producto) {
+            const productoInventario = await Inventario.findByPk(fkid_producto);
+            if (!productoInventario) {
+              return res.status(400).json({
+                success: false,
+                message: `El producto con ID ${fkid_producto} no existe`
+              });
+            }
           }
 
-          const precioTotal = parseFloat(precio_unidad) * parseInt(cantidad);
-          const descuento = (precioTotal * parseFloat(descuento_producto)) / 100;
-          const precioFinal = precioTotal - descuento;
+          // Los precios ya vienen aplicados desde aplicarCodigo, no calcular descuentos aquí
+          const precioUnidad = parseFloat(precio_unidad) || 0;
+          const precioTotal = precioUnidad * parseInt(cantidad);
+          
+          // El descuento_producto debe ser 0 ya que los descuentos se aplicaron en aplicarCodigo
+          // Solo usar descuento_producto si viene explícitamente en el request (para compatibilidad)
+          const descuentoProducto = parseFloat(descuento_producto) || 0;
 
           await ProductoPedido.create({
             fkid_pedido: pedido.id,
-            fkid_producto,
+            fkid_producto: fkid_producto || null,
             cantidad,
-            precio_unidad,
-            precio_total: precioFinal,
-            descuento_producto,
+            precio_unidad: precioUnidad,
+            precio_total: precioTotal, // Precio ya viene con descuentos aplicados
+            descuento_producto: descuentoProducto,
             notas_producto
           });
 
-          subtotal += precioFinal;
+          subtotal += precioTotal;
         }
       }
 
@@ -487,15 +483,144 @@ class PedidoController {
         });
       }
 
-      // Aplicar descuento de promoción al subtotal
-      let totalConDescuento = subtotal;
-      if (descuentoPromocion > 0) {
-        const descuento = (subtotal * descuentoPromocion) / 100;
-        totalConDescuento = subtotal - descuento;
+      // Función helper para calcular productos por paquete
+      const calcularProductosPorPaquete = async (paquetesArray) => {
+        const productosPorPaquete = {};
+        for (const paqueteItem of paquetesArray) {
+          if (!paqueteItem.fkid_paquete) continue;
+          
+          const productosPaquete = await ProductoPaquete.findAll({
+            where: {
+              fkid_paquete: paqueteItem.fkid_paquete
+            }
+          });
+
+          for (const productoPaquete of productosPaquete) {
+            const cantidadTotal = paqueteItem.cantidad * productoPaquete.cantidad;
+            if (!productosPorPaquete[productoPaquete.fkid_producto]) {
+              productosPorPaquete[productoPaquete.fkid_producto] = 0;
+            }
+            productosPorPaquete[productoPaquete.fkid_producto] += cantidadTotal;
+          }
+        }
+        return productosPorPaquete;
+      };
+
+      // Calcular cantidad de productos por paquete
+      const productosPorPaquete = paquetes && paquetes.length > 0 
+        ? await calcularProductosPorPaquete(paquetes) 
+        : {};
+
+      // Validar y restar stock al crear el pedido
+      const erroresStock = [];
+      
+      // Validar stock de productos directos (sumando si también están en paquetes)
+      for (const producto of productosAProcesar) {
+        if (!producto.fkid_producto) {
+          // Producto regalo sin ID - omitir (se registra pero no se puede actualizar stock)
+          continue;
+        }
+
+        const productoInventario = await Inventario.findByPk(producto.fkid_producto);
+        if (!productoInventario) {
+          erroresStock.push(`Producto con ID ${producto.fkid_producto} no encontrado en inventario`);
+          continue;
+        }
+
+        const cantidadDirecta = parseInt(producto.cantidad);
+        const cantidadDePaquetes = productosPorPaquete[producto.fkid_producto] || 0;
+        const cantidadRequerida = cantidadDirecta + cantidadDePaquetes;
+
+        if (productoInventario.stock_inicial < cantidadRequerida) {
+          erroresStock.push(
+            `Stock insuficiente para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Disponible: ${productoInventario.stock_inicial}, Requerido: ${cantidadRequerida}`
+          );
+        }
+      }
+
+      // Validar stock de productos solo en paquetes (que no están como productos directos)
+      const productosDirectosIds = productosAProcesar
+        .map(p => p.fkid_producto)
+        .filter(id => id !== null);
+      
+      for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
+        // Solo validar si no está ya como producto directo
+        if (productosDirectosIds.includes(parseInt(productoId))) {
+          continue; // Ya se validó arriba
+        }
+
+        const producto = await Inventario.findByPk(productoId);
+        if (!producto) {
+          erroresStock.push(`Producto con ID ${productoId} no encontrado en inventario`);
+          continue;
+        }
+
+        if (producto.stock_inicial < cantidadTotal) {
+          erroresStock.push(
+            `Stock insuficiente para ${producto.nombre} (SKU: ${producto.sku}) en paquetes. Disponible: ${producto.stock_inicial}, Requerido: ${cantidadTotal}`
+          );
+        }
+      }
+
+      // Si hay errores de stock, retornar error y eliminar el pedido creado
+      if (erroresStock.length > 0) {
+        // Eliminar el pedido creado ya que no se puede completar
+        await pedido.destroy();
+        return res.status(400).json({
+          success: false,
+          message: 'Stock insuficiente para crear el pedido',
+          errors: erroresStock
+        });
+      }
+
+      // Recalcular productos por paquete para restar stock
+      const productosPorPaqueteParaRestar = paquetes && paquetes.length > 0 
+        ? await calcularProductosPorPaquete(paquetes) 
+        : {};
+
+      // Restar stock de productos directos
+      for (const producto of productosAProcesar) {
+        if (!producto.fkid_producto) continue; // Omitir productos regalo sin ID
+
+        const productoInventario = await Inventario.findByPk(producto.fkid_producto);
+        if (!productoInventario) continue;
+
+        const cantidadDirecta = parseInt(producto.cantidad);
+        if (cantidadDirecta > 0) {
+          await productoInventario.reducirStock(cantidadDirecta);
+        }
+      }
+
+      // Restar stock de productos en paquetes (sin importar si también están como directos)
+      for (const [productoId, cantidadTotal] of Object.entries(productosPorPaqueteParaRestar)) {
+        const producto = await Inventario.findByPk(productoId);
+        if (producto && cantidadTotal > 0) {
+          await producto.reducirStock(cantidadTotal);
+        }
+      }
+
+      // Registrar uso del código de promoción si existe
+      if (codigoPromocionNormalizado) {
+        try {
+          const promotion = await Promotion.findByCode(codigoPromocionNormalizado);
+          if (promotion) {
+            await PromotionUsage.create({
+              promotion_id: promotion.id,
+              telefono: telefono_referencia || cliente?.telefono,
+              fkid_cliente: clienteId,
+              fkid_pedido: pedido.id
+            });
+          }
+        } catch (usageError) {
+          // No fallar el pedido si hay error al registrar el uso
+          // Solo loguear el error para debugging
+          console.error('Error al registrar uso de promoción:', usageError);
+        }
       }
 
       // Actualizar subtotal del pedido
-      await pedido.actualizarSubtotal(totalConDescuento);
+      // Los descuentos ya fueron aplicados a los productos antes de crear el pedido
+      await pedido.actualizarSubtotal(subtotal);
 
       // Obtener el pedido creado con sus relaciones
       const pedidoCompleto = await Pedido.findByPk(pedido.id, {
@@ -889,12 +1014,103 @@ class PedidoController {
         });
       }
 
+      // Guardar estado anterior antes de cancelar
+      const estadoAnterior = pedido.estado;
+
+      // Restaurar stock si el pedido estaba en pendiente o confirmado
+      // (ya que el stock se resta al crear el pedido)
+      if (estadoAnterior === 'pendiente' || estadoAnterior === 'confirmado') {
+        // Obtener todos los productos del pedido
+        const productosPedido = await ProductoPedido.findAll({
+          where: {
+            fkid_pedido: id,
+            baja_logica: false
+          },
+          include: [
+            {
+              model: Inventario,
+              as: 'producto',
+              required: false
+            }
+          ]
+        });
+
+        // Obtener todos los paquetes del pedido
+        const paquetesPedido = await PaquetePedido.findAll({
+          where: {
+            fkid_pedido: id
+          },
+          include: [
+            {
+              model: Paquete,
+              as: 'paquete',
+              required: false
+            }
+          ]
+        });
+
+        // Calcular cantidad de productos por paquete
+        const productosPorPaquete = {};
+        for (const paquetePedido of paquetesPedido) {
+          if (!paquetePedido.fkid_paquete) continue;
+          
+          const productosPaquete = await ProductoPaquete.findAll({
+            where: {
+              fkid_paquete: paquetePedido.fkid_paquete
+            }
+          });
+
+          for (const productoPaquete of productosPaquete) {
+            const cantidadTotal = paquetePedido.cantidad * productoPaquete.cantidad;
+            if (!productosPorPaquete[productoPaquete.fkid_producto]) {
+              productosPorPaquete[productoPaquete.fkid_producto] = 0;
+            }
+            productosPorPaquete[productoPaquete.fkid_producto] += cantidadTotal;
+          }
+        }
+
+        // Restaurar stock de productos directos
+        for (const productoPedido of productosPedido) {
+          if (!productoPedido.fkid_producto) continue; // Omitir productos regalo sin ID
+
+          const producto = productoPedido.producto;
+          if (!producto) continue;
+
+          const cantidadARestaurar = productoPedido.cantidad;
+          if (cantidadARestaurar > 0) {
+            try {
+              await producto.restaurarStock(cantidadARestaurar);
+            } catch (error) {
+              // Log error pero continuar restaurando otros productos
+              console.error(`Error al restaurar stock del producto ${producto.id}:`, error.message);
+            }
+          }
+        }
+
+        // Restaurar stock de productos en paquetes
+        for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
+          const producto = await Inventario.findByPk(productoId);
+          if (producto && cantidadTotal > 0) {
+            try {
+              await producto.restaurarStock(cantidadTotal);
+            } catch (error) {
+              // Log error pero continuar restaurando otros productos
+              console.error(`Error al restaurar stock del producto ${producto.id} desde paquetes:`, error.message);
+            }
+          }
+        }
+      }
+
+      // Cancelar el pedido
       await pedido.cancelar();
+
+      // Recargar el pedido para obtener el estado actualizado
+      const pedidoActualizado = await Pedido.findByPk(id);
 
       res.json({
         success: true,
         message: 'Pedido cancelado exitosamente',
-        data: { pedido }
+        data: { pedido: pedidoActualizado }
       });
     } catch (error) {
       next(error);
@@ -1152,6 +1368,42 @@ class PedidoController {
         });
       }
 
+      // Convertir nombre de ciudad a ID si es necesario
+      let ciudadIdFinal = null;
+      if (ciudad_id) {
+        ciudadIdFinal = await mapCityNameToId(ciudad_id);
+        if (!ciudadIdFinal) {
+          // Obtener lista de ciudades disponibles para el mensaje de error
+          const todasLasCiudades = await City.findAll({
+            where: { baja_logica: false },
+            attributes: ['nombre']
+          });
+          const ciudadesDisponibles = todasLasCiudades.map(c => c.nombre).join(', ');
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${ciudad_id}" no existe. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+        
+        // Validar que la ciudad existe y está activa (puede ser que el ID sea válido pero la ciudad no exista o esté eliminada)
+        const ciudadExiste = await City.findByPk(ciudadIdFinal);
+        
+        if (!ciudadExiste || ciudadExiste.baja_logica) {
+          // Obtener lista de ciudades disponibles para el mensaje de error
+          const todasLasCiudades = await City.findAll({
+            where: { baja_logica: false },
+            attributes: ['id', 'nombre']
+          });
+          const ciudadesDisponibles = todasLasCiudades.map(c => `${c.nombre} (ID: ${c.id})`).join(', ');
+          
+          return res.status(400).json({
+            success: false,
+            message: `La ciudad especificada "${ciudad_id}" no existe o está inactiva. Ciudades disponibles: ${ciudadesDisponibles}`
+          });
+        }
+      }
+
       // Calcular fecha de inicio (día siguiente)
       const fechaInicioDisponibilidad = new Date(fechaInicio);
       fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
@@ -1191,9 +1443,9 @@ class PedidoController {
           baja_logica: false
         };
         
-        // Filtrar por ciudad si se especifica
-        if (ciudad_id) {
-          whereClause.fkid_ciudad = ciudad_id;
+        // Filtrar por ciudad si se especifica (usar el ID convertido)
+        if (ciudadIdFinal) {
+          whereClause.fkid_ciudad = ciudadIdFinal;
         }
         
         // Contar pedidos por horario
@@ -1226,12 +1478,27 @@ class PedidoController {
         });
       }
 
+      // Obtener información de la ciudad si se especificó
+      let ciudadInfo = null;
+      if (ciudadIdFinal) {
+        const ciudad = await City.findByPk(ciudadIdFinal, {
+          attributes: ['id', 'nombre']
+        });
+        if (ciudad) {
+          ciudadInfo = {
+            id: ciudad.id,
+            nombre: ciudad.nombre,
+            input_original: ciudad_id // Mantener el valor original (puede ser nombre o ID)
+          };
+        }
+      }
+
       res.json({
         success: true,
         data: {
           disponibilidad,
           fecha_consulta: fecha_inicio,
-          ciudad_id: ciudad_id || null,
+          ciudad: ciudadInfo || null,
           total_dias: disponibilidad.length
         }
       });

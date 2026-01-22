@@ -1,5 +1,9 @@
-const { Repartidor, City, User, Ruta } = require('../../models');
+const { Repartidor, City, User, Ruta, RutaPedido, Pedido, Cliente, ProductoPedido, Inventario, PaquetePedido, Paquete } = require('../../models');
 const { Op } = require('sequelize');
+const { applyCityFilter } = require('../../utils/cityFilter');
+const bcrypt = require('bcryptjs');
+const { generateToken, generateRefreshToken } = require('../../utils/jwt');
+const { Sequelize } = require('sequelize');
 
 class RepartidorController {
   // Obtener todos los repartidores
@@ -31,6 +35,11 @@ class RepartidorController {
         whereClause.fkid_ciudad = ciudad;
       }
 
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver repartidores de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los repartidores
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
+
       if (disponibles === 'true') {
         whereClause.estado = 'disponible';
       }
@@ -59,6 +68,9 @@ class RepartidorController {
             required: false
           }
         ],
+        attributes: {
+          exclude: ['contrasena']
+        },
         order: [['nombre_completo', 'ASC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
@@ -86,6 +98,9 @@ class RepartidorController {
 
       const repartidor = await Repartidor.findByPk(id, {
         where: { baja_logica: false },
+        attributes: {
+          exclude: ['contrasena']
+        },
         include: [
           {
             model: City,
@@ -147,8 +162,15 @@ class RepartidorController {
         documento_identidad,
         licencia_conducir,
         seguro_vehiculo,
-        notas
+        notas,
+        contrasena
       } = req.body;
+
+      // Hashear la contraseña si se proporciona
+      let hashedPassword = null;
+      if (contrasena) {
+        hashedPassword = await bcrypt.hash(contrasena, 12);
+      }
 
       const repartidor = await Repartidor.create({
         codigo_repartidor,
@@ -169,13 +191,18 @@ class RepartidorController {
         documento_identidad,
         licencia_conducir,
         seguro_vehiculo,
-        notas
+        notas,
+        contrasena: hashedPassword
       });
+
+      // No devolver la contraseña en la respuesta
+      const repartidorResponse = repartidor.toJSON();
+      delete repartidorResponse.contrasena;
 
       res.status(201).json({
         success: true,
         message: 'Repartidor creado exitosamente',
-        data: repartidor
+        data: repartidorResponse
       });
     } catch (error) {
       next(error);
@@ -186,7 +213,7 @@ class RepartidorController {
   async updateRepartidor(req, res, next) {
     try {
       const { id } = req.params;
-      const updateData = req.body;
+      const updateData = { ...req.body };
 
       const repartidor = await Repartidor.findByPk(id, {
         where: { baja_logica: false }
@@ -199,12 +226,28 @@ class RepartidorController {
         });
       }
 
+      // Eliminar campos que vienen como null (no se actualizan, se mantiene el valor existente)
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] === null || updateData[key] === 'null') {
+          delete updateData[key];
+        }
+      });
+
+      // Hashear la contraseña si se está actualizando
+      if (updateData.contrasena) {
+        updateData.contrasena = await bcrypt.hash(updateData.contrasena, 12);
+      }
+
       await repartidor.update(updateData);
+
+      // No devolver la contraseña en la respuesta
+      const repartidorResponse = repartidor.toJSON();
+      delete repartidorResponse.contrasena;
 
       res.json({
         success: true,
         message: 'Repartidor actualizado exitosamente',
-        data: repartidor
+        data: repartidorResponse
       });
     } catch (error) {
       next(error);
@@ -455,6 +498,411 @@ class RepartidorController {
           en_horario: enHorario,
           fecha_consulta: fechaConsulta,
           horario_trabajo: repartidor.obtenerHorarioTrabajo()
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Login de repartidor
+  async loginRepartidor(req, res, next) {
+    try {
+      const { email, codigo_repartidor, contrasena } = req.body;
+
+      // Validar que se proporcione email o codigo_repartidor
+      if (!email && !codigo_repartidor) {
+        return res.status(400).json({
+          success: false,
+          message: 'Debes proporcionar email o código de repartidor'
+        });
+      }
+
+      if (!contrasena) {
+        return res.status(400).json({
+          success: false,
+          message: 'La contraseña es requerida'
+        });
+      }
+
+      // Buscar repartidor por email o código
+      const whereClause = {
+        baja_logica: false
+      };
+
+      if (email) {
+        whereClause.email = email;
+      } else {
+        whereClause.codigo_repartidor = codigo_repartidor;
+      }
+
+      const repartidor = await Repartidor.findOne({
+        where: whereClause,
+        include: [
+          {
+            model: City,
+            as: 'ciudad',
+            attributes: ['id', 'nombre', 'departamento']
+          }
+        ]
+      });
+
+      if (!repartidor) {
+        return res.status(401).json({
+          success: false,
+          message: 'Credenciales inválidas'
+        });
+      }
+
+      // Verificar que el repartidor tenga contraseña configurada
+      if (!repartidor.contrasena) {
+        return res.status(401).json({
+          success: false,
+          message: 'El repartidor no tiene contraseña configurada. Contacta al administrador.'
+        });
+      }
+
+      // Verificar contraseña
+      const isPasswordValid = await bcrypt.compare(contrasena, repartidor.contrasena);
+
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Credenciales inválidas'
+        });
+      }
+
+      // Verificar que el repartidor esté activo
+      if (!['activo', 'disponible'].includes(repartidor.estado)) {
+        return res.status(401).json({
+          success: false,
+          message: 'Tu cuenta está inactiva. Contacta al administrador.'
+        });
+      }
+
+      // Generar tokens
+      const token = generateToken({
+        repartidorId: repartidor.id,
+        email: repartidor.email,
+        codigo_repartidor: repartidor.codigo_repartidor,
+        tipo: 'repartidor'
+      });
+
+      const refreshToken = generateRefreshToken({
+        repartidorId: repartidor.id,
+        tipo: 'repartidor'
+      });
+
+      // Preparar respuesta sin contraseña
+      const repartidorResponse = repartidor.toJSON();
+
+      res.json({
+        success: true,
+        message: 'Login exitoso',
+        data: {
+          repartidor: {
+            id: repartidorResponse.id,
+            codigo_repartidor: repartidorResponse.codigo_repartidor,
+            nombre_completo: repartidorResponse.nombre_completo,
+            telefono: repartidorResponse.telefono,
+            email: repartidorResponse.email,
+            tipo_vehiculo: repartidorResponse.tipo_vehiculo,
+            estado: repartidorResponse.estado,
+            ciudad: repartidorResponse.ciudad,
+            calificacion_promedio: repartidorResponse.calificacion_promedio,
+            total_entregas: repartidorResponse.total_entregas
+          },
+          token,
+          refreshToken
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Obtener pedidos del día del repartidor
+  async getPedidosDelDia(req, res, next) {
+    try {
+      // Obtener el ID del repartidor desde el query parameter o del token autenticado
+      const repartidorIdParam = req.query.repartidor_id || req.query.repartidorId;
+      const repartidorId = repartidorIdParam ? parseInt(repartidorIdParam) : req.repartidorId;
+      
+      console.log('=== INICIO getPedidosDelDia ===');
+      console.log('Query params:', req.query);
+      console.log('repartidorIdParam:', repartidorIdParam);
+      console.log('req.repartidorId (del token):', req.repartidorId);
+      console.log('repartidorId final:', repartidorId);
+      
+      // Obtener la fecha de hoy en formato YYYY-MM-DD
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const fechaHoy = hoy.toISOString().split('T')[0]; // Formato: YYYY-MM-DD
+      
+      console.log('Fecha de hoy (formato YYYY-MM-DD):', fechaHoy);
+      console.log('Fecha de hoy (Date object):', hoy);
+
+      // Verificar que el repartidorId existe
+      if (!repartidorId || isNaN(repartidorId)) {
+        console.log('ERROR: repartidorId inválido');
+        return res.status(400).json({
+          success: false,
+          message: 'ID de repartidor requerido'
+        });
+      }
+
+      // Verificar que el repartidor existe
+      const repartidor = await Repartidor.findByPk(repartidorId, {
+        where: { baja_logica: false }
+      });
+
+      if (!repartidor) {
+        console.log('ERROR: Repartidor no encontrado con ID:', repartidorId);
+        return res.status(404).json({
+          success: false,
+          message: 'Repartidor no encontrado'
+        });
+      }
+
+      console.log('Repartidor encontrado:', {
+        id: repartidor.id,
+        nombre: repartidor.nombre_completo,
+        codigo: repartidor.codigo_repartidor
+      });
+
+      // Buscar rutas planificadas del repartidor del día actual
+      const whereClause = {
+        fkid_repartidor: repartidorId,
+        fecha_ruta: {
+          [Op.eq]: fechaHoy
+        },
+        estado: 'planificada' // Solo rutas planificadas
+      };
+      
+      console.log('=== BÚSQUEDA DE RUTAS ===');
+      console.log('Where clause:', JSON.stringify(whereClause, null, 2));
+      console.log('fkid_repartidor:', repartidorId, 'tipo:', typeof repartidorId);
+      console.log('fecha_ruta:', fechaHoy, 'tipo:', typeof fechaHoy);
+      console.log('estado:', 'planificada');
+      
+      const rutas = await Ruta.findAll({
+        where: whereClause,
+        include: [
+          {
+            model: RutaPedido,
+            as: 'pedidos',
+            include: [
+              {
+                model: Pedido,
+                as: 'pedido',
+                include: [
+                  {
+                    model: Cliente,
+                    as: 'cliente',
+                    attributes: ['id', 'nombre_completo', 'telefono', 'email']
+                  },
+                  {
+                    model: ProductoPedido,
+                    as: 'productos',
+                    include: [
+                      {
+                        model: Inventario,
+                        as: 'producto',
+                        attributes: ['id', 'nombre', 'descripcion', 'sku']
+                      }
+                    ]
+                  },
+                  {
+                    model: PaquetePedido,
+                    as: 'paquetes',
+                    include: [
+                      {
+                        model: Paquete,
+                        as: 'paquete',
+                        attributes: ['id', 'nombre', 'descripcion']
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            order: [['orden_entrega', 'ASC']]
+          }
+        ]
+      });
+
+      console.log('=== RESULTADOS DE LA BÚSQUEDA ===');
+      console.log('Total de rutas encontradas:', rutas.length);
+      rutas.forEach((ruta, index) => {
+        console.log(`Ruta ${index + 1}:`, {
+          id: ruta.id,
+          fkid_repartidor: ruta.fkid_repartidor,
+          fecha_ruta: ruta.fecha_ruta,
+          estado: ruta.estado,
+          total_pedidos: ruta.pedidos?.length || 0
+        });
+      });
+
+      // Extraer todos los pedidos de las rutas y verificar que pertenezcan al repartidor
+      const pedidos = [];
+      rutas.forEach(ruta => {
+        // Verificar que la ruta pertenezca al repartidor
+        if (ruta.fkid_repartidor !== repartidorId) {
+          return; // Saltar esta ruta si no pertenece al repartidor
+        }
+        
+        // Verificar que la fecha de la ruta sea la de hoy
+        const fechaRuta = ruta.fecha_ruta ? new Date(ruta.fecha_ruta).toISOString().split('T')[0] : null;
+        if (fechaRuta !== fechaHoy) {
+          return; // Saltar esta ruta si no es del día de hoy
+        }
+
+        ruta.pedidos.forEach(rutaPedido => {
+          if (rutaPedido.pedido) {
+            pedidos.push({
+              id: rutaPedido.pedido.id,
+              numero_pedido: rutaPedido.pedido.numero_pedido,
+              direccion_entrega: rutaPedido.pedido.direccion_entrega,
+              fecha_pedido: rutaPedido.pedido.fecha_pedido,
+              fecha_entrega_estimada: rutaPedido.pedido.fecha_entrega_estimada,
+              total: rutaPedido.pedido.total,
+              estado_pedido: rutaPedido.pedido.estado,
+              estado_entrega: rutaPedido.estado_entrega,
+              orden_entrega: rutaPedido.orden_entrega,
+              notas_entrega: rutaPedido.notas_entrega,
+              cliente: rutaPedido.pedido.cliente,
+              productos: rutaPedido.pedido.productos,
+              paquetes: rutaPedido.pedido.paquetes,
+              ruta_id: ruta.id,
+              ruta_pedido_id: rutaPedido.id
+            });
+          }
+        });
+      });
+
+      // Ordenar por orden de entrega
+      pedidos.sort((a, b) => a.orden_entrega - b.orden_entrega);
+
+      console.log('=== PEDIDOS FINALES ===');
+      console.log('Total de pedidos extraídos:', pedidos.length);
+      if (pedidos.length > 0) {
+        console.log('IDs de pedidos:', pedidos.map(p => p.id));
+        console.log('Fechas de pedidos:', pedidos.map(p => ({
+          id: p.id,
+          numero_pedido: p.numero_pedido,
+          fecha_pedido: p.fecha_pedido,
+          fecha_entrega_estimada: p.fecha_entrega_estimada,
+          estado_entrega: p.estado_entrega
+        })));
+      } else {
+        console.log('No se encontraron pedidos para este repartidor en el día de hoy');
+      }
+      console.log('=== FIN getPedidosDelDia ===');
+
+      res.json({
+        success: true,
+        data: {
+          pedidos,
+          total: pedidos.length,
+          fecha: fechaHoy
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Actualizar estado de entrega de un pedido
+  async updateEstadoPedido(req, res, next) {
+    try {
+      const { id } = req.params; // ID del pedido
+      const { estado, notas } = req.body;
+      const repartidorId = req.repartidorId;
+
+      // Validar estado
+      const estadosValidos = ['pendiente', 'en_camino', 'en_ubicacion', 'entregado', 'no_entregado'];
+      if (!estadosValidos.includes(estado)) {
+        return res.status(400).json({
+          success: false,
+          message: `Estado inválido. Debe ser uno de: ${estadosValidos.join(', ')}`
+        });
+      }
+
+      // Buscar el pedido en las rutas del repartidor
+      const rutaPedido = await RutaPedido.findOne({
+        where: {
+          fkid_pedido: id
+        },
+        include: [
+          {
+            model: Ruta,
+            as: 'ruta',
+            where: {
+              fkid_repartidor: repartidorId
+            }
+          }
+        ]
+      });
+
+      if (!rutaPedido) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pedido no encontrado o no asignado a este repartidor'
+        });
+      }
+
+      // Mapear estados del frontend a estados de la BD
+      let estadoBD = estado;
+      if (estado === 'en_ubicacion') {
+        estadoBD = 'en_camino'; // Usamos en_camino para "en la ubicación"
+      } else if (estado === 'no_entregado') {
+        estadoBD = 'fallido';
+      }
+
+      // Actualizar estado de entrega
+      const updateData = {
+        estado_entrega: estadoBD
+      };
+
+      if (notas) {
+        updateData.notas_entrega = notas;
+      }
+
+      if (estadoBD === 'entregado' || estadoBD === 'fallido') {
+        updateData.fecha_entrega_real = new Date();
+      }
+
+      await rutaPedido.update(updateData);
+
+      // Si se entregó, actualizar también el estado del pedido
+      if (estadoBD === 'entregado') {
+        await Pedido.update(
+          { 
+            estado: 'entregado',
+            fecha_entrega_real: new Date()
+          },
+          { where: { id } }
+        );
+      }
+
+      // Obtener el pedido actualizado
+      const pedidoActualizado = await Pedido.findByPk(id, {
+        include: [
+          {
+            model: Cliente,
+            as: 'cliente',
+            attributes: ['id', 'nombre_completo', 'telefono', 'email']
+          }
+        ]
+      });
+
+      res.json({
+        success: true,
+        message: `Estado del pedido actualizado a: ${estado}`,
+        data: {
+          pedido: pedidoActualizado,
+          estado_entrega: rutaPedido.estado_entrega,
+          fecha_entrega_real: rutaPedido.fecha_entrega_real
         }
       });
     } catch (error) {

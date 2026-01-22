@@ -2,6 +2,8 @@ const { Cliente, Mascota, City, Pedido } = require('../../models');
 const { Op } = require('sequelize');
 const XLSX = require('xlsx');
 const multer = require('multer');
+const { applyCityFilter } = require('../../utils/cityFilter');
+const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
 class ClienteController {
   // Obtener todos los clientes
@@ -24,11 +26,16 @@ class ClienteController {
         whereClause.isActive = false;
       }
       
-      // Filtrar por ciudad
+      // Filtrar por ciudad (si viene en query params)
       const fkidCiudadQuery = ciudad_id ?? req.query.fkid_ciudad;
       if (fkidCiudadQuery) {
         whereClause.fkid_ciudad = fkidCiudadQuery;
       }
+
+      // Aplicar filtro de ciudad según el usuario autenticado
+      // Si el usuario tiene ciudad asignada, solo puede ver clientes de su ciudad
+      // Si no tiene ciudad asignada, puede ver todos los clientes
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
 
       // Búsqueda por nombre, email o teléfono
       if (search) {
@@ -215,20 +222,22 @@ class ClienteController {
         });
       }
 
-      // Verificar que la ciudad existe
-      const ciudad = await City.findByPk(fkid_ciudad);
-      if (!ciudad) {
+      // Verificar que la ciudad existe y convertir nombre a ID si es necesario
+      const ciudadData = await validateAndGetCity(fkid_ciudad, { defaultId: 3 });
+      if (!ciudadData) {
         return res.status(400).json({
           success: false,
-          message: 'La ciudad especificada no existe'
+          message: `La ciudad especificada "${fkid_ciudad}" no existe`
         });
       }
+      const ciudadAsignada = ciudadData.id;
+      const ciudad = ciudadData.city;
 
       const cliente = await Cliente.create({
         nombre_completo,
         telefono,
         email,
-        fkid_ciudad,
+        fkid_ciudad: ciudadAsignada,
         canal_contacto,
         direccion_entrega,
         notas_especiales
@@ -459,6 +468,11 @@ class ClienteController {
   // Obtener clientes activos
   async getActiveClientes(req, res, next) {
     try {
+      const whereClause = { isActive: true };
+      
+      // Aplicar filtro de ciudad según el usuario autenticado
+      applyCityFilter(req, whereClause, 'fkid_ciudad');
+
       const clientes = await Cliente.findAll({
         include: [
           {
@@ -474,7 +488,7 @@ class ClienteController {
             attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
           }
         ],
-        where: { isActive: true },
+        where: whereClause,
         order: [['nombre_completo', 'ASC']]
       });
 

@@ -72,13 +72,21 @@ const createClienteValidation = [
       return typeof email === 'string' && email.length <= 100;
     })
     .withMessage('El correo no puede exceder 100 caracteres'),
-  // Aceptar ciudad_id o fkid_ciudad
+  // Aceptar ciudad_id o fkid_ciudad (puede ser número o string con nombre de ciudad)
   body(['ciudad_id', 'fkid_ciudad'])
     .custom((value, { req }) => {
       const ciudadId = req.body.ciudad_id ?? req.body.fkid_ciudad;
-      return Number.isInteger(ciudadId) ? ciudadId >= 1 : Number.isInteger(parseInt(ciudadId));
+      // Si es número, debe ser entero positivo
+      if (typeof ciudadId === 'number') {
+        return Number.isInteger(ciudadId) && ciudadId >= 1;
+      }
+      // Si es string, debe tener contenido (será convertido a ID en el controlador)
+      if (typeof ciudadId === 'string') {
+        return ciudadId.trim().length > 0;
+      }
+      return false;
     })
-    .withMessage('La ciudad es requerida'),
+    .withMessage('La ciudad es requerida (puede ser un ID numérico o el nombre de la ciudad)'),
   body('contrasena')
     .optional()
     .isLength({ min: 6 })
