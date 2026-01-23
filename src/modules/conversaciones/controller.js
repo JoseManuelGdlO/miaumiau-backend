@@ -23,6 +23,25 @@ const resolvePhoneNumberId = async (rawPhone) => {
   return mapping?.phoneid || null;
 };
 
+// Función helper para buscar cliente por teléfono
+const findClienteByTelefono = async (telefonoRaw) => {
+  if (!telefonoRaw) return null;
+  
+  // Normalizar el teléfono (extraer solo números)
+  const telefonoNormalizado = normalizePhone(telefonoRaw);
+  if (!telefonoNormalizado) return null;
+  
+  // Buscar cliente por teléfono normalizado
+  const cliente = await Cliente.findOne({
+    where: { 
+      telefono: telefonoNormalizado,
+      isActive: true // Solo clientes activos
+    }
+  });
+  
+  return cliente;
+};
+
 class ConversacionController {
   // Obtener todas las conversaciones
   async getAllConversaciones(req, res, next) {
@@ -247,7 +266,7 @@ class ConversacionController {
       } = req.body;
 
       // Normalizar id_cliente: si viene 0 o '0', tratar como null
-      const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
+      let clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
 
       let cliente = null;
       // Verificar que el cliente existe si se proporciona
@@ -258,6 +277,15 @@ class ConversacionController {
             success: false,
             message: 'El cliente especificado no existe'
           });
+        }
+      } else {
+        // Si no se proporciona id_cliente, buscar por teléfono en el campo 'from'
+        const telefonoFrom = extractPhone(from);
+        if (telefonoFrom) {
+          cliente = await findClienteByTelefono(telefonoFrom);
+          if (cliente) {
+            clienteIdNormalizado = cliente.id;
+          }
         }
       }
 
@@ -318,7 +346,7 @@ class ConversacionController {
       } = req.body;
 
       // Normalizar id_cliente: si viene 0 o '0', tratar como null
-      const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
+      let clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
 
       // Validar que from esté presente
       if (!from) {
@@ -337,6 +365,15 @@ class ConversacionController {
             success: false,
             message: 'El cliente especificado no existe'
           });
+        }
+      } else {
+        // Si no se proporciona id_cliente, buscar por teléfono en el campo 'from'
+        const telefonoFrom = extractPhone(from);
+        if (telefonoFrom) {
+          cliente = await findClienteByTelefono(telefonoFrom);
+          if (cliente) {
+            clienteIdNormalizado = cliente.id;
+          }
         }
       }
 
@@ -397,11 +434,44 @@ class ConversacionController {
         });
 
         fueCreada = true;
-      } else if (!conversacion.whatsapp_phone_number_id) {
-        const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
-        const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
-        if (whatsapp_phone_number_id) {
-          await conversacion.update({ whatsapp_phone_number_id });
+      } else {
+        // Si la conversación existe pero no tiene cliente asignado y encontramos uno, actualizarla
+        if (!conversacion.id_cliente && clienteIdNormalizado) {
+          await conversacion.update({ id_cliente: clienteIdNormalizado });
+          
+          // Crear log de actualización
+          await ConversacionLog.createLog(
+            conversacion.id,
+            { 
+              cliente_anterior: null,
+              cliente_nuevo: clienteIdNormalizado,
+              updated_by: 'sistema'
+            },
+            'sistema',
+            'info',
+            `Conversación actualizada con cliente existente: ${cliente?.nombre_completo || clienteIdNormalizado}`
+          );
+          
+          // Recargar la conversación con el cliente actualizado
+          conversacion = await Conversacion.findByPk(conversacion.id, {
+            include: [
+              {
+                model: Cliente,
+                as: 'cliente',
+                attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+                required: false
+              }
+            ]
+          });
+        }
+        
+        // Actualizar whatsapp_phone_number_id si no existe
+        if (!conversacion.whatsapp_phone_number_id) {
+          const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
+          const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
+          if (whatsapp_phone_number_id) {
+            await conversacion.update({ whatsapp_phone_number_id });
+          }
         }
       }
 

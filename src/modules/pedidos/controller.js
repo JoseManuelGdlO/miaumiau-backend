@@ -1,7 +1,76 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage, Conversacion, ConversacionLog } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
+
+// Funciones helper para normalizar teléfonos
+const normalizePhone = (value) => {
+  if (!value) return null;
+  const normalized = String(value).replace(/\D/g, '');
+  return normalized || null;
+};
+
+const extractPhone = (value) => {
+  if (!value) return null;
+  const match = String(value).match(/\+?\d+/);
+  return match ? match[0] : null;
+};
+
+// Función helper para actualizar conversaciones con el cliente real
+const updateConversacionesWithCliente = async (telefono, id_cliente, id_pedido = null) => {
+  if (!telefono || !id_cliente) return;
+  
+  try {
+    // Normalizar el teléfono
+    const telefonoNormalizado = normalizePhone(telefono);
+    if (!telefonoNormalizado) return;
+    
+    // Buscar conversaciones activas que tengan este teléfono en 'from' y no tengan cliente asignado
+    const conversaciones = await Conversacion.findAll({
+      where: {
+        from: {
+          [Op.like]: `%${telefonoNormalizado}%`
+        },
+        id_cliente: null,
+        baja_logica: false
+      }
+    });
+    
+    // Actualizar cada conversación encontrada
+    for (const conversacion of conversaciones) {
+      const updateData = { id_cliente };
+      
+      // Si se proporciona id_pedido y la conversación no tiene uno, actualizarlo
+      if (id_pedido && !conversacion.id_pedido) {
+        updateData.id_pedido = id_pedido;
+      }
+      
+      await conversacion.update(updateData);
+      
+      // Crear log de la actualización
+      await ConversacionLog.createLog(
+        conversacion.id,
+        { 
+          cliente_anterior: null,
+          cliente_nuevo: id_cliente,
+          pedido_id: id_pedido || null,
+          updated_by: 'sistema',
+          motivo: 'Cliente identificado al crear pedido'
+        },
+        'sistema',
+        'info',
+        `Conversación actualizada con cliente ${id_cliente}${id_pedido ? ` y pedido ${id_pedido}` : ''}`
+      );
+    }
+    
+    return conversaciones.length;
+  } catch (error) {
+    // No fallar el proceso si hay error al actualizar conversaciones
+    // Solo loguear el error para debugging
+    console.error('Error al actualizar conversaciones con cliente:', error);
+    return 0;
+  }
+};
 
 class PedidoController {
   // Obtener todos los pedidos
@@ -347,6 +416,13 @@ class PedidoController {
         }
       }
 
+      // Actualizar conversaciones relacionadas con el cliente
+      // Buscar conversaciones que tengan el teléfono del cliente pero no tengan cliente asignado
+      const telefonoParaBuscar = telefono_referencia || cliente?.telefono;
+      if (telefonoParaBuscar && clienteId) {
+        await updateConversacionesWithCliente(telefonoParaBuscar, clienteId);
+      }
+
       // Obtener la ciudad (ya validada en el mapeo inicial)
       const ciudad = await City.findByPk(ciudadIdFinal);
 
@@ -621,6 +697,13 @@ class PedidoController {
       // Actualizar subtotal del pedido
       // Los descuentos ya fueron aplicados a los productos antes de crear el pedido
       await pedido.actualizarSubtotal(subtotal);
+
+      // Actualizar conversaciones relacionadas con el pedido creado
+      // Buscar conversaciones que tengan el teléfono del cliente y actualizarlas con el id_pedido
+      const telefonoParaBuscarPedido = telefono_referencia || cliente?.telefono;
+      if (telefonoParaBuscarPedido && clienteId && pedido.id) {
+        await updateConversacionesWithCliente(telefonoParaBuscarPedido, clienteId, pedido.id);
+      }
 
       // Obtener el pedido creado con sus relaciones
       const pedidoCompleto = await Pedido.findByPk(pedido.id, {
