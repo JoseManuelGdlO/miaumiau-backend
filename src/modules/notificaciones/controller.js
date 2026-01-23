@@ -102,11 +102,18 @@ class NotificacionController {
     try {
       const { nombre, descripcion, prioridad, datos } = req.body;
 
+      // Establecer fecha y hora de creación explícitamente
+      const now = new Date();
+      const fecha_creacion = now.toISOString().split('T')[0]; // YYYY-MM-DD
+      const hora_creacion = now.toTimeString().split(' ')[0]; // HH:mm:ss
+
       const notificacion = await Notificacion.create({
         nombre,
         descripcion,
         prioridad: prioridad || 'media',
         leida: false,
+        fecha_creacion,
+        hora_creacion,
         datos: datos || null
       });
 
