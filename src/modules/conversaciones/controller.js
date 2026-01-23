@@ -1,5 +1,6 @@
-const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario, WhatsAppPhoneNumber } = require('../../models');
+const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario, WhatsAppPhoneNumber, ConversacionFlag, ConversacionFlagAsignacion } = require('../../models');
 const { Op } = require('sequelize');
+const { Sequelize } = require('sequelize');
 
 const normalizePhone = (value) => {
   if (!value) return null;
@@ -35,6 +36,7 @@ class ConversacionController {
         search,
         start_date,
         end_date,
+        flags,
         page = 1,
         limit = 10
       } = req.query;
@@ -79,38 +81,67 @@ class ConversacionController {
 
       const offset = (page - 1) * limit;
 
+      // Construir includes
+      const includes = [
+        {
+          model: Cliente,
+          as: 'cliente',
+          attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+          required: false
+        },
+        {
+          model: Pedido,
+          as: 'pedido',
+          attributes: ['id', 'numero_pedido', 'estado', 'total', 'fecha_pedido'],
+          required: false
+        },
+        {
+          model: ConversacionChat,
+          as: 'chats',
+          attributes: ['id', 'fecha', 'hora', 'from', 'mensaje', 'tipo_mensaje', 'leido', 'created_at'],
+          limit: 1,
+          separate: true,
+          order: [['created_at', 'DESC']]
+        },
+        {
+          model: ConversacionLog,
+          as: 'logs',
+          attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
+          limit: 1,
+          separate: true,
+          order: [['created_at', 'DESC']]
+        },
+        {
+          model: ConversacionFlag,
+          as: 'flags',
+          attributes: ['id', 'nombre', 'color', 'descripcion', 'activo'],
+          through: { attributes: [] },
+          required: false
+        }
+      ];
+
+      // Filtrar por flags si se proporciona
+      let flagFilter = null;
+      if (flags) {
+        const flagIds = Array.isArray(flags) ? flags : flags.split(',').map(id => parseInt(id.trim()));
+        flagFilter = {
+          model: ConversacionFlag,
+          as: 'flags',
+          where: {
+            id: {
+              [Op.in]: flagIds
+            }
+          },
+          required: true
+        };
+        // Reemplazar el include de flags con el filtrado
+        includes[includes.length - 1] = flagFilter;
+      }
+
       const { count, rows: conversaciones } = await Conversacion.findAndCountAll({
         where: whereClause,
-        include: [
-          {
-            model: Cliente,
-            as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
-            required: false
-          },
-          {
-            model: Pedido,
-            as: 'pedido',
-            attributes: ['id', 'numero_pedido', 'estado', 'total', 'fecha_pedido'],
-            required: false
-          },
-          {
-            model: ConversacionChat,
-            as: 'chats',
-            attributes: ['id', 'fecha', 'hora', 'from', 'mensaje', 'tipo_mensaje', 'leido', 'created_at'],
-            limit: 1,
-            separate: true,
-            order: [['created_at', 'DESC']]
-          },
-          {
-            model: ConversacionLog,
-            as: 'logs',
-            attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
-            limit: 1,
-            separate: true,
-            order: [['created_at', 'DESC']]
-          }
-        ],
+        include: includes,
+        distinct: true,
         order: [['created_at', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
@@ -177,6 +208,13 @@ class ConversacionController {
             as: 'logs',
             attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
             order: [['created_at', 'ASC']],
+            required: false
+          },
+          {
+            model: ConversacionFlag,
+            as: 'flags',
+            attributes: ['id', 'nombre', 'color', 'descripcion', 'activo'],
+            through: { attributes: [] },
             required: false
           }
         ]

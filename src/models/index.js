@@ -17,6 +17,8 @@ const Inventario = require('./Inventario');
 const Conversacion = require('./Conversacion');
 const ConversacionChat = require('./ConversacionChat');
 const ConversacionLog = require('./ConversacionLog');
+const ConversacionFlag = require('./ConversacionFlag');
+const ConversacionFlagAsignacion = require('./ConversacionFlagAsignacion');
 const Pedido = require('./Pedido');
 const ProductoPedido = require('./ProductoPedido');
 const Cliente = require('./Cliente');
@@ -49,6 +51,8 @@ const models = {
   Conversacion: Conversacion(sequelize, DataTypes),
   ConversacionChat: ConversacionChat(sequelize, DataTypes),
   ConversacionLog: ConversacionLog(sequelize, DataTypes),
+  ConversacionFlag: ConversacionFlag(sequelize, DataTypes),
+  ConversacionFlagAsignacion: ConversacionFlagAsignacion(sequelize, DataTypes),
   Pedido: Pedido(sequelize, DataTypes),
   ProductoPedido: ProductoPedido(sequelize, DataTypes),
   Cliente: Cliente(sequelize, DataTypes),
@@ -251,6 +255,36 @@ models.ConversacionChat.belongsTo(models.Conversacion, {
 models.ConversacionLog.belongsTo(models.Conversacion, {
   foreignKey: 'fkid_conversacion',
   as: 'conversacion'
+});
+
+// Asociaciones para Flags
+models.Conversacion.hasMany(models.ConversacionFlagAsignacion, {
+  foreignKey: 'fkid_conversacion',
+  as: 'flagAsignaciones'
+});
+
+models.Conversacion.belongsToMany(models.ConversacionFlag, {
+  through: models.ConversacionFlagAsignacion,
+  foreignKey: 'fkid_conversacion',
+  otherKey: 'fkid_flag',
+  as: 'flags'
+});
+
+models.ConversacionFlag.belongsToMany(models.Conversacion, {
+  through: models.ConversacionFlagAsignacion,
+  foreignKey: 'fkid_flag',
+  otherKey: 'fkid_conversacion',
+  as: 'conversaciones'
+});
+
+models.ConversacionFlagAsignacion.belongsTo(models.Conversacion, {
+  foreignKey: 'fkid_conversacion',
+  as: 'conversacion'
+});
+
+models.ConversacionFlagAsignacion.belongsTo(models.ConversacionFlag, {
+  foreignKey: 'fkid_flag',
+  as: 'flag'
 });
 
 // Asociaciones inversas
