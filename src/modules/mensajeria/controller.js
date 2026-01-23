@@ -1,4 +1,4 @@
-const { Conversacion, ConversacionChat, ConversacionLog, Cliente } = require('../../models');
+const { Conversacion, ConversacionChat, ConversacionLog, Cliente, WhatsAppPhoneNumber } = require('../../models');
 const { sendWhatsAppMessage } = require('../../utils/whatsapp');
 
 const extractPhoneFromConversation = (conversacion) => {
@@ -14,6 +14,21 @@ const extractPhoneFromConversation = (conversacion) => {
   }
 
   return null;
+};
+
+const normalizePhone = (value) => {
+  if (!value) return null;
+  const normalized = String(value).replace(/\D/g, '');
+  return normalized || null;
+};
+
+const resolvePhoneNumberId = async (rawPhone) => {
+  const normalized = normalizePhone(rawPhone);
+  if (!normalized) return null;
+  const mapping = await WhatsAppPhoneNumber.findOne({
+    where: { telefono: normalized }
+  });
+  return mapping?.phoneid || null;
 };
 
 class MensajeriaController {
@@ -47,12 +62,23 @@ class MensajeriaController {
         });
       }
 
-      const phoneNumberId = conversacion.whatsapp_phone_number_id;
+      // Intentar obtener el phone_number_id de la conversación
+      let phoneNumberId = conversacion.whatsapp_phone_number_id;
+      
+      // Si no existe, intentar resolverlo desde el teléfono
       if (!phoneNumberId) {
-        return res.status(400).json({
-          success: false,
-          message: 'No se encontró el phone_number_id para la conversación'
-        });
+        phoneNumberId = await resolvePhoneNumberId(telefono);
+        
+        // Si se encontró, actualizar la conversación
+        if (phoneNumberId) {
+          await conversacion.update({ whatsapp_phone_number_id: phoneNumberId });
+        } else {
+          // Si no se encontró, devolver error
+          return res.status(400).json({
+            success: false,
+            message: 'No se encontró el phone_number_id para la conversación. Verifique que existe un mapeo en la tabla whatsapp_phone_numbers para el teléfono: ' + telefono
+          });
+        }
       }
 
       const sendResult = await sendWhatsAppMessage(telefono, mensaje, phoneNumberId);
