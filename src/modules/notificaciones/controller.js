@@ -610,20 +610,37 @@ class NotificacionController {
         // Verificar si la fecha es válida, si no usar fecha actual
         const fechaValida = isNaN(fechaAct.getTime()) ? new Date() : fechaAct;
         
-        const diffMs = ahora - fechaValida;
+        const diffMs = ahora.getTime() - fechaValida.getTime();
+        
+        // Validar que diffMs sea un número válido y no negativo
+        if (isNaN(diffMs) || diffMs < 0) {
+          return {
+            ...act,
+            tiempoRelativo: 'Hace un momento',
+            fechaFormateada: fechaValida.toISOString()
+          };
+        }
+        
         const diffMins = Math.floor(diffMs / 60000);
         const diffHours = Math.floor(diffMs / 3600000);
         const diffDays = Math.floor(diffMs / 86400000);
 
+        // Validar que los valores calculados sean números válidos
+        const minsValido = !isNaN(diffMins) && diffMins >= 0;
+        const hoursValido = !isNaN(diffHours) && diffHours >= 0;
+        const daysValido = !isNaN(diffDays) && diffDays >= 0;
+
         let tiempoRelativo = '';
-        if (diffMins < 1) {
+        if (!minsValido || diffMins < 1) {
           tiempoRelativo = 'Hace un momento';
         } else if (diffMins < 60) {
           tiempoRelativo = `Hace ${diffMins} min`;
-        } else if (diffHours < 24) {
+        } else if (!hoursValido || diffHours < 24) {
           tiempoRelativo = `Hace ${diffHours} ${diffHours === 1 ? 'hora' : 'horas'}`;
-        } else {
+        } else if (daysValido) {
           tiempoRelativo = `Hace ${diffDays} ${diffDays === 1 ? 'día' : 'días'}`;
+        } else {
+          tiempoRelativo = 'Hace un momento';
         }
 
         return {
