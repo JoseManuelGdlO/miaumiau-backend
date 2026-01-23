@@ -1,5 +1,6 @@
-const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario, WhatsAppPhoneNumber } = require('../../models');
+const { Conversacion, Cliente, ConversacionChat, ConversacionLog, Pedido, ProductoPedido, Inventario, WhatsAppPhoneNumber, ConversacionFlag, ConversacionFlagAsignacion } = require('../../models');
 const { Op } = require('sequelize');
+const { Sequelize } = require('sequelize');
 
 const normalizePhone = (value) => {
   if (!value) return null;
@@ -22,6 +23,25 @@ const resolvePhoneNumberId = async (rawPhone) => {
   return mapping?.phoneid || null;
 };
 
+// Función helper para buscar cliente por teléfono
+const findClienteByTelefono = async (telefonoRaw) => {
+  if (!telefonoRaw) return null;
+  
+  // Normalizar el teléfono (extraer solo números)
+  const telefonoNormalizado = normalizePhone(telefonoRaw);
+  if (!telefonoNormalizado) return null;
+  
+  // Buscar cliente por teléfono normalizado
+  const cliente = await Cliente.findOne({
+    where: { 
+      telefono: telefonoNormalizado,
+      isActive: true // Solo clientes activos
+    }
+  });
+  
+  return cliente;
+};
+
 class ConversacionController {
   // Obtener todas las conversaciones
   async getAllConversaciones(req, res, next) {
@@ -35,6 +55,7 @@ class ConversacionController {
         search,
         start_date,
         end_date,
+        flags,
         page = 1,
         limit = 10
       } = req.query;
@@ -79,38 +100,67 @@ class ConversacionController {
 
       const offset = (page - 1) * limit;
 
+      // Construir includes
+      const includes = [
+        {
+          model: Cliente,
+          as: 'cliente',
+          attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+          required: false
+        },
+        {
+          model: Pedido,
+          as: 'pedido',
+          attributes: ['id', 'numero_pedido', 'estado', 'total', 'fecha_pedido'],
+          required: false
+        },
+        {
+          model: ConversacionChat,
+          as: 'chats',
+          attributes: ['id', 'fecha', 'hora', 'from', 'mensaje', 'tipo_mensaje', 'leido', 'created_at'],
+          limit: 1,
+          separate: true,
+          order: [['created_at', 'DESC']]
+        },
+        {
+          model: ConversacionLog,
+          as: 'logs',
+          attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
+          limit: 1,
+          separate: true,
+          order: [['created_at', 'DESC']]
+        },
+        {
+          model: ConversacionFlag,
+          as: 'flags',
+          attributes: ['id', 'nombre', 'color', 'descripcion', 'activo'],
+          through: { attributes: [] },
+          required: false
+        }
+      ];
+
+      // Filtrar por flags si se proporciona
+      let flagFilter = null;
+      if (flags) {
+        const flagIds = Array.isArray(flags) ? flags : flags.split(',').map(id => parseInt(id.trim()));
+        flagFilter = {
+          model: ConversacionFlag,
+          as: 'flags',
+          where: {
+            id: {
+              [Op.in]: flagIds
+            }
+          },
+          required: true
+        };
+        // Reemplazar el include de flags con el filtrado
+        includes[includes.length - 1] = flagFilter;
+      }
+
       const { count, rows: conversaciones } = await Conversacion.findAndCountAll({
         where: whereClause,
-        include: [
-          {
-            model: Cliente,
-            as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
-            required: false
-          },
-          {
-            model: Pedido,
-            as: 'pedido',
-            attributes: ['id', 'numero_pedido', 'estado', 'total', 'fecha_pedido'],
-            required: false
-          },
-          {
-            model: ConversacionChat,
-            as: 'chats',
-            attributes: ['id', 'fecha', 'hora', 'from', 'mensaje', 'tipo_mensaje', 'leido', 'created_at'],
-            limit: 1,
-            separate: true,
-            order: [['created_at', 'DESC']]
-          },
-          {
-            model: ConversacionLog,
-            as: 'logs',
-            attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
-            limit: 1,
-            separate: true,
-            order: [['created_at', 'DESC']]
-          }
-        ],
+        include: includes,
+        distinct: true,
         order: [['created_at', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
@@ -178,6 +228,13 @@ class ConversacionController {
             attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
             order: [['created_at', 'ASC']],
             required: false
+          },
+          {
+            model: ConversacionFlag,
+            as: 'flags',
+            attributes: ['id', 'nombre', 'color', 'descripcion', 'activo'],
+            through: { attributes: [] },
+            required: false
           }
         ]
       });
@@ -209,7 +266,7 @@ class ConversacionController {
       } = req.body;
 
       // Normalizar id_cliente: si viene 0 o '0', tratar como null
-      const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
+      let clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
 
       let cliente = null;
       // Verificar que el cliente existe si se proporciona
@@ -220,6 +277,15 @@ class ConversacionController {
             success: false,
             message: 'El cliente especificado no existe'
           });
+        }
+      } else {
+        // Si no se proporciona id_cliente, buscar por teléfono en el campo 'from'
+        const telefonoFrom = extractPhone(from);
+        if (telefonoFrom) {
+          cliente = await findClienteByTelefono(telefonoFrom);
+          if (cliente) {
+            clienteIdNormalizado = cliente.id;
+          }
         }
       }
 
@@ -280,7 +346,7 @@ class ConversacionController {
       } = req.body;
 
       // Normalizar id_cliente: si viene 0 o '0', tratar como null
-      const clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
+      let clienteIdNormalizado = (id_cliente === 0 || id_cliente === '0') ? null : id_cliente;
 
       // Validar que from esté presente
       if (!from) {
@@ -299,6 +365,15 @@ class ConversacionController {
             success: false,
             message: 'El cliente especificado no existe'
           });
+        }
+      } else {
+        // Si no se proporciona id_cliente, buscar por teléfono en el campo 'from'
+        const telefonoFrom = extractPhone(from);
+        if (telefonoFrom) {
+          cliente = await findClienteByTelefono(telefonoFrom);
+          if (cliente) {
+            clienteIdNormalizado = cliente.id;
+          }
         }
       }
 
@@ -359,11 +434,44 @@ class ConversacionController {
         });
 
         fueCreada = true;
-      } else if (!conversacion.whatsapp_phone_number_id) {
-        const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
-        const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
-        if (whatsapp_phone_number_id) {
-          await conversacion.update({ whatsapp_phone_number_id });
+      } else {
+        // Si la conversación existe pero no tiene cliente asignado y encontramos uno, actualizarla
+        if (!conversacion.id_cliente && clienteIdNormalizado) {
+          await conversacion.update({ id_cliente: clienteIdNormalizado });
+          
+          // Crear log de actualización
+          await ConversacionLog.createLog(
+            conversacion.id,
+            { 
+              cliente_anterior: null,
+              cliente_nuevo: clienteIdNormalizado,
+              updated_by: 'sistema'
+            },
+            'sistema',
+            'info',
+            `Conversación actualizada con cliente existente: ${cliente?.nombre_completo || clienteIdNormalizado}`
+          );
+          
+          // Recargar la conversación con el cliente actualizado
+          conversacion = await Conversacion.findByPk(conversacion.id, {
+            include: [
+              {
+                model: Cliente,
+                as: 'cliente',
+                attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+                required: false
+              }
+            ]
+          });
+        }
+        
+        // Actualizar whatsapp_phone_number_id si no existe
+        if (!conversacion.whatsapp_phone_number_id) {
+          const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
+          const whatsapp_phone_number_id = await resolvePhoneNumberId(telefonoOrigen);
+          if (whatsapp_phone_number_id) {
+            await conversacion.update({ whatsapp_phone_number_id });
+          }
         }
       }
 

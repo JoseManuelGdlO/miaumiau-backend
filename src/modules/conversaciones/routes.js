@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const conversacionController = require('./controller');
+const flagController = require('../conversaciones-flags/controller');
 const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
@@ -101,6 +102,17 @@ const validateQuery = [
     .optional()
     .isInt({ min: 1, max: 100 })
     .withMessage('El límite debe ser entre 1 y 100'),
+  
+  query('flags')
+    .optional()
+    .custom((value) => {
+      if (typeof value === 'string') {
+        const ids = value.split(',').map(id => id.trim());
+        return ids.every(id => /^\d+$/.test(id));
+      }
+      return Array.isArray(value) && value.every(id => Number.isInteger(Number(id)));
+    })
+    .withMessage('El parámetro flags debe ser una lista de IDs separados por comas o un array'),
   
   handleValidationErrors
 ];
@@ -220,6 +232,13 @@ router.get('/search/term',
   requireSuperAdminOrPermission('ver_conversaciones'), 
   validateSearch, 
   conversacionController.searchConversaciones
+);
+
+router.get('/:id/flags',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_conversaciones'),
+  validateId,
+  flagController.getConversationFlags
 );
 
 module.exports = router;

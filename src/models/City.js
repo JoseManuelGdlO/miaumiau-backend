@@ -104,6 +104,40 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'America/Mexico_City',
       comment: 'Zona horaria de la ciudad (formato IANA, ej: America/Mexico_City, America/Bogota)'
     },
+    max_pedidos_por_horario: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 5,
+      validate: {
+        min: 1,
+        max: 100
+      },
+      comment: 'Máximo número de pedidos por horario de entrega (mañana o tarde)'
+    },
+    dias_trabajo: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: [0, 1, 2, 3, 4, 5, 6],
+      comment: 'Array de días de la semana que trabajan entregas (0=domingo, 6=sábado)',
+      validate: {
+        isValidDiasTrabajo(value) {
+          if (value !== null && value !== undefined) {
+            if (!Array.isArray(value)) {
+              throw new Error('dias_trabajo debe ser un array');
+            }
+            if (value.length === 0) {
+              throw new Error('dias_trabajo debe contener al menos un día');
+            }
+            const validDays = [0, 1, 2, 3, 4, 5, 6];
+            for (const day of value) {
+              if (!validDays.includes(day)) {
+                throw new Error('dias_trabajo debe contener solo valores entre 0 y 6');
+              }
+            }
+          }
+        }
+      }
+    },
     baja_logica: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
@@ -151,6 +185,20 @@ module.exports = (sequelize, DataTypes) => {
   City.prototype.deactivate = function() {
     this.estado_inicial = 'inactiva';
     return this.save();
+  };
+
+  // Método helper para obtener días de trabajo
+  City.prototype.getDiasTrabajo = function() {
+    if (!this.dias_trabajo || !Array.isArray(this.dias_trabajo) || this.dias_trabajo.length === 0) {
+      // Por defecto, todos los días
+      return [0, 1, 2, 3, 4, 5, 6];
+    }
+    return this.dias_trabajo;
+  };
+
+  // Método helper para obtener máximo de pedidos por horario
+  City.prototype.getMaxPedidosPorHorario = function() {
+    return this.max_pedidos_por_horario || 5;
   };
 
   // Métodos estáticos
