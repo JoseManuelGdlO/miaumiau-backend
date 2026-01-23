@@ -251,27 +251,13 @@ class RutaController {
                     model: ProductoPedido,
                     as: 'productos',
                     required: false,
-                    separate: true,
-                    include: [
-                      {
-                        model: Inventario,
-                        as: 'producto',
-                        required: false
-                      }
-                    ]
+                    separate: true
                   },
                   {
                     model: PaquetePedido,
                     as: 'paquetes',
                     required: false,
-                    separate: true,
-                    include: [
-                      {
-                        model: Paquete,
-                        as: 'paquete',
-                        required: false
-                      }
-                    ]
+                    separate: true
                   }
                 ]
               }

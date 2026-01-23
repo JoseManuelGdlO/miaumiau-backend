@@ -451,31 +451,30 @@ class NotificacionController {
               as: 'cliente',
               attributes: ['id', 'nombre_completo'],
               required: false
-            },
-            {
-              model: ProductoPedido,
-              as: 'productos',
-              attributes: ['id', 'cantidad', 'precio_total'],
-              required: false,
-              limit: 1,
-              separate: true,
-              include: [
-                {
-                  model: Inventario,
-                  as: 'producto',
-                  attributes: ['id', 'nombre', 'sku'],
-                  required: false
-                }
-              ]
             }
           ],
           order: [['fecha_entrega_real', 'DESC']],
           limit: 10
         });
 
-        pedidosCompletados.forEach(pedido => {
-          // Obtener información del primer producto
-          const primerProducto = pedido.productos?.[0];
+        // Obtener productos para cada pedido por separado
+        for (const pedido of pedidosCompletados) {
+          const primerProducto = await ProductoPedido.findOne({
+            where: {
+              fkid_pedido: pedido.id,
+              baja_logica: false
+            },
+            include: [
+              {
+                model: Inventario,
+                as: 'producto',
+                attributes: ['id', 'nombre', 'sku'],
+                required: false
+              }
+            ],
+            order: [['created_at', 'ASC']]
+          });
+
           const nombreProducto = primerProducto?.producto?.nombre || 'Productos Miau Miau';
           const descripcion = `Pedido #${pedido.numero_pedido} - ${nombreProducto}`;
 
@@ -495,7 +494,7 @@ class NotificacionController {
               total: pedido.total
             }
           });
-        });
+        }
       }
 
       // 3. INVENTARIO BAJO
