@@ -458,6 +458,7 @@ class NotificacionController {
               attributes: ['id', 'cantidad', 'precio_total'],
               required: false,
               limit: 1,
+              separate: true,
               include: [
                 {
                   model: Inventario,

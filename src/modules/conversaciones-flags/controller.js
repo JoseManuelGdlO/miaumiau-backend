@@ -183,11 +183,18 @@ class ConversacionFlagController {
         });
       }
 
+      // Eliminar todas las asignaciones de este flag antes de eliminarlo
+      await ConversacionFlagAsignacion.destroy({
+        where: {
+          fkid_flag: id
+        }
+      });
+
       await flag.softDelete();
 
       res.json({
         success: true,
-        message: 'Flag eliminado exitosamente'
+        message: 'Flag eliminado exitosamente. Todas las asignaciones han sido removidas.'
       });
     } catch (error) {
       next(error);
@@ -331,10 +338,10 @@ class ConversacionFlagController {
       const asignaciones = await ConversacionFlagAsignacion.findByConversacion(conversacionId);
 
       const flagIds = asignaciones.map(a => a.fkid_flag);
+      // Incluir todos los flags asignados, incluso los eliminados, para poder removerlos
       const flags = await ConversacionFlag.findAll({
         where: {
-          id: flagIds,
-          baja_logica: false
+          id: flagIds
         },
         order: [['nombre', 'ASC']]
       });
