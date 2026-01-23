@@ -27,4 +27,10 @@ router.post(
   mensajeriaController.sendWhatsAppMessage
 );
 
+// Webhook de WhatsApp (sin autenticación, usa verify token)
+// GET para verificación inicial de Meta/Facebook
+// POST para recibir actualizaciones de estado
+router.get('/webhook/whatsapp', mensajeriaController.handleWhatsAppWebhook);
+router.post('/webhook/whatsapp', mensajeriaController.handleWhatsAppWebhook);
+
 module.exports = router;

@@ -51,10 +51,31 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
         data += chunk;
       });
       res.on('end', () => {
+        const success = res.statusCode >= 200 && res.statusCode < 300;
+        let messageId = null;
+        let parsedData = null;
+
+        // Intentar parsear la respuesta JSON
+        if (success && data) {
+          try {
+            parsedData = JSON.parse(data);
+            // Extraer message_id de la respuesta de WhatsApp
+            // Estructura: { messages: [{ id: "wamid.xxx" }] }
+            if (parsedData?.messages && Array.isArray(parsedData.messages) && parsedData.messages.length > 0) {
+              messageId = parsedData.messages[0].id;
+            }
+          } catch (error) {
+            // Si no se puede parsear, continuar sin message_id
+            console.warn('No se pudo parsear la respuesta de WhatsApp:', error.message);
+          }
+        }
+
         resolve({
-          success: res.statusCode >= 200 && res.statusCode < 300,
+          success,
           status: res.statusCode,
-          data
+          data,
+          messageId,
+          parsedData
         });
       });
     });
