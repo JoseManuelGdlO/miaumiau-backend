@@ -263,6 +263,240 @@ class MensajeriaController {
       });
     }
   }
+
+  /**
+   * Endpoint para que n8n (u otros servicios externos) actualicen el estado de mensajes
+   * Este endpoint recibe actualizaciones de estado de forma directa desde n8n
+   */
+  async updateMessageStatus(req, res, next) {
+    try {
+      const { messageId, status, timestamp } = req.body;
+
+      if (!messageId || !status) {
+        return res.status(400).json({
+          success: false,
+          message: 'messageId y status son requeridos'
+        });
+      }
+
+      // Validar que el status sea uno de los valores permitidos
+      const validStatuses = ['sent', 'delivered', 'read', 'failed', 'pending'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Status inválido. Debe ser uno de: ${validStatuses.join(', ')}`
+        });
+      }
+
+      // Buscar el mensaje por whatsapp_message_id en metadata
+      // Buscar en mensajes recientes (últimos 7 días) para mejorar rendimiento
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const chats = await ConversacionChat.findAll({
+        where: {
+          baja_logica: false,
+          created_at: {
+            [Sequelize.Op.gte]: sevenDaysAgo
+          }
+        },
+        limit: 1000 // Limitar a los 1000 más recientes
+      });
+
+      // Buscar el mensaje con el message_id correspondiente
+      const chat = chats.find(c => {
+        const metadata = c.metadata || {};
+        return metadata.whatsapp_message_id === messageId;
+      });
+
+      if (!chat) {
+        return res.status(404).json({
+          success: false,
+          message: `Mensaje con whatsapp_message_id "${messageId}" no encontrado. El mensaje puede ser muy antiguo (más de 7 días) o no existe en la base de datos.`
+        });
+      }
+
+      const metadata = chat.metadata || {};
+      const previousStatus = metadata.whatsapp_status || 'unknown';
+
+      // Actualizar el estado del mensaje
+      const updatedMetadata = {
+        ...metadata,
+        whatsapp_status: status,
+        whatsapp_status_updated_at: timestamp 
+          ? new Date(parseInt(timestamp) * 1000).toISOString()
+          : new Date().toISOString()
+      };
+
+      await chat.update({ metadata: updatedMetadata });
+
+      // Obtener información de la conversación para la respuesta
+      const conversacion = await Conversacion.findByPk(chat.fkid_conversacion, {
+        attributes: ['id', 'from', 'status']
+      });
+
+      // Log de la actualización
+      await ConversacionLog.createLog(
+        chat.fkid_conversacion,
+        {
+          mensaje_id: chat.id,
+          whatsapp_message_id: messageId,
+          status_anterior: previousStatus,
+          status_nuevo: status,
+          fuente: 'n8n'
+        },
+        'mensaje',
+        status === 'failed' ? 'error' : 'info',
+        `Estado de WhatsApp actualizado desde n8n: ${status}`
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Estado actualizado exitosamente',
+        data: {
+          chatId: chat.id,
+          conversacionId: chat.fkid_conversacion,
+          conversacion: conversacion ? {
+            id: conversacion.id,
+            from: conversacion.from,
+            status: conversacion.status
+          } : null,
+          previousStatus,
+          newStatus: status,
+          whatsappMessageId: messageId
+        }
+      });
+    } catch (error) {
+      console.error('Error actualizando estado de mensaje:', error);
+      next(error);
+    }
+  }
+
+  /**
+   * Endpoint para actualizar múltiples estados a la vez (útil para n8n)
+   */
+  async updateMultipleMessageStatuses(req, res, next) {
+    try {
+      const { updates } = req.body;
+
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'updates debe ser un array no vacío'
+        });
+      }
+
+      const results = [];
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      // Obtener todos los mensajes recientes una sola vez
+      const chats = await ConversacionChat.findAll({
+        where: {
+          baja_logica: false,
+          created_at: {
+            [Sequelize.Op.gte]: sevenDaysAgo
+          }
+        },
+        limit: 1000
+      });
+
+      for (const update of updates) {
+        const { messageId, status, timestamp } = update;
+
+        if (!messageId || !status) {
+          results.push({
+            messageId: messageId || 'unknown',
+            success: false,
+            error: 'messageId y status son requeridos'
+          });
+          continue;
+        }
+
+        const validStatuses = ['sent', 'delivered', 'read', 'failed', 'pending'];
+        if (!validStatuses.includes(status)) {
+          results.push({
+            messageId,
+            success: false,
+            error: `Status inválido: ${status}`
+          });
+          continue;
+        }
+
+        // Buscar el mensaje
+        const chat = chats.find(c => {
+          const metadata = c.metadata || {};
+          return metadata.whatsapp_message_id === messageId;
+        });
+
+        if (!chat) {
+          results.push({
+            messageId,
+            success: false,
+            error: 'Mensaje no encontrado'
+          });
+          continue;
+        }
+
+        const metadata = chat.metadata || {};
+        const previousStatus = metadata.whatsapp_status || 'unknown';
+
+        // Actualizar el estado
+        const updatedMetadata = {
+          ...metadata,
+          whatsapp_status: status,
+          whatsapp_status_updated_at: timestamp 
+            ? new Date(parseInt(timestamp) * 1000).toISOString()
+            : new Date().toISOString()
+        };
+
+        await chat.update({ metadata: updatedMetadata });
+
+        // Log de la actualización
+        await ConversacionLog.createLog(
+          chat.fkid_conversacion,
+          {
+            mensaje_id: chat.id,
+            whatsapp_message_id: messageId,
+            status_anterior: previousStatus,
+            status_nuevo: status,
+            fuente: 'n8n'
+          },
+          'mensaje',
+          status === 'failed' ? 'error' : 'info',
+          `Estado de WhatsApp actualizado desde n8n: ${status}`
+        );
+
+        // Obtener información de la conversación
+        const conversacion = await Conversacion.findByPk(chat.fkid_conversacion, {
+          attributes: ['id', 'from', 'status']
+        });
+
+        results.push({
+          messageId,
+          success: true,
+          chatId: chat.id,
+          conversacionId: chat.fkid_conversacion,
+          conversacion: conversacion ? {
+            id: conversacion.id,
+            from: conversacion.from,
+            status: conversacion.status
+          } : null,
+          previousStatus,
+          newStatus: status
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Procesados ${results.length} actualizaciones`,
+        data: results
+      });
+    } catch (error) {
+      console.error('Error actualizando estados de mensajes:', error);
+      next(error);
+    }
+  }
 }
 
 module.exports = new MensajeriaController();
