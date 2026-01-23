@@ -1453,6 +1453,7 @@ class PedidoController {
 
       // Convertir nombre de ciudad a ID si es necesario
       let ciudadIdFinal = null;
+      let ciudadConfig = null;
       if (ciudad_id) {
         ciudadIdFinal = await mapCityNameToId(ciudad_id);
         if (!ciudadIdFinal) {
@@ -1470,9 +1471,9 @@ class PedidoController {
         }
         
         // Validar que la ciudad existe y está activa (puede ser que el ID sea válido pero la ciudad no exista o esté eliminada)
-        const ciudadExiste = await City.findByPk(ciudadIdFinal);
+        ciudadConfig = await City.findByPk(ciudadIdFinal);
         
-        if (!ciudadExiste || ciudadExiste.baja_logica) {
+        if (!ciudadConfig || ciudadConfig.baja_logica) {
           // Obtener lista de ciudades disponibles para el mensaje de error
           const todasLasCiudades = await City.findAll({
             where: { baja_logica: false },
@@ -1487,20 +1488,44 @@ class PedidoController {
         }
       }
 
+      // Obtener configuración de entregas de la ciudad o usar valores por defecto
+      const maxPedidosPorHorario = ciudadConfig ? ciudadConfig.getMaxPedidosPorHorario() : 5;
+      const diasTrabajo = ciudadConfig ? ciudadConfig.getDiasTrabajo() : [0, 1, 2, 3, 4, 5, 6];
+
       // Calcular fecha de inicio (día siguiente)
       const fechaInicioDisponibilidad = new Date(fechaInicio);
       fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
       
       // Generar los próximos 7 días
       const disponibilidad = [];
-      const maxPedidosPorHorario = 5; // Máximo 5 pedidos por horario
       
       for (let i = 0; i < 7; i++) {
         const fecha = new Date(fechaInicioDisponibilidad);
         fecha.setDate(fecha.getDate() + i);
         
+        // Obtener el día de la semana (0=domingo, 6=sábado)
+        const diaSemana = fecha.getDay();
+        
+        // Verificar si este día está en los días de trabajo
+        const esDiaTrabajo = diasTrabajo.includes(diaSemana);
+        
         // Formatear fecha como YYYY-MM-DD
         const fechaStr = fecha.toISOString().split('T')[0];
+        
+        // Si no es día de trabajo, marcar como no disponible
+        if (!esDiaTrabajo) {
+          disponibilidad.push({
+            fecha: fechaStr,
+            manana_disponible: false,
+            tarde_disponible: false,
+            pedidos_manana: 0,
+            pedidos_tarde: 0,
+            capacidad_manana: maxPedidosPorHorario,
+            capacidad_tarde: maxPedidosPorHorario,
+            motivo_no_disponible: 'Día no laboral'
+          });
+          continue;
+        }
         
         // Crear rangos de horario
         const inicioManana = new Date(fecha);

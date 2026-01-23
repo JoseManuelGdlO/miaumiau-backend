@@ -117,7 +117,9 @@ class CityController {
         manager,
         telefono,
         email_contacto,
-        notas_adicionales
+        notas_adicionales,
+        max_pedidos_por_horario = 5,
+        dias_trabajo = [0, 1, 2, 3, 4, 5, 6]
       } = req.body;
 
       // Verificar si la ciudad ya existe
@@ -128,6 +130,35 @@ class CityController {
           success: false,
           message: 'Ya existe una ciudad con ese nombre en ese departamento'
         });
+      }
+
+      // Validar dias_trabajo si se proporciona
+      if (dias_trabajo !== undefined && dias_trabajo !== null) {
+        if (!Array.isArray(dias_trabajo) || dias_trabajo.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'dias_trabajo debe ser un array con al menos un día'
+          });
+        }
+        const validDays = [0, 1, 2, 3, 4, 5, 6];
+        for (const day of dias_trabajo) {
+          if (!validDays.includes(day)) {
+            return res.status(400).json({
+              success: false,
+              message: 'dias_trabajo debe contener solo valores entre 0 y 6 (0=domingo, 6=sábado)'
+            });
+          }
+        }
+      }
+
+      // Validar max_pedidos_por_horario si se proporciona
+      if (max_pedidos_por_horario !== undefined && max_pedidos_por_horario !== null) {
+        if (typeof max_pedidos_por_horario !== 'number' || max_pedidos_por_horario < 1 || max_pedidos_por_horario > 100) {
+          return res.status(400).json({
+            success: false,
+            message: 'max_pedidos_por_horario debe ser un número entre 1 y 100'
+          });
+        }
       }
 
       const city = await City.create({
@@ -142,7 +173,9 @@ class CityController {
         manager,
         telefono,
         email_contacto,
-        notas_adicionales
+        notas_adicionales,
+        max_pedidos_por_horario,
+        dias_trabajo
       });
 
       res.status(201).json({
@@ -193,6 +226,35 @@ class CityController {
           return res.status(400).json({
             success: false,
             message: 'Ya existe una ciudad con ese nombre en ese departamento'
+          });
+        }
+      }
+
+      // Validar dias_trabajo si se proporciona en la actualización
+      if (updateData.dias_trabajo !== undefined && updateData.dias_trabajo !== null) {
+        if (!Array.isArray(updateData.dias_trabajo) || updateData.dias_trabajo.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'dias_trabajo debe ser un array con al menos un día'
+          });
+        }
+        const validDays = [0, 1, 2, 3, 4, 5, 6];
+        for (const day of updateData.dias_trabajo) {
+          if (!validDays.includes(day)) {
+            return res.status(400).json({
+              success: false,
+              message: 'dias_trabajo debe contener solo valores entre 0 y 6 (0=domingo, 6=sábado)'
+            });
+          }
+        }
+      }
+
+      // Validar max_pedidos_por_horario si se proporciona en la actualización
+      if (updateData.max_pedidos_por_horario !== undefined && updateData.max_pedidos_por_horario !== null) {
+        if (typeof updateData.max_pedidos_por_horario !== 'number' || updateData.max_pedidos_por_horario < 1 || updateData.max_pedidos_por_horario > 100) {
+          return res.status(400).json({
+            success: false,
+            message: 'max_pedidos_por_horario debe ser un número entre 1 y 100'
           });
         }
       }
