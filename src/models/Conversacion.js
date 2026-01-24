@@ -41,6 +41,7 @@ module.exports = (sequelize, DataTypes) => {
     whatsapp_phone_number_id: {
       type: DataTypes.STRING(64),
       allowNull: true,
+      defaultValue: "990229367500305", // por ahora
       validate: {
         len: [1, 64]
       }
