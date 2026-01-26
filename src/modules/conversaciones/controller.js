@@ -91,23 +91,116 @@ class ConversacionController {
         };
       }
 
-      // Búsqueda por from
+      // Búsqueda mejorada: buscar en múltiples campos
+      let searchConditions = [];
+      let searchConversacionIds = null;
+      
       if (search) {
-        whereClause.from = {
-          [Op.iLike]: `%${search}%`
-        };
+        const searchTerm = search.trim();
+        
+        // Si es un número, buscar por ID de conversación
+        if (/^\d+$/.test(searchTerm)) {
+          const searchId = parseInt(searchTerm);
+          searchConditions.push({
+            id: searchId
+          });
+          
+          // También buscar en teléfonos (from)
+          const normalizedSearch = normalizePhone(searchTerm);
+          if (normalizedSearch) {
+            searchConditions.push({
+              from: {
+                [Op.iLike]: `%${normalizedSearch}%`
+              }
+            });
+          }
+        } else {
+          // Es texto, buscar en from
+          searchConditions.push({
+            from: {
+              [Op.iLike]: `%${searchTerm}%`
+            }
+          });
+        }
+        
+        // Buscar conversaciones por cliente (nombre o teléfono)
+        const normalizedSearch = normalizePhone(searchTerm);
+        const clienteSearchConditions = [];
+        
+        if (!/^\d+$/.test(searchTerm)) {
+          // Buscar por nombre del cliente
+          clienteSearchConditions.push({
+            nombre_completo: {
+              [Op.iLike]: `%${searchTerm}%`
+            }
+          });
+        }
+        
+        // Buscar por teléfono del cliente (siempre, incluso si es número)
+        if (normalizedSearch) {
+          clienteSearchConditions.push({
+            telefono: {
+              [Op.iLike]: `%${normalizedSearch}%`
+            }
+          });
+        }
+        
+        // Si hay condiciones de búsqueda en cliente, buscar IDs de conversaciones
+        if (clienteSearchConditions.length > 0) {
+          const clientes = await Cliente.findAll({
+            where: {
+              [Op.or]: clienteSearchConditions
+            },
+            attributes: ['id']
+          });
+          
+          if (clientes.length > 0) {
+            const clienteIds = clientes.map(c => c.id);
+            searchConditions.push({
+              id_cliente: {
+                [Op.in]: clienteIds
+              }
+            });
+          }
+        }
+        
+        // Buscar conversaciones por mensajes que contengan el término
+        const chats = await ConversacionChat.findAll({
+          where: {
+            mensaje: {
+              [Op.iLike]: `%${searchTerm}%`
+            }
+          },
+          attributes: ['fkid_conversacion'],
+          raw: true
+        });
+        
+        if (chats.length > 0) {
+          // Obtener IDs únicos de conversaciones
+          const conversacionIdsFromChats = [...new Set(chats.map(c => c.fkid_conversacion).filter(id => id))];
+          if (conversacionIdsFromChats.length > 0) {
+            searchConditions.push({
+              id: {
+                [Op.in]: conversacionIdsFromChats
+              }
+            });
+          }
+        }
       }
 
       const offset = (page - 1) * limit;
 
       // Construir includes
+      const clienteInclude = {
+        model: Cliente,
+        as: 'cliente',
+        attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+        required: false
+      };
+
+      // Construir includes
       const includes = [
-        {
-          model: Cliente,
-          as: 'cliente',
-          attributes: ['id', 'nombre_completo', 'email', 'telefono'],
-          required: false
-        },
+        clienteInclude,
         {
           model: Pedido,
           as: 'pedido',
@@ -155,6 +248,24 @@ class ConversacionController {
         };
         // Reemplazar el include de flags con el filtrado
         includes[includes.length - 1] = flagFilter;
+      }
+
+      // Si hay condiciones de búsqueda, usar Op.or para combinarlas
+      if (searchConditions.length > 0) {
+        // Si ya hay otras condiciones en whereClause, necesitamos combinarlas
+        if (Object.keys(whereClause).length > 0 && !whereClause[Op.or]) {
+          const existingConditions = { ...whereClause };
+          whereClause = {
+            [Op.and]: [
+              existingConditions,
+              {
+                [Op.or]: searchConditions
+              }
+            ]
+          };
+        } else {
+          whereClause[Op.or] = searchConditions;
+        }
       }
 
       const { count, rows: conversaciones } = await Conversacion.findAndCountAll({
