@@ -110,7 +110,7 @@ class ConversacionController {
           if (normalizedSearch) {
             searchConditions.push({
               from: {
-                [Op.iLike]: `%${normalizedSearch}%`
+                [Op.like]: `%${normalizedSearch}%`
               }
             });
           }
@@ -118,29 +118,27 @@ class ConversacionController {
           // Es texto, buscar en from
           searchConditions.push({
             from: {
-              [Op.iLike]: `%${searchTerm}%`
+              [Op.like]: `%${searchTerm}%`
             }
           });
         }
         
         // Buscar conversaciones por cliente (nombre o teléfono)
-        const normalizedSearch = normalizePhone(searchTerm);
+        const normalizedSearchForCliente = normalizePhone(searchTerm);
         const clienteSearchConditions = [];
         
         if (!/^\d+$/.test(searchTerm)) {
-          // Buscar por nombre del cliente
-          clienteSearchConditions.push({
-            nombre_completo: {
-              [Op.iLike]: `%${searchTerm}%`
-            }
-          });
+          // Buscar por nombre del cliente (case-insensitive)
+          clienteSearchConditions.push(
+            Sequelize.literal(`LOWER(nombre_completo) LIKE LOWER('%${searchTerm.replace(/'/g, "''")}%')`)
+          );
         }
         
         // Buscar por teléfono del cliente (siempre, incluso si es número)
-        if (normalizedSearch) {
+        if (normalizedSearchForCliente) {
           clienteSearchConditions.push({
             telefono: {
-              [Op.iLike]: `%${normalizedSearch}%`
+              [Op.like]: `%${normalizedSearchForCliente}%`
             }
           });
         }
@@ -166,11 +164,7 @@ class ConversacionController {
         
         // Buscar conversaciones por mensajes que contengan el término
         const chats = await ConversacionChat.findAll({
-          where: {
-            mensaje: {
-              [Op.iLike]: `%${searchTerm}%`
-            }
-          },
+          where: Sequelize.literal(`LOWER(mensaje) LIKE LOWER('%${searchTerm.replace(/'/g, "''")}%')`),
           attributes: ['fkid_conversacion'],
           raw: true
         });
