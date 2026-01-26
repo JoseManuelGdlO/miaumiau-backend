@@ -55,9 +55,16 @@ const validateUserUpdate = [
     .withMessage('El ID del rol debe ser un número entero positivo'),
   
   body('ciudad_id')
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage('El ID de la ciudad debe ser un número entero positivo'),
+    .optional({ nullable: true })
+    .custom((value) => {
+      // Permite null, undefined, o un entero positivo
+      if (value === null || value === undefined) {
+        return true;
+      }
+      const numValue = Number(value);
+      return Number.isInteger(numValue) && numValue >= 1;
+    })
+    .withMessage('El ID de la ciudad debe ser null o un número entero positivo'),
   
   body('isActive')
     .optional()
