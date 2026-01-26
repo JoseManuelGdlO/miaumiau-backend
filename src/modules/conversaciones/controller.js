@@ -161,7 +161,7 @@ class ConversacionController {
         where: whereClause,
         include: includes,
         distinct: true,
-        order: [['created_at', 'DESC']],
+        order: [['updated_at', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
       });

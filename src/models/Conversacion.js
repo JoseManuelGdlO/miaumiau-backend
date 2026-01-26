@@ -222,7 +222,7 @@ module.exports = (sequelize, DataTypes) => {
   Conversacion.getRecentConversations = function(limit = 10) {
     return this.findAll({
       where: { baja_logica: false },
-      order: [['created_at', 'DESC']],
+      order: [['updated_at', 'DESC']],
       limit: limit
     });
   };
