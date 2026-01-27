@@ -173,8 +173,8 @@ const validateQuery = [
   
   query('estado')
     .optional()
-    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'])
-    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado o cancelado'),
+    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado', 'no_entregado'])
+    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado, cancelado o no_entregado'),
   
   query('metodo_pago')
     .optional()
@@ -216,16 +216,16 @@ const validateQuery = [
 
 const validateEstadoChange = [
   body('estado')
-    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'])
-    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado o cancelado'),
+    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado', 'no_entregado'])
+    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado, cancelado o no_entregado'),
   
   handleValidationErrors
 ];
 
 const validateEstadoParam = [
   param('estado')
-    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'])
-    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado o cancelado'),
+    .isIn(['pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado', 'no_entregado'])
+    .withMessage('El estado debe ser: pendiente, confirmado, en_preparacion, en_camino, entregado, cancelado o no_entregado'),
   
   handleValidationErrors
 ];
@@ -260,6 +260,7 @@ router.get('/recent', pedidoController.getRecentPedidos);
 router.get('/pendientes', pedidoController.getPedidosPendientes);
 router.get('/en-preparacion', pedidoController.getPedidosEnPreparacion);
 router.get('/en-camino', pedidoController.getPedidosEnCamino);
+router.get('/no-entregados', pedidoController.getPedidosNoEntregados);
 router.get('/disponibilidad/:fecha_inicio', pedidoController.getDisponibilidadEntregas);
 
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar pedidos
@@ -333,6 +334,13 @@ router.patch('/:id/cancelar',
   requireSuperAdminOrPermission('ver_pedidos'), 
   validateId, 
   pedidoController.cancelarPedido
+);
+
+router.patch('/:id/no-entregar', 
+  authenticateToken, 
+  requireSuperAdminOrPermission('ver_pedidos'), 
+  validateId, 
+  pedidoController.noEntregarPedido
 );
 
 // Rutas para consultas específicas

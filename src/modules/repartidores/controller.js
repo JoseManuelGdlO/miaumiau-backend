@@ -885,6 +885,16 @@ class RepartidorController {
         );
       }
 
+      // Si no se entregó, actualizar también el estado del pedido
+      if (estadoBD === 'fallido') {
+        await Pedido.update(
+          { 
+            estado: 'no_entregado'
+          },
+          { where: { id } }
+        );
+      }
+
       // Obtener el pedido actualizado
       const pedidoActualizado = await Pedido.findByPk(id, {
         include: [

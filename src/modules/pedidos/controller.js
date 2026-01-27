@@ -1200,6 +1200,32 @@ class PedidoController {
     }
   }
 
+  // Marcar como no entregado
+  async noEntregarPedido(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      const pedido = await Pedido.findByPk(id);
+      
+      if (!pedido) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pedido no encontrado'
+        });
+      }
+
+      await pedido.noEntregar();
+
+      res.json({
+        success: true,
+        message: 'Pedido marcado como no entregado exitosamente',
+        data: { pedido }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Obtener pedidos por cliente
   async getPedidosByCliente(req, res, next) {
     try {
@@ -1334,6 +1360,23 @@ class PedidoController {
     }
   }
 
+  // Obtener pedidos no entregados
+  async getPedidosNoEntregados(req, res, next) {
+    try {
+      const pedidos = await Pedido.findNoEntregados();
+
+      res.json({
+        success: true,
+        data: {
+          pedidos,
+          total: pedidos.length
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Estadísticas de pedidos
   async getPedidoStats(req, res, next) {
     try {
@@ -1383,6 +1426,13 @@ class PedidoController {
         }
       });
 
+      const pedidosNoEntregados = await Pedido.count({
+        where: { 
+          estado: 'no_entregado',
+          baja_logica: false
+        }
+      });
+
       const totalVentas = await Pedido.sum('total', {
         where: { 
           baja_logica: false,
@@ -1406,6 +1456,7 @@ class PedidoController {
           pedidosEnCamino,
           pedidosEntregados,
           pedidosCancelados,
+          pedidosNoEntregados,
           totalVentas: totalVentas || 0,
           pedidosPorEstado,
           pedidosPorMetodoPago,

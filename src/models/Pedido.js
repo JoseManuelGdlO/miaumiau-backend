@@ -59,7 +59,7 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     estado: {
-      type: DataTypes.ENUM('pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado'),
+      type: DataTypes.ENUM('pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado','no_entregado'),
       allowNull: false,
       defaultValue: 'pendiente'
     },
@@ -220,6 +220,11 @@ module.exports = (sequelize, DataTypes) => {
     return this.save();
   };
 
+  Pedido.prototype.noEntregar = function() {
+    this.estado = 'no_entregado';
+    return this.save();
+  };
+
   Pedido.prototype.calcularTotal = function() {
     this.total = parseFloat(this.subtotal) + parseFloat(this.impuestos) - parseFloat(this.descuento);
     return this.save();
@@ -342,6 +347,16 @@ module.exports = (sequelize, DataTypes) => {
     });
   };
 
+  Pedido.findNoEntregados = function() {
+    return this.findAll({
+      where: { 
+        estado: 'no_entregado',
+        baja_logica: false
+      },
+      order: [['fecha_pedido', 'DESC']]
+    });
+  };
+
   Pedido.findByMetodoPago = function(metodoPago) {
     return this.findAll({
       where: { 
@@ -362,6 +377,7 @@ module.exports = (sequelize, DataTypes) => {
         [sequelize.Sequelize.fn('COUNT', sequelize.Sequelize.literal('CASE WHEN estado = "en_camino" THEN 1 END')), 'pedidos_en_camino'],
         [sequelize.Sequelize.fn('COUNT', sequelize.Sequelize.literal('CASE WHEN estado = "entregado" THEN 1 END')), 'pedidos_entregados'],
         [sequelize.Sequelize.fn('COUNT', sequelize.Sequelize.literal('CASE WHEN estado = "cancelado" THEN 1 END')), 'pedidos_cancelados'],
+        [sequelize.Sequelize.fn('COUNT', sequelize.Sequelize.literal('CASE WHEN estado = "no_entregado" THEN 1 END')), 'pedidos_no_entregados'],
         [sequelize.Sequelize.fn('SUM', sequelize.Sequelize.col('total')), 'total_ventas']
       ],
       where: { baja_logica: false }
