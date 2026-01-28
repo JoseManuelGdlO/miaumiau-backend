@@ -135,7 +135,7 @@ class ConversacionChatController {
         from = 'usuario',
         mensaje,
         tipo_mensaje = 'texto',
-        metadata = null
+        metadata: metadataBody
       } = req.body;
 
       // Verificar que la conversación existe
@@ -151,6 +151,24 @@ class ConversacionChatController {
       const now = new Date();
       const fecha = now.toISOString().split('T')[0];
       const hora = now.toTimeString().split(' ')[0];
+
+      // Inicializar metadata: si viene en el body y es un objeto, usarlo; si no, usar objeto vacío
+      // Esto asegura que siempre haya un objeto metadata (nunca null) para facilitar búsquedas y actualizaciones
+      const metadata = (metadataBody && typeof metadataBody === 'object' && !Array.isArray(metadataBody))
+        ? metadataBody
+        : {};
+
+      // Si el mensaje viene de WhatsApp y tiene whatsapp_message_id, asegurarse de guardarlo
+      // Esto es útil cuando n8n u otros servicios crean mensajes con el whatsapp_message_id
+      if (metadata.whatsapp_message_id && !metadata.whatsapp_status) {
+        metadata.whatsapp_status = 'pending';
+        metadata.whatsapp_status_updated_at = now.toISOString();
+      }
+
+      // Si el mensaje viene de WhatsApp pero no tiene canal especificado, agregarlo
+      if (metadata.whatsapp_message_id && !metadata.canal) {
+        metadata.canal = 'whatsapp';
+      }
 
       const chat = await ConversacionChat.create({
         fkid_conversacion,
