@@ -82,12 +82,43 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
 
         // Log detallado de la respuesta
         if (success) {
-          console.log('[WhatsApp API] Mensaje enviado exitosamente:', {
-            phone,
-            statusCode: res.statusCode,
-            messageId,
-            response: parsedData || data
-          });
+          // Verificar si hay errores en la respuesta aunque el status sea 200
+          const hasErrors = parsedData?.errors && Array.isArray(parsedData.errors) && parsedData.errors.length > 0;
+          
+          if (hasErrors) {
+            console.error('[WhatsApp API] Error en respuesta (aunque status 200):', {
+              phone,
+              statusCode: res.statusCode,
+              errors: parsedData.errors,
+              fullResponse: parsedData
+            });
+          } else {
+            // Verificar si el wa_id coincide con el input (si no coincide, puede haber problema)
+            const input = parsedData?.contacts?.[0]?.input;
+            const wa_id = parsedData?.contacts?.[0]?.wa_id;
+            const waIdMismatch = input && wa_id && input !== wa_id;
+            
+            if (waIdMismatch) {
+              console.warn('[WhatsApp API] ADVERTENCIA: wa_id no coincide con input:', {
+                phone,
+                input,
+                wa_id,
+                message: 'WhatsApp puede haber normalizado el número, verificar formato'
+              });
+            }
+            
+            console.log('[WhatsApp API] Mensaje enviado exitosamente:', {
+              phone,
+              statusCode: res.statusCode,
+              messageId,
+              wa_id,
+              input,
+              waIdMismatch,
+              contacts: parsedData?.contacts,
+              messages: parsedData?.messages,
+              fullResponse: JSON.stringify(parsedData, null, 2)
+            });
+          }
         } else {
           console.error('[WhatsApp API] Error al enviar mensaje:', {
             phone,
@@ -97,12 +128,17 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
           });
         }
 
+        // Verificar si hay errores aunque el status sea 200
+        const hasErrors = parsedData?.errors && Array.isArray(parsedData.errors) && parsedData.errors.length > 0;
+        const actualSuccess = success && !hasErrors;
+        
         resolve({
-          success,
+          success: actualSuccess,
           status: res.statusCode,
           data,
           messageId,
-          parsedData
+          parsedData,
+          errors: hasErrors ? parsedData.errors : null
         });
       });
     });
