@@ -55,13 +55,15 @@ const formatPhoneForWhatsApp = (phone) => {
 const extractPhoneFromConversation = (conversacion) => {
   let rawPhone = null;
   
-  // Prioridad 1: teléfono del cliente asociado
-  if (conversacion?.cliente?.telefono) {
-    rawPhone = conversacion.cliente.telefono;
-  }
-  // Prioridad 2: extraer del campo 'from'
-  else if (typeof conversacion?.from === 'string') {
+  // Prioridad 1: SIEMPRE usar el campo 'from' de la conversación
+  // Esto es crítico porque los clientes nuevos usan un cliente dummy (id=1)
+  // y el teléfono real está en el campo 'from' de la conversación
+  if (typeof conversacion?.from === 'string' && conversacion.from.trim()) {
     rawPhone = conversacion.from;
+  }
+  // Prioridad 2: solo usar teléfono del cliente como fallback si no hay 'from'
+  else if (conversacion?.cliente?.telefono) {
+    rawPhone = conversacion.cliente.telefono;
   }
   
   if (!rawPhone) {
@@ -77,7 +79,8 @@ const extractPhoneFromConversation = (conversacion) => {
     rawPhone,
     formattedPhone,
     clienteTelefono: conversacion?.cliente?.telefono,
-    from: conversacion?.from
+    from: conversacion?.from,
+    fuente: typeof conversacion?.from === 'string' ? 'from' : 'cliente'
   });
   
   return formattedPhone;
