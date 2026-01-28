@@ -42,6 +42,10 @@ const pagosRoutes = require('./modules/pagos/routes');
 
 const app = express();
 
+// Configurar trust proxy para funcionar detrás de proxy reverso (EasyPanel, nginx, etc.)
+// Esto permite que Express confíe en los headers X-Forwarded-* del proxy
+app.set('trust proxy', true);
+
 // Middlewares de seguridad
 app.use(helmet());
 app.use(compression());
