@@ -158,11 +158,27 @@ class ConversacionChatController {
         ? metadataBody
         : {};
 
+      // Parsear whatsapp_status_updated_at si viene como timestamp Unix (número o string numérico)
+      // WhatsApp envía timestamps en segundos, necesitamos convertirlos a ISO string
+      if (metadata.whatsapp_status_updated_at) {
+        const timestamp = metadata.whatsapp_status_updated_at;
+        // Si es un número o string numérico (timestamp Unix en segundos)
+        if (typeof timestamp === 'number' || (typeof timestamp === 'string' && /^\d+$/.test(timestamp))) {
+          // Convertir de segundos a milisegundos y luego a ISO string
+          metadata.whatsapp_status_updated_at = new Date(parseInt(timestamp) * 1000).toISOString();
+        }
+        // Si ya es una fecha ISO string válida, dejarlo como está
+        // Si no es válido, se mantendrá el valor original (puede causar error pero es mejor que perder datos)
+      }
+
       // Si el mensaje viene de WhatsApp y tiene whatsapp_message_id, asegurarse de guardarlo
       // Esto es útil cuando n8n u otros servicios crean mensajes con el whatsapp_message_id
       if (metadata.whatsapp_message_id && !metadata.whatsapp_status) {
         metadata.whatsapp_status = 'pending';
-        metadata.whatsapp_status_updated_at = now.toISOString();
+        // Solo establecer la fecha si no viene ya parseada
+        if (!metadata.whatsapp_status_updated_at) {
+          metadata.whatsapp_status_updated_at = now.toISOString();
+        }
       }
 
       // Si el mensaje viene de WhatsApp pero no tiene canal especificado, agregarlo
