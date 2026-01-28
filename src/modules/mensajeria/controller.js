@@ -2,19 +2,85 @@ const { Conversacion, ConversacionChat, ConversacionLog, Cliente } = require('..
 const { sendWhatsAppMessage } = require('../../utils/whatsapp');
 const { Sequelize } = require('sequelize');
 
-const extractPhoneFromConversation = (conversacion) => {
-  if (conversacion?.cliente?.telefono) {
-    return conversacion.cliente.telefono;
-  }
+// Función para normalizar números de teléfono (solo números)
+const normalizePhone = (value) => {
+  if (!value) return null;
+  const normalized = String(value).replace(/\D/g, '');
+  return normalized || null;
+};
 
-  if (typeof conversacion?.from === 'string') {
-    const match = conversacion.from.match(/\+?\d+/);
-    if (match) {
-      return match[0];
+// Función para formatear número para WhatsApp (con código de país)
+const formatPhoneForWhatsApp = (phone) => {
+  if (!phone) return null;
+  
+  // Normalizar: solo números
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  
+  // Si el número ya tiene código de país (Venezuela: 58), asegurar formato correcto
+  // Si empieza con 58, ya tiene código de país
+  if (normalized.startsWith('58')) {
+    return normalized;
+  }
+  
+  // Si empieza con 0, remover el 0 y agregar código de país
+  if (normalized.startsWith('0')) {
+    return '58' + normalized.substring(1);
+  }
+  
+  // Si tiene 10 dígitos (formato local venezolano: 04121234567), agregar código de país
+  if (normalized.length === 10) {
+    // Si empieza con 04 (móvil), remover el 0 y agregar 58
+    if (normalized.startsWith('04')) {
+      return '58' + normalized.substring(1);
     }
   }
+  
+  // Si tiene 11 dígitos y empieza con 4 (móvil sin 0 inicial), agregar código de país
+  if (normalized.length === 11 && normalized.startsWith('4')) {
+    return '58' + normalized;
+  }
+  
+  // Si tiene menos de 10 dígitos, asumir que es número local y agregar código de país
+  if (normalized.length < 10) {
+    // Remover cualquier 0 inicial y agregar código de país
+    const withoutLeadingZero = normalized.replace(/^0+/, '');
+    return '58' + withoutLeadingZero;
+  }
+  
+  // Si ya tiene más de 11 dígitos, asumir que ya tiene código de país
+  return normalized;
+};
 
-  return null;
+const extractPhoneFromConversation = (conversacion) => {
+  let rawPhone = null;
+  
+  // Prioridad 1: teléfono del cliente asociado
+  if (conversacion?.cliente?.telefono) {
+    rawPhone = conversacion.cliente.telefono;
+  }
+  // Prioridad 2: extraer del campo 'from'
+  else if (typeof conversacion?.from === 'string') {
+    rawPhone = conversacion.from;
+  }
+  
+  if (!rawPhone) {
+    return null;
+  }
+  
+  // Formatear el número para WhatsApp
+  const formattedPhone = formatPhoneForWhatsApp(rawPhone);
+  
+  // Log para debugging
+  console.log('[WhatsApp] Extracción de teléfono:', {
+    conversacionId: conversacion?.id,
+    rawPhone,
+    formattedPhone,
+    clienteTelefono: conversacion?.cliente?.telefono,
+    from: conversacion?.from
+  });
+  
+  return formattedPhone;
 };
 
 class MensajeriaController {
@@ -42,6 +108,11 @@ class MensajeriaController {
 
       const telefono = extractPhoneFromConversation(conversacion);
       if (!telefono) {
+        console.error('[WhatsApp] Error: No se encontró teléfono válido', {
+          conversacionId: conversacion.id,
+          clienteTelefono: conversacion?.cliente?.telefono,
+          from: conversacion?.from
+        });
         return res.status(400).json({
           success: false,
           message: 'No se encontró un teléfono válido para la conversación'
@@ -50,18 +121,41 @@ class MensajeriaController {
 
       const phoneNumberId = conversacion.whatsapp_phone_number_id;
       if (!phoneNumberId) {
+        console.error('[WhatsApp] Error: No se encontró phone_number_id', {
+          conversacionId: conversacion.id,
+          telefono
+        });
         return res.status(400).json({
           success: false,
           message: 'No se encontró el phone_number_id para la conversación'
         });
       }
 
+      console.log('[WhatsApp] Enviando mensaje:', {
+        conversacionId: conversacion.id,
+        telefono,
+        phoneNumberId,
+        mensajeLength: mensaje.length
+      });
+
       const sendResult = await sendWhatsAppMessage(telefono, mensaje, phoneNumberId);
+      
+      console.log('[WhatsApp] Resultado del envío:', {
+        conversacionId: conversacion.id,
+        telefono,
+        success: sendResult.success,
+        status: sendResult.status,
+        messageId: sendResult.messageId,
+        error: sendResult.error,
+        data: sendResult.data
+      });
+      
       if (!sendResult.success) {
         return res.status(502).json({
           success: false,
           message: 'No se pudo enviar el mensaje por WhatsApp',
-          error: sendResult.error || sendResult.data
+          error: sendResult.error || sendResult.data,
+          telefono: telefono // Incluir el teléfono en la respuesta para debugging
         });
       }
 

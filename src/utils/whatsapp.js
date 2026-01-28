@@ -18,6 +18,7 @@ const buildRequestOptions = (apiUrl, phoneNumberId) => {
 
 const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
   if (!WHATSAPP_API_URL || !WHATSAPP_API_TOKEN) {
+    console.error('[WhatsApp API] Error: Faltan variables de entorno');
     return Promise.resolve({
       success: false,
       status: 500,
@@ -27,6 +28,7 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
 
   return new Promise((resolve) => {
     if (!phoneNumberId) {
+      console.error('[WhatsApp API] Error: Falta phone_number_id', { phone });
       resolve({
         success: false,
         status: 400,
@@ -43,6 +45,14 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
         body: message
       }
     });
+    
+    console.log('[WhatsApp API] Enviando mensaje:', {
+      phone,
+      phoneNumberId,
+      url: `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      messageLength: message.length
+    });
+    
     const options = buildRequestOptions(WHATSAPP_API_URL, phoneNumberId);
 
     const req = https.request(options, (res) => {
@@ -66,8 +76,25 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
             }
           } catch (error) {
             // Si no se puede parsear, continuar sin message_id
-            console.warn('No se pudo parsear la respuesta de WhatsApp:', error.message);
+            console.warn('[WhatsApp API] No se pudo parsear la respuesta:', error.message);
           }
+        }
+
+        // Log detallado de la respuesta
+        if (success) {
+          console.log('[WhatsApp API] Mensaje enviado exitosamente:', {
+            phone,
+            statusCode: res.statusCode,
+            messageId,
+            response: parsedData || data
+          });
+        } else {
+          console.error('[WhatsApp API] Error al enviar mensaje:', {
+            phone,
+            statusCode: res.statusCode,
+            response: data,
+            parsedData
+          });
         }
 
         resolve({
@@ -81,6 +108,11 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => {
     });
 
     req.on('error', (error) => {
+      console.error('[WhatsApp API] Error de red:', {
+        phone,
+        error: error.message,
+        stack: error.stack
+      });
       resolve({
         success: false,
         status: 500,
