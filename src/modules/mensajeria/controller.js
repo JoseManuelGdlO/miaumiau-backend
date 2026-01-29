@@ -11,16 +11,14 @@ const { Op } = Sequelize;
  * @returns {Promise<ConversacionChat|null>} - El mensaje encontrado o null
  */
 async function findChatByWhatsAppMessageId(whatsappMessageId, sinceDate = null) {
-  // Usar JSON_UNQUOTE con JSON_EXTRACT para obtener el valor sin comillas
-  // O usar la sintaxis moderna metadata->>'$.whatsapp_message_id' (MySQL 5.7+)
-  // La sintaxis ->' devuelve con comillas, ->' devuelve sin comillas (texto plano)
+  // Usar Sequelize.literal con la sintaxis moderna de MySQL (->>)
+  // metadata->>'$.whatsapp_message_id' devuelve el valor sin comillas (texto plano)
+  // Usar Sequelize.where para comparar de forma segura
   const whereClause = {
     baja_logica: false,
     [Op.and]: [
       Sequelize.where(
-        Sequelize.fn('JSON_UNQUOTE', 
-          Sequelize.fn('JSON_EXTRACT', Sequelize.col('metadata'), '$.whatsapp_message_id')
-        ),
+        Sequelize.literal("metadata->>'$.whatsapp_message_id'"),
         whatsappMessageId
       )
     ]
