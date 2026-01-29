@@ -155,11 +155,29 @@ class PedidoController {
         };
       }
 
-      // Búsqueda por número de pedido
+      // Búsqueda por nombre_completo (cliente), telefono_referencia, id o numero_pedido (OR entre todos)
       if (search) {
-        whereClause.numero_pedido = {
-          [Op.iLike]: `%${search}%`
-        };
+        const searchTrimmed = String(search).trim();
+        if (searchTrimmed) {
+          const searchConditions = [
+            { numero_pedido: { [Op.like]: `%${searchTrimmed}%` } },
+            { telefono_referencia: { [Op.like]: `%${searchTrimmed}%` } }
+          ];
+          if (/^\d+$/.test(searchTrimmed)) {
+            searchConditions.push({ id: parseInt(searchTrimmed, 10) });
+          }
+          const clientesConNombre = await Cliente.findAll({
+            where: { nombre_completo: { [Op.like]: `%${searchTrimmed}%` } },
+            attributes: ['id'],
+            raw: true
+          });
+          if (clientesConNombre.length > 0) {
+            searchConditions.push({
+              fkid_cliente: { [Op.in]: clientesConNombre.map(c => c.id) }
+            });
+          }
+          whereClause[Op.or] = searchConditions;
+        }
       }
 
       const offset = (page - 1) * limit;
