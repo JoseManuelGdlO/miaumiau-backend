@@ -1,6 +1,43 @@
 const { Conversacion, ConversacionChat, ConversacionLog, Cliente } = require('../../models');
 const { sendWhatsAppMessage } = require('../../utils/whatsapp');
 const { Sequelize } = require('sequelize');
+const { Op } = Sequelize;
+
+/**
+ * Busca un mensaje por whatsapp_message_id usando consulta SQL directa
+ * Esto es más eficiente que traer todos los mensajes y filtrar en memoria
+ * @param {string} whatsappMessageId - El ID del mensaje de WhatsApp
+ * @param {Date} [sinceDate] - Fecha opcional para limitar la búsqueda (últimos N días)
+ * @returns {Promise<ConversacionChat|null>} - El mensaje encontrado o null
+ */
+async function findChatByWhatsAppMessageId(whatsappMessageId, sinceDate = null) {
+  // Usar JSON_UNQUOTE con JSON_EXTRACT para obtener el valor sin comillas
+  // O usar la sintaxis moderna metadata->>'$.whatsapp_message_id' (MySQL 5.7+)
+  // La sintaxis ->' devuelve con comillas, ->' devuelve sin comillas (texto plano)
+  const whereClause = {
+    baja_logica: false,
+    [Op.and]: [
+      Sequelize.where(
+        Sequelize.fn('JSON_UNQUOTE', 
+          Sequelize.fn('JSON_EXTRACT', Sequelize.col('metadata'), '$.whatsapp_message_id')
+        ),
+        whatsappMessageId
+      )
+    ]
+  };
+
+  // Si se proporciona una fecha, limitar la búsqueda a mensajes más recientes
+  if (sinceDate) {
+    whereClause.created_at = {
+      [Op.gte]: sinceDate
+    };
+  }
+
+  return await ConversacionChat.findOne({
+    where: whereClause,
+    order: [['created_at', 'DESC']] // Obtener el más reciente si hay duplicados
+  });
+}
 
 // Función para normalizar números de teléfono (solo números)
 const normalizePhone = (value) => {
@@ -337,26 +374,12 @@ class MensajeriaController {
                 continue;
               }
 
-              // Buscar el mensaje por whatsapp_message_id en metadata
-              // Buscar en mensajes recientes (últimos 7 días) para mejorar rendimiento
+              // Buscar el mensaje por whatsapp_message_id en metadata usando consulta SQL directa
+              // Esto es más eficiente y no tiene límite de 1000 registros
               const sevenDaysAgo = new Date();
               sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
               
-              const chats = await ConversacionChat.findAll({
-                where: {
-                  baja_logica: false,
-                  created_at: {
-                    [Sequelize.Op.gte]: sevenDaysAgo
-                  }
-                },
-                limit: 1000 // Limitar a los 1000 más recientes
-              });
-
-              // Buscar el mensaje con el message_id correspondiente
-              const chat = chats.find(c => {
-                const metadata = c.metadata || {};
-                return metadata.whatsapp_message_id === messageId;
-              });
+              const chat = await findChatByWhatsAppMessageId(messageId, sevenDaysAgo);
 
               if (chat) {
                 const metadata = chat.metadata || {};
@@ -436,26 +459,12 @@ class MensajeriaController {
         });
       }
 
-      // Buscar el mensaje por whatsapp_message_id en metadata
-      // Buscar en mensajes recientes (últimos 7 días) para mejorar rendimiento
+      // Buscar el mensaje por whatsapp_message_id en metadata usando consulta SQL directa
+      // Esto es más eficiente y no tiene límite de 1000 registros
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       
-      const chats = await ConversacionChat.findAll({
-        where: {
-          baja_logica: false,
-          created_at: {
-            [Sequelize.Op.gte]: sevenDaysAgo
-          }
-        },
-        limit: 1000 // Limitar a los 1000 más recientes
-      });
-
-      // Buscar el mensaje con el message_id correspondiente
-      const chat = chats.find(c => {
-        const metadata = c.metadata || {};
-        return metadata.whatsapp_message_id === messageId;
-      });
+      const chat = await findChatByWhatsAppMessageId(messageId, sevenDaysAgo);
 
       if (!chat) {
         return res.status(404).json({
@@ -538,17 +547,6 @@ class MensajeriaController {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      // Obtener todos los mensajes recientes una sola vez
-      const chats = await ConversacionChat.findAll({
-        where: {
-          baja_logica: false,
-          created_at: {
-            [Sequelize.Op.gte]: sevenDaysAgo
-          }
-        },
-        limit: 1000
-      });
-
       for (const update of updates) {
         const { messageId, status, timestamp } = update;
 
@@ -571,11 +569,8 @@ class MensajeriaController {
           continue;
         }
 
-        // Buscar el mensaje
-        const chat = chats.find(c => {
-          const metadata = c.metadata || {};
-          return metadata.whatsapp_message_id === messageId;
-        });
+        // Buscar el mensaje usando consulta SQL directa (más eficiente)
+        const chat = await findChatByWhatsAppMessageId(messageId, sevenDaysAgo);
 
         if (!chat) {
           results.push({
