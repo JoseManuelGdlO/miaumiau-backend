@@ -31,53 +31,39 @@ function getDateComponentsInTimezone(date, timezone) {
 }
 
 /**
- * Compara si una fecha ya pasó en una zona horaria específica
+ * Compara solo la fecha (día) de entrega con la fecha actual en una zona horaria.
  * @param {Date} fechaEntregaUTC - Fecha de entrega estimada (almacenada en UTC en la BD)
  * @param {string} timezone - Zona horaria IANA de la ciudad
- * @returns {boolean} - true si la fecha ya pasó en esa zona horaria
+ * @returns {'past'|'today'|'future'} - 'past' si la fecha ya pasó, 'today' si es hoy, 'future' si es futura
  */
-function fechaYaPaso(fechaEntregaUTC, timezone) {
+function compararFechaEntregaSoloDia(fechaEntregaUTC, timezone) {
   const ahoraUTC = new Date();
-  
-  // Obtener ambas fechas en la zona horaria local de la ciudad
   const fechaEntregaLocal = getDateComponentsInTimezone(fechaEntregaUTC, timezone);
   const ahoraLocal = getDateComponentsInTimezone(ahoraUTC, timezone);
-  
-  // Comparar directamente los componentes de fecha/hora en la zona horaria local
-  // Crear strings comparables: YYYYMMDDHHmmss
-  const fechaEntregaStr = `${fechaEntregaLocal.year}${String(fechaEntregaLocal.month).padStart(2, '0')}${String(fechaEntregaLocal.day).padStart(2, '0')}${String(fechaEntregaLocal.hour).padStart(2, '0')}${String(fechaEntregaLocal.minute).padStart(2, '0')}${String(fechaEntregaLocal.second).padStart(2, '0')}`;
-  const ahoraStr = `${ahoraLocal.year}${String(ahoraLocal.month).padStart(2, '0')}${String(ahoraLocal.day).padStart(2, '0')}${String(ahoraLocal.hour).padStart(2, '0')}${String(ahoraLocal.minute).padStart(2, '0')}${String(ahoraLocal.second).padStart(2, '0')}`;
-  
-  // Log para debug
-  console.log(`[DEBUG] Comparando fechas en timezone ${timezone}:`);
-  console.log(`  Fecha entrega (UTC): ${fechaEntregaUTC.toISOString()}`);
-  console.log(`  Fecha entrega (local): ${fechaEntregaLocal.year}-${String(fechaEntregaLocal.month).padStart(2, '0')}-${String(fechaEntregaLocal.day).padStart(2, '0')} ${String(fechaEntregaLocal.hour).padStart(2, '0')}:${String(fechaEntregaLocal.minute).padStart(2, '0')}:${String(fechaEntregaLocal.second).padStart(2, '0')}`);
-  console.log(`  Fecha entrega (str): ${fechaEntregaStr}`);
-  console.log(`  Ahora (UTC): ${ahoraUTC.toISOString()}`);
-  console.log(`  Ahora (local): ${ahoraLocal.year}-${String(ahoraLocal.month).padStart(2, '0')}-${String(ahoraLocal.day).padStart(2, '0')} ${String(ahoraLocal.hour).padStart(2, '0')}:${String(ahoraLocal.minute).padStart(2, '0')}:${String(ahoraLocal.second).padStart(2, '0')}`);
-  console.log(`  Ahora (str): ${ahoraStr}`);
-  console.log(`  Resultado: ${fechaEntregaStr <= ahoraStr ? 'YA PASÓ' : 'AÚN NO PASA'}`);
-  
-  // Comparar: si fechaEntrega <= ahora, entonces ya pasó
-  return fechaEntregaStr <= ahoraStr;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const fechaEntregaStrDia = `${fechaEntregaLocal.year}${pad(fechaEntregaLocal.month)}${pad(fechaEntregaLocal.day)}`;
+  const ahoraStrDia = `${ahoraLocal.year}${pad(ahoraLocal.month)}${pad(ahoraLocal.day)}`;
+
+  if (fechaEntregaStrDia < ahoraStrDia) return 'past';
+  if (fechaEntregaStrDia === ahoraStrDia) return 'today';
+  return 'future';
 }
 
 /**
- * Job que verifica y marca como entregados los pedidos cuya fecha de entrega ya pasó
- * Se ejecuta cada hora y considera la zona horaria de cada ciudad
+ * Job que verifica y marca pedidos según la fecha de entrega (solo día, sin hora).
+ * - Fecha de entrega ya pasada → estado "entregado"
+ * - Fecha de entrega es hoy → estado "en_camino" (si estaba pendiente)
+ * - Estado "confirmado" → no se modifica
+ * Se ejecuta periódicamente y considera la zona horaria de cada ciudad.
  */
 async function autoEntregarPedidos() {
   try {
-    // Buscar pedidos que:
-    // 1. Tienen fecha_entrega_estimada
-    // 2. Están en estado "pendiente"
-    // 3. No están dados de baja
-    const pedidosPendientes = await Pedido.findAll({
+    // Buscar pedidos que tienen fecha_entrega_estimada, están en pendiente o en_camino, y no están dados de baja
+    const pedidosAProcesar = await Pedido.findAll({
       where: {
-        fecha_entrega_estimada: {
-          [Op.not]: null
-        },
-        estado: 'pendiente',
+        fecha_entrega_estimada: { [Op.not]: null },
+        estado: { [Op.in]: ['pendiente', 'en_camino'] },
         baja_logica: false
       },
       include: [
@@ -85,57 +71,73 @@ async function autoEntregarPedidos() {
           model: City,
           as: 'ciudad',
           attributes: ['id', 'nombre', 'timezone'],
-          required: false // Cambiar a false para incluir pedidos sin ciudad (aunque deberían tenerla)
+          required: false
         }
       ]
     });
 
-    if (pedidosPendientes.length === 0) {
-      console.log(`[${new Date().toISOString()}] Auto-entregar pedidos: No hay pedidos pendientes de entregar.`);
+    if (pedidosAProcesar.length === 0) {
+      console.log(`[${new Date().toISOString()}] Auto-entregar pedidos: No hay pedidos a procesar.`);
       return { actualizados: 0, pedidos: [] };
     }
 
     const pedidosActualizados = [];
-    
-    // Verificar cada pedido usando la zona horaria de su ciudad
-    for (const pedido of pedidosPendientes) {
+
+    for (const pedido of pedidosAProcesar) {
       try {
         const ciudad = pedido.ciudad;
-        
+
         if (!ciudad) {
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) no tiene ciudad asociada, saltando...`);
+          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) no tiene ciudad asociada, saltando.`);
           continue;
         }
-        
-        const timezone = ciudad?.timezone || 'America/Mexico_City'; // Default si no tiene timezone
-        
-        console.log(`[${new Date().toISOString()}] Procesando pedido #${pedido.numero_pedido} (ID: ${pedido.id}):`);
-        console.log(`  Estado: ${pedido.estado}`);
-        console.log(`  Ciudad: ${ciudad.nombre} (${timezone})`);
-        console.log(`  Fecha entrega estimada: ${pedido.fecha_entrega_estimada}`);
-        
-        // Verificar si la fecha de entrega ya pasó en la zona horaria de la ciudad
-        if (fechaYaPaso(pedido.fecha_entrega_estimada, timezone)) {
+
+        if (pedido.estado === 'confirmado') {
+          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) en estado confirmado, no se modifica.`);
+          continue;
+        }
+
+        const timezone = ciudad?.timezone || 'America/Mexico_City';
+
+        console.log(`[${new Date().toISOString()}] Procesando pedido #${pedido.numero_pedido} (ID: ${pedido.id}): estado=${pedido.estado}, ciudad=${ciudad.nombre} (${timezone}), fecha_entrega_estimada=${pedido.fecha_entrega_estimada}`);
+
+        const resultadoFecha = compararFechaEntregaSoloDia(pedido.fecha_entrega_estimada, timezone);
+
+        if (resultadoFecha === 'past') {
           await pedido.entregar();
           pedidosActualizados.push({
             id: pedido.id,
             numero_pedido: pedido.numero_pedido,
             fecha_entrega_estimada: pedido.fecha_entrega_estimada,
             ciudad: ciudad.nombre,
-            timezone: timezone
+            timezone,
+            nuevo_estado: 'entregado'
           });
-          console.log(`[${new Date().toISOString()}] ✅ Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como entregado automáticamente.`);
+          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como entregado (fecha de entrega ya pasó).`);
+        } else if (resultadoFecha === 'today' && pedido.estado === 'pendiente') {
+          await pedido.enviar();
+          pedidosActualizados.push({
+            id: pedido.id,
+            numero_pedido: pedido.numero_pedido,
+            fecha_entrega_estimada: pedido.fecha_entrega_estimada,
+            ciudad: ciudad.nombre,
+            timezone,
+            nuevo_estado: 'en_camino'
+          });
+          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como en_camino (fecha de entrega es hoy).`);
+        } else if (resultadoFecha === 'today' && pedido.estado === 'en_camino') {
+          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) ya está en_camino y la fecha es hoy, sin cambios.`);
         } else {
-          console.log(`[${new Date().toISOString()}] ⏳ Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) aún no ha pasado su fecha de entrega.`);
+          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) fecha de entrega futura, sin cambios.`);
         }
       } catch (error) {
-        console.error(`[${new Date().toISOString()}] ❌ Error al procesar pedido #${pedido.numero_pedido} (ID: ${pedido.id}):`, error.message);
+        console.error(`[${new Date().toISOString()}] Error al procesar pedido #${pedido.numero_pedido} (ID: ${pedido.id}):`, error.message);
         console.error(error.stack);
       }
     }
 
-    console.log(`[${new Date().toISOString()}] Auto-entregar pedidos: ${pedidosActualizados.length} pedido(s) marcado(s) como entregado(s).`);
-    
+    console.log(`[${new Date().toISOString()}] Auto-entregar pedidos: ${pedidosActualizados.length} pedido(s) actualizado(s).`);
+
     return {
       actualizados: pedidosActualizados.length,
       pedidos: pedidosActualizados
