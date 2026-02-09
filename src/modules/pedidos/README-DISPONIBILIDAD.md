@@ -36,34 +36,32 @@ GET /api/pedidos/disponibilidad/2025-10-25?ciudad_id=1
     "disponibilidad": [
       {
         "fecha": "2025-10-26",
-        "manana_disponible": true,
-        "tarde_disponible": true,
-        "pedidos_manana": 2,
-        "pedidos_tarde": 1,
-        "capacidad_manana": 5,
-        "capacidad_tarde": 5
+        "disponible": true,
+        "pedidos": 2,
+        "capacidad": 5
       },
       {
         "fecha": "2025-10-27",
-        "manana_disponible": false,
-        "tarde_disponible": true,
-        "pedidos_manana": 5,
-        "pedidos_tarde": 3,
-        "capacidad_manana": 5,
-        "capacidad_tarde": 5
+        "disponible": false,
+        "pedidos": 5,
+        "capacidad": 5
       },
       {
         "fecha": "2025-10-28",
-        "manana_disponible": true,
-        "tarde_disponible": true,
-        "pedidos_manana": 0,
-        "pedidos_tarde": 2,
-        "capacidad_manana": 5,
-        "capacidad_tarde": 5
+        "disponible": true,
+        "pedidos": 0,
+        "capacidad": 5
+      },
+      {
+        "fecha": "2025-10-29",
+        "disponible": false,
+        "pedidos": 0,
+        "capacidad": 5,
+        "motivo_no_disponible": "Día no laboral"
       }
     ],
     "fecha_consulta": "2025-10-25",
-    "ciudad_id": 1,
+    "ciudad": null,
     "total_dias": 7
   }
 }
@@ -75,27 +73,24 @@ GET /api/pedidos/disponibilidad/2025-10-25?ciudad_id=1
 Cada objeto en el array representa un día y contiene:
 
 - `fecha`: Fecha en formato `YYYY-MM-DD`
-- `manana_disponible`: `boolean` - Si hay disponibilidad en el horario de mañana (8:00 AM - 12:00 PM)
-- `tarde_disponible`: `boolean` - Si hay disponibilidad en el horario de tarde (2:00 PM - 6:00 PM)
-- `pedidos_manana`: `number` - Cantidad de pedidos programados para la mañana
-- `pedidos_tarde`: `number` - Cantidad de pedidos programados para la tarde
-- `capacidad_manana`: `number` - Capacidad máxima para el horario de mañana (5)
-- `capacidad_tarde`: `number` - Capacidad máxima para el horario de tarde (5)
+- `disponible`: `boolean` - Si hay disponibilidad en el horario de entrega del día
+- `pedidos`: `number` - Cantidad de pedidos programados para ese día en el horario de entrega
+- `capacidad`: `number` - Capacidad máxima para el horario de entrega (p. ej. 5)
+- `motivo_no_disponible`: `string` (solo en días no laborales) - Ej.: "Día no laboral"
 
 #### Campos Adicionales
 - `fecha_consulta`: Fecha que se pasó como parámetro
-- `ciudad_id`: ID de la ciudad filtrada (null si no se especificó)
+- `ciudad`: Objeto con `id`, `nombre` e `input_original` si se filtró por ciudad; `null` en caso contrario
 - `total_dias`: Número total de días en la respuesta (7)
 
 ### Lógica de Disponibilidad
 
 #### Horarios
-- **Mañana**: 8:00 AM - 12:00 PM
-- **Tarde**: 2:00 PM - 6:00 PM
+- **Único horario de entrega**: 8:00 AM - 6:00 PM (configurable en el controller)
 
 #### Capacidad
-- **Máximo por horario**: 5 pedidos
-- **Disponibilidad**: Se considera disponible si hay menos de 5 pedidos en ese horario
+- **Máximo por día (único horario)**: 5 pedidos (configurable por ciudad)
+- **Disponibilidad**: Se considera disponible si hay menos de 5 pedidos en ese día dentro del horario
 
 #### Estados Considerados
 Solo se cuentan los pedidos con los siguientes estados:
@@ -125,7 +120,7 @@ Los pedidos `entregado` y `cancelado` no afectan la disponibilidad.
 - La fecha de inicio se incrementa en 1 día automáticamente
 - El endpoint es público (no requiere autenticación)
 - Los horarios están definidos en horario local del servidor
-- La capacidad máxima es configurable (actualmente 5 por horario)
+- La capacidad máxima es configurable por ciudad (actualmente 5 por día en el único horario)
 
 ### Ejemplo de Integración
 
@@ -136,9 +131,7 @@ const data = await response.json();
 
 if (data.success) {
   data.data.disponibilidad.forEach(dia => {
-    console.log(`${dia.fecha}:`);
-    console.log(`  Mañana: ${dia.manana_disponible ? 'Disponible' : 'No disponible'} (${dia.pedidos_manana}/${dia.capacidad_manana})`);
-    console.log(`  Tarde: ${dia.tarde_disponible ? 'Disponible' : 'No disponible'} (${dia.pedidos_tarde}/${dia.capacidad_tarde})`);
+    console.log(`${dia.fecha}: ${dia.disponible ? 'Disponible' : 'No disponible'} (${dia.pedidos}/${dia.capacidad})`);
   });
 }
 ```
