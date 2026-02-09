@@ -1585,73 +1585,47 @@ class PedidoController {
         if (!esDiaTrabajo) {
           disponibilidad.push({
             fecha: fechaStr,
-            manana_disponible: false,
-            tarde_disponible: false,
-            pedidos_manana: 0,
-            pedidos_tarde: 0,
-            capacidad_manana: maxPedidosPorHorario,
-            capacidad_tarde: maxPedidosPorHorario,
+            disponible: false,
+            pedidos: 0,
+            capacidad: maxPedidosPorHorario,
             motivo_no_disponible: 'Día no laboral'
           });
           continue;
         }
-        
-        // Crear rangos de horario
-        const inicioManana = new Date(fecha);
-        inicioManana.setHours(8, 0, 0, 0); // 8:00 AM
-        
-        const finManana = new Date(fecha);
-        finManana.setHours(12, 0, 0, 0); // 12:00 PM
-        
-        const inicioTarde = new Date(fecha);
-        inicioTarde.setHours(14, 0, 0, 0); // 2:00 PM
-        
-        const finTarde = new Date(fecha);
-        finTarde.setHours(18, 0, 0, 0); // 6:00 PM
-        
+
+        // Rango del único horario de entrega (configurable: hora inicio, hora fin)
+        const HORA_INICIO = 8;
+        const HORA_FIN = 18;
+        const inicioHorario = new Date(fecha);
+        inicioHorario.setHours(HORA_INICIO, 0, 0, 0);
+        const finHorario = new Date(fecha);
+        finHorario.setHours(HORA_FIN, 0, 0, 0);
+
         // Construir condiciones de búsqueda
         let whereClause = {
           fecha_entrega_estimada: {
-            [Op.between]: [inicioManana, finTarde]
+            [Op.between]: [inicioHorario, finHorario]
           },
           estado: {
             [Op.in]: ['pendiente', 'confirmado', 'en_preparacion', 'en_camino']
           },
           baja_logica: false
         };
-        
+
         // Filtrar por ciudad si se especifica (usar el ID convertido)
         if (ciudadIdFinal) {
           whereClause.fkid_ciudad = ciudadIdFinal;
         }
-        
-        // Contar pedidos por horario
-        const pedidosManana = await Pedido.count({
-          where: {
-            ...whereClause,
-            fecha_entrega_estimada: {
-              [Op.between]: [inicioManana, finManana]
-            }
-          }
+
+        const pedidos = await Pedido.count({
+          where: whereClause
         });
-        
-        const pedidosTarde = await Pedido.count({
-          where: {
-            ...whereClause,
-            fecha_entrega_estimada: {
-              [Op.between]: [inicioTarde, finTarde]
-            }
-          }
-        });
-        
+
         disponibilidad.push({
           fecha: fechaStr,
-          manana_disponible: pedidosManana < maxPedidosPorHorario,
-          tarde_disponible: pedidosTarde < maxPedidosPorHorario,
-          pedidos_manana: pedidosManana,
-          pedidos_tarde: pedidosTarde,
-          capacidad_manana: maxPedidosPorHorario,
-          capacidad_tarde: maxPedidosPorHorario
+          disponible: pedidos < maxPedidosPorHorario,
+          pedidos,
+          capacidad: maxPedidosPorHorario
         });
       }
 
