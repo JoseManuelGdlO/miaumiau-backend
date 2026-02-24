@@ -6,7 +6,7 @@ class PaqueteController {
   async getAllPaquetes(req, res, next) {
     try {
       const { 
-        activos,
+        activos = 'true',
         search,
         page = 1,
         limit = 10
@@ -14,13 +14,13 @@ class PaqueteController {
       
       let whereClause = {};
       
-      // Filtrar por activos/inactivos solo si se especifica el parámetro
+      // Filtrar por activos/inactivos (igual que productos/inventarios)
+      // Por defecto solo activos. activos=false para ver inactivos
       if (activos === 'true') {
         whereClause.is_active = true;
       } else if (activos === 'false') {
         whereClause.is_active = false;
       }
-      // Si no se especifica activos, mostrar todos (activos e inactivos)
       
       // Búsqueda por nombre o descripción
       if (search) {
