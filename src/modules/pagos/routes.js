@@ -20,8 +20,53 @@ const validateGenerarLinkStripe = [
     .withMessage('El teléfono solo puede contener números, espacios, guiones, paréntesis y +'),
   
   body('productos')
-    .isArray({ min: 1 })
-    .withMessage('Los productos son requeridos y deben ser un array con al menos un elemento'),
+    .optional()
+    .isArray()
+    .withMessage('Los productos deben ser un array'),
+  
+  body('paquetes')
+    .optional()
+    .isArray()
+    .withMessage('Los paquetes deben ser un array'),
+  
+  body()
+    .custom((value, { req }) => {
+      const productos = req.body.productos;
+      const paquetes = req.body.paquetes;
+      const hasProductos = Array.isArray(productos) && productos.length > 0;
+      const hasPaquetes = Array.isArray(paquetes) && paquetes.length > 0;
+      if (!hasProductos && !hasPaquetes) {
+        throw new Error('Se requiere al menos un producto o un paquete (productos o paquetes con al menos un elemento)');
+      }
+      if (hasProductos) {
+        for (let i = 0; i < productos.length; i++) {
+          const p = productos[i];
+          if (p?.es_regalo) continue;
+          const precio = Number(p?.precio ?? p?.precio_unidad);
+          const cantidad = parseInt(p?.cantidad, 10);
+          if (isNaN(precio) || precio < 0) {
+            throw new Error(`Producto en posición ${i}: debe tener precio o precio_unidad >= 0`);
+          }
+          if (isNaN(cantidad) || cantidad < 1) {
+            throw new Error(`Producto en posición ${i}: cantidad debe ser un entero >= 1`);
+          }
+        }
+      }
+      if (hasPaquetes) {
+        for (let i = 0; i < paquetes.length; i++) {
+          const pk = paquetes[i];
+          const id = parseInt(pk?.fkid_paquete, 10);
+          const cantidad = parseInt(pk?.cantidad, 10);
+          if (isNaN(id) || id < 1) {
+            throw new Error(`Paquete en posición ${i}: fkid_paquete debe ser un entero positivo`);
+          }
+          if (isNaN(cantidad) || cantidad < 1) {
+            throw new Error(`Paquete en posición ${i}: cantidad debe ser un entero >= 1`);
+          }
+        }
+      }
+      return true;
+    }),
   
   body('productos.*.id')
     .optional()
@@ -34,12 +79,34 @@ const validateGenerarLinkStripe = [
     .withMessage('El nombre del producto debe tener entre 1 y 200 caracteres'),
   
   body('productos.*.precio')
+    .optional()
     .isFloat({ min: 0 })
     .withMessage('El precio del producto debe ser un número positivo'),
   
+  body('productos.*.precio_unidad')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('El precio unitario del producto debe ser un número positivo'),
+  
   body('productos.*.cantidad')
+    .optional()
     .isInt({ min: 1 })
     .withMessage('La cantidad del producto debe ser un número entero positivo'),
+  
+  body('paquetes.*.fkid_paquete')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El ID del paquete debe ser un número entero positivo'),
+  
+  body('paquetes.*.cantidad')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('La cantidad del paquete debe ser un número entero positivo'),
+  
+  body('paquetes.*.precio_unidad')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('El precio unitario del paquete debe ser un número positivo'),
   
   body('codigo_promocion')
     .optional()
