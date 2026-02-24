@@ -9,8 +9,8 @@ const { handleValidationErrors } = require('../../utils/validation');
 // Validaciones para crear paquete (todos los campos requeridos)
 const validatePaquete = [
   body('nombre')
-    .isLength({ min: 2, max: 200 })
-    .withMessage('El nombre debe tener entre 2 y 200 caracteres')
+    .isLength({ min: 2, max: 24 })
+    .withMessage('El nombre debe tener entre 2 y 24 caracteres')
     .matches(/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s0-9\-_\.]+$/)
     .withMessage('El nombre solo puede contener letras, números, espacios, guiones, guiones bajos y puntos'),
   
