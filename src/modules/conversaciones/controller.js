@@ -580,10 +580,14 @@ class ConversacionController {
         }
       }
 
-      // Actualizar la fecha de última actividad de la conversación
+      // Actualizar la fecha de última actividad de la conversación (query raw para garantizar el UPDATE)
       const now = new Date();
-      conversacion.updatedAt = now;
-      await conversacion.save();
+      await Conversacion.sequelize.query(
+        'UPDATE conversaciones SET updated_at = :now WHERE id = :id',
+        { replacements: { now, id: conversacion.id } }
+      );
+      // Reflejar el cambio en el objeto que se envía en la respuesta
+      conversacion.set('updatedAt', now);
         
       res.status(fueCreada ? 201 : 200).json({
         success: true,

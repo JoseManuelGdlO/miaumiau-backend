@@ -197,8 +197,10 @@ class ConversacionChatController {
       });
 
       // Actualizar la fecha de última actividad de la conversación
-      conversacion.updatedAt = now;
-      await conversacion.save();
+      await Conversacion.update(
+        { updatedAt: now },
+        { where: { id: conversacion.id } }
+      );
 
       // Crear log del mensaje
       await ConversacionLog.createLog(
