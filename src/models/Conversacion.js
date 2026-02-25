@@ -59,6 +59,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     tableName: 'conversaciones',
     timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     paranoid: false,
     indexes: [
       {
