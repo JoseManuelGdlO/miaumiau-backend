@@ -1511,8 +1511,37 @@ class PedidoController {
       const { fecha_inicio } = req.params;
       const { ciudad_id } = req.query;
       
-      // Validar fecha
-      const fechaInicio = new Date(fecha_inicio);
+      // Validar fecha (esperando formato DD-MM-YYYY o DD/MM/YYYY)
+      const normalizarFecha = (fechaStr) => {
+        if (!fechaStr || typeof fechaStr !== 'string') return null;
+        
+        // Reemplazar '/' por '-' para unificar
+        const limpia = fechaStr.replace(/\//g, '-');
+        const partes = limpia.split('-'); // [DD, MM, YYYY]
+        if (partes.length !== 3) return null;
+
+        const [ddStr, mmStr, yyyyStr] = partes;
+        const dia = parseInt(ddStr, 10);
+        const mes = parseInt(mmStr, 10);
+        const anio = parseInt(yyyyStr, 10);
+
+        if (!dia || !mes || !anio) return null;
+
+        const fecha = new Date(anio, mes - 1, dia);
+
+        // Validar que la fecha construida coincide con los valores recibidos
+        if (
+          fecha.getFullYear() !== anio ||
+          fecha.getMonth() !== mes - 1 ||
+          fecha.getDate() !== dia
+        ) {
+          return null;
+        }
+
+        return fecha;
+      };
+
+      const fechaInicio = normalizarFecha(fecha_inicio);
       if (isNaN(fechaInicio.getTime())) {
         return res.status(400).json({
           success: false,
@@ -1578,8 +1607,11 @@ class PedidoController {
         // Verificar si este día está en los días de trabajo
         const esDiaTrabajo = diasTrabajo.includes(diaSemana);
         
-        // Formatear fecha como YYYY-MM-DD
-        const fechaStr = fecha.toISOString().split('T')[0];
+        // Formatear fecha como DD/MM/YYYY (formato usado en México)
+        const dia = String(fecha.getDate()).padStart(2, '0');
+        const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+        const anio = fecha.getFullYear();
+        const fechaStr = `${dia}-${mes}-${anio}`;
         
         // Si no es día de trabajo, marcar como no disponible
         if (!esDiaTrabajo) {
