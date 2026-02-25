@@ -580,6 +580,11 @@ class ConversacionController {
         }
       }
 
+      // Actualizar la fecha de última actividad de la conversación
+      const now = new Date();
+      conversacion.updatedAt = now;
+      await conversacion.save();
+        
       res.status(fueCreada ? 201 : 200).json({
         success: true,
         message: fueCreada 

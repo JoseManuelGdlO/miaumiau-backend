@@ -278,6 +278,10 @@ class MensajeriaController {
         }
       });
 
+      // Actualizar la fecha de última actividad de la conversación
+      conversacion.updatedAt = now;
+      await conversacion.save();
+
       await ConversacionLog.createLog(
         conversacion.id,
         {
