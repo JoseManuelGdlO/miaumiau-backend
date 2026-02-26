@@ -2,6 +2,7 @@ const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquet
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
+const { parseFechaEntregaEstimada } = require('../../utils/date');
 
 // Funciones helper para normalizar teléfonos
 const normalizePhone = (value) => {
@@ -466,7 +467,7 @@ class PedidoController {
         fkid_ciudad: ciudadIdFinal,
         numero_pedido: numeroPedido,
         estado: 'pendiente', // Estado inicial siempre pendiente
-        fecha_entrega_estimada: fecha_entrega_estimada || null,
+        fecha_entrega_estimada: parseFechaEntregaEstimada(fecha_entrega_estimada) ?? null,
         metodo_pago: metodo_pago || null,
         notas: notas || null,
         codigo_promocion: codigoPromocionNormalizado,

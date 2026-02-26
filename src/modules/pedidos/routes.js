@@ -5,6 +5,7 @@ const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
+const { parseFechaEntregaEstimada } = require('../../utils/date');
 
 // Validaciones
 const validatePedido = [
@@ -47,8 +48,11 @@ const validatePedido = [
 
   body('fecha_entrega_estimada')
     .optional()
-    .isISO8601()
-    .withMessage('La fecha de entrega estimada debe ser una fecha válida'),
+    .custom((value) => {
+      if (value == null || value === '') return true;
+      return parseFechaEntregaEstimada(value) !== null;
+    })
+    .withMessage('La fecha de entrega estimada debe ser una fecha válida (formato ISO YYYY-MM-DD o DD-MM-YYYY)'),
   
   body('metodo_pago')
     .optional()

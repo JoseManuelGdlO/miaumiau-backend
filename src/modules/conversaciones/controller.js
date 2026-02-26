@@ -482,22 +482,31 @@ class ConversacionController {
         }
       }
 
-      // Buscar conversación existente por 'from' que esté activa o no eliminada
-      let conversacion = await Conversacion.findOne({
-        where: {
-          from: from,
-          baja_logica: false
-        },
-        include: [
-          {
-            model: Cliente,
-            as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'email', 'telefono'],
-            required: false
-          }
-        ],
-        order: [['created_at', 'DESC']] // Obtener la más reciente
-      });
+      // Buscar conversación existente: si viene id_cliente, intentar primero por from + id_cliente
+      const conversacionInclude = [
+        {
+          model: Cliente,
+          as: 'cliente',
+          attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+          required: false
+        }
+      ];
+      const whereBase = { from, baja_logica: false };
+      let conversacion = null;
+      if (clienteIdNormalizado != null) {
+        conversacion = await Conversacion.findOne({
+          where: { ...whereBase, id_cliente: clienteIdNormalizado },
+          include: conversacionInclude,
+          order: [['created_at', 'DESC']]
+        });
+      }
+      if (!conversacion) {
+        conversacion = await Conversacion.findOne({
+          where: whereBase,
+          include: conversacionInclude,
+          order: [['created_at', 'DESC']]
+        });
+      }
 
       let fueCreada = false;
 
@@ -540,36 +549,34 @@ class ConversacionController {
 
         fueCreada = true;
       } else {
-        // Si la conversación existe pero no tiene cliente asignado y encontramos uno, actualizarla
-        if (!conversacion.id_cliente && clienteIdNormalizado) {
-          await conversacion.update({ id_cliente: clienteIdNormalizado });
-          
-          // Crear log de actualización
-          await ConversacionLog.createLog(
-            conversacion.id,
-            { 
-              cliente_anterior: null,
-              cliente_nuevo: clienteIdNormalizado,
-              updated_by: 'sistema'
-            },
-            'sistema',
-            'info',
-            `Conversación actualizada con cliente existente: ${cliente?.nombre_completo || clienteIdNormalizado}`
-          );
-          
-          // Recargar la conversación con el cliente actualizado
-          conversacion = await Conversacion.findByPk(conversacion.id, {
-            include: [
+        // Reasignar la conversación al id_cliente enviado si es distinto (o estaba vacío)
+        const clienteInclude = {
+          model: Cliente,
+          as: 'cliente',
+          attributes: ['id', 'nombre_completo', 'email', 'telefono'],
+          required: false
+        };
+        if (clienteIdNormalizado != null) {
+          const clienteAnterior = conversacion.id_cliente ?? null;
+          if (clienteAnterior !== clienteIdNormalizado) {
+            await conversacion.update({ id_cliente: clienteIdNormalizado });
+            await ConversacionLog.createLog(
+              conversacion.id,
               {
-                model: Cliente,
-                as: 'cliente',
-                attributes: ['id', 'nombre_completo', 'email', 'telefono'],
-                required: false
-              }
-            ]
-          });
+                cliente_anterior: clienteAnterior,
+                cliente_nuevo: clienteIdNormalizado,
+                updated_by: 'sistema'
+              },
+              'sistema',
+              'info',
+              `Conversación reasignada de cliente ${clienteAnterior ?? 'sin asignar'} a ${clienteIdNormalizado}`
+            );
+            conversacion = await Conversacion.findByPk(conversacion.id, {
+              include: [clienteInclude]
+            });
+          }
         }
-        
+
         // Actualizar whatsapp_phone_number_id si no existe
         if (!conversacion.whatsapp_phone_number_id) {
           const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
@@ -580,7 +587,7 @@ class ConversacionController {
         }
       }
 
-      // Actualizar la fecha de última actividad de la conversación (query raw para garantizar el UPDATE)
+      // Actualizar la fecha de última actividad de la conversación
       const now = new Date();
       await Conversacion.sequelize.query(
         'UPDATE conversaciones SET updated_at = :now WHERE id = :id',
