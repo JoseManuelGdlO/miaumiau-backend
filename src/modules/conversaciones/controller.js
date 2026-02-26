@@ -321,20 +321,6 @@ class ConversacionController {
             ]
           },
           {
-            model: ConversacionChat,
-            as: 'chats',
-            attributes: ['id', 'fecha', 'hora', 'from', 'mensaje', 'tipo_mensaje', 'leido', 'created_at'],
-            order: [['created_at', 'ASC']],
-            required: false
-          },
-          {
-            model: ConversacionLog,
-            as: 'logs',
-            attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
-            order: [['created_at', 'ASC']],
-            required: false
-          },
-          {
             model: ConversacionFlag,
             as: 'flags',
             attributes: ['id', 'nombre', 'color', 'descripcion', 'activo'],
@@ -576,7 +562,7 @@ class ConversacionController {
             });
           }
         }
-
+        
         // Actualizar whatsapp_phone_number_id si no existe
         if (!conversacion.whatsapp_phone_number_id) {
           const telefonoOrigen = extractPhone(cliente?.telefono || conversacion?.from);
