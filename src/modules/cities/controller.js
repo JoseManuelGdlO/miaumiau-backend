@@ -119,7 +119,9 @@ class CityController {
         email_contacto,
         notas_adicionales,
         max_pedidos_por_horario = 5,
-        dias_trabajo = [0, 1, 2, 3, 4, 5, 6]
+        dias_trabajo = [0, 1, 2, 3, 4, 5, 6],
+        hora_inicio_entrega,
+        hora_fin_entrega
       } = req.body;
 
       // Verificar si la ciudad ya existe
@@ -161,6 +163,58 @@ class CityController {
         }
       }
 
+      // Helper para parsear horas (acepta número o string de dígitos)
+      const parseHour = (value) => {
+        if (value === undefined || value === null || value === '') return null;
+        if (typeof value === 'number') return value;
+        const parsed = parseInt(value, 10);
+        return Number.isNaN(parsed) ? NaN : parsed;
+      };
+
+      const inicioParsed = parseHour(hora_inicio_entrega);
+      const finParsed = parseHour(hora_fin_entrega);
+
+      // Validar horas de entrega si se proporcionan
+      if (!Number.isNaN(inicioParsed) && inicioParsed !== null) {
+        if (inicioParsed < 0 || inicioParsed > 23) {
+          return res.status(400).json({
+            success: false,
+            message: 'hora_inicio_entrega debe estar entre 0 y 23'
+          });
+        }
+      }
+
+      if (!Number.isNaN(finParsed) && finParsed !== null) {
+        if (finParsed < 0 || finParsed > 23) {
+          return res.status(400).json({
+            success: false,
+            message: 'hora_fin_entrega debe estar entre 0 y 23'
+          });
+        }
+      }
+
+      if (
+        !Number.isNaN(inicioParsed) &&
+        !Number.isNaN(finParsed) &&
+        inicioParsed !== null &&
+        finParsed !== null
+      ) {
+        if (inicioParsed >= finParsed) {
+          return res.status(400).json({
+            success: false,
+            message: 'hora_inicio_entrega debe ser menor que hora_fin_entrega'
+          });
+        }
+      }
+
+      const horasEntregaData = {};
+      if (!Number.isNaN(inicioParsed)) {
+        horasEntregaData.hora_inicio_entrega = inicioParsed;
+      }
+      if (!Number.isNaN(finParsed)) {
+        horasEntregaData.hora_fin_entrega = finParsed;
+      }
+
       const city = await City.create({
         nombre,
         departamento,
@@ -175,7 +229,8 @@ class CityController {
         email_contacto,
         notas_adicionales,
         max_pedidos_por_horario,
-        dias_trabajo
+        dias_trabajo,
+        ...horasEntregaData
       });
 
       res.status(201).json({
@@ -256,6 +311,64 @@ class CityController {
             success: false,
             message: 'max_pedidos_por_horario debe ser un número entre 1 y 100'
           });
+        }
+      }
+
+      // Helper para parsear horas (acepta número o string de dígitos)
+      const parseHour = (value) => {
+        if (value === undefined || value === null || value === '') return null;
+        if (typeof value === 'number') return value;
+        const parsed = parseInt(value, 10);
+        return Number.isNaN(parsed) ? NaN : parsed;
+      };
+
+      if ('hora_inicio_entrega' in updateData || 'hora_fin_entrega' in updateData) {
+        const inicioParsed = parseHour(updateData.hora_inicio_entrega);
+        const finParsed = parseHour(updateData.hora_fin_entrega);
+
+        if (!Number.isNaN(inicioParsed) && inicioParsed !== null) {
+          if (inicioParsed < 0 || inicioParsed > 23) {
+            return res.status(400).json({
+              success: false,
+              message: 'hora_inicio_entrega debe estar entre 0 y 23'
+            });
+          }
+        }
+
+        if (!Number.isNaN(finParsed) && finParsed !== null) {
+          if (finParsed < 0 || finParsed > 23) {
+            return res.status(400).json({
+              success: false,
+              message: 'hora_fin_entrega debe estar entre 0 y 23'
+            });
+          }
+        }
+
+        if (
+          !Number.isNaN(inicioParsed) &&
+          !Number.isNaN(finParsed) &&
+          inicioParsed !== null &&
+          finParsed !== null
+        ) {
+          if (inicioParsed >= finParsed) {
+            return res.status(400).json({
+              success: false,
+              message: 'hora_inicio_entrega debe ser menor que hora_fin_entrega'
+            });
+          }
+        }
+
+        if (!Number.isNaN(inicioParsed)) {
+          updateData.hora_inicio_entrega = inicioParsed;
+        } else if (updateData.hora_inicio_entrega === null) {
+          // Permitir limpiar el valor explícitamente con null
+          updateData.hora_inicio_entrega = null;
+        }
+
+        if (!Number.isNaN(finParsed)) {
+          updateData.hora_fin_entrega = finParsed;
+        } else if (updateData.hora_fin_entrega === null) {
+          updateData.hora_fin_entrega = null;
         }
       }
 

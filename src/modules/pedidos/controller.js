@@ -1591,6 +1591,20 @@ class PedidoController {
       const maxPedidosPorHorario = ciudadConfig ? ciudadConfig.getMaxPedidosPorHorario() : 5;
       const diasTrabajo = ciudadConfig ? ciudadConfig.getDiasTrabajo() : [0, 1, 2, 3, 4, 5, 6];
 
+      // Obtener rango horario de entrega (por ciudad o por defecto)
+      const DEFAULT_HORA_INICIO = 8;
+      const DEFAULT_HORA_FIN = 18;
+      let horaInicio = DEFAULT_HORA_INICIO;
+      let horaFin = DEFAULT_HORA_FIN;
+
+      if (ciudadConfig && typeof ciudadConfig.getHorasEntrega === 'function') {
+        const horas = ciudadConfig.getHorasEntrega();
+        if (horas && typeof horas.inicio === 'number' && typeof horas.fin === 'number') {
+          horaInicio = horas.inicio;
+          horaFin = horas.fin;
+        }
+      }
+
       // Calcular fecha de inicio (día siguiente)
       const fechaInicioDisponibilidad = new Date(fechaInicio);
       fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
@@ -1627,12 +1641,10 @@ class PedidoController {
         }
 
         // Rango del único horario de entrega (configurable: hora inicio, hora fin)
-        const HORA_INICIO = 8;
-        const HORA_FIN = 18;
         const inicioHorario = new Date(fecha);
-        inicioHorario.setHours(HORA_INICIO, 0, 0, 0);
+        inicioHorario.setHours(horaInicio, 0, 0, 0);
         const finHorario = new Date(fecha);
-        finHorario.setHours(HORA_FIN, 0, 0, 0);
+        finHorario.setHours(horaFin, 0, 0, 0);
 
         // Construir condiciones de búsqueda
         let whereClause = {

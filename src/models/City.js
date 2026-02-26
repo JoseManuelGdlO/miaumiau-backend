@@ -61,6 +61,24 @@ module.exports = (sequelize, DataTypes) => {
         max: 1440 // 24 horas en minutos
       }
     },
+    hora_inicio_entrega: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Hora de inicio del turno de entregas (0-23)',
+      validate: {
+        min: 0,
+        max: 23
+      }
+    },
+    hora_fin_entrega: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Hora de fin del turno de entregas (0-23)',
+      validate: {
+        min: 0,
+        max: 23
+      }
+    },
     horario_atencion: {
       type: DataTypes.STRING(100),
       allowNull: true,
@@ -185,6 +203,31 @@ module.exports = (sequelize, DataTypes) => {
   City.prototype.deactivate = function() {
     this.estado_inicial = 'inactiva';
     return this.save();
+  };
+
+  // Método helper para obtener horas de entrega (con valores por defecto)
+  City.prototype.getHorasEntrega = function() {
+    const DEFAULT_INICIO = 8;
+    const DEFAULT_FIN = 18;
+
+    const inicioRaw = this.hora_inicio_entrega;
+    const finRaw = this.hora_fin_entrega;
+
+    const inicio = typeof inicioRaw === 'number' ? inicioRaw : DEFAULT_INICIO;
+    const fin = typeof finRaw === 'number' ? finRaw : DEFAULT_FIN;
+
+    // Validar que las horas estén en rango y que inicio < fin
+    const inicioValido = Number.isInteger(inicio) && inicio >= 0 && inicio <= 23;
+    const finValido = Number.isInteger(fin) && fin >= 0 && fin <= 23 && fin > inicio;
+
+    if (!inicioValido || !finValido) {
+      return {
+        inicio: DEFAULT_INICIO,
+        fin: DEFAULT_FIN
+      };
+    }
+
+    return { inicio, fin };
   };
 
   // Método helper para obtener días de trabajo
