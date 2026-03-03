@@ -43,6 +43,13 @@ class MapsController {
         }
       );
 
+      console.log('[MAPS] Geocode respuesta cruda de Google:', {
+        status: response.data?.status,
+        resultsLength: Array.isArray(response.data?.results) ? response.data.results.length : null,
+        error_message: response.data?.error_message,
+        fullResponse: response.data
+      });
+
       if (response.data.status === 'OK' && response.data.results.length > 0) {
         const location = response.data.results[0].geometry.location;
         return res.json({
