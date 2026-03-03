@@ -1,5 +1,5 @@
 const { Inventario, Peso, CategoriaProducto, City, Proveedor } = require('../../models');
-const { Op } = require('sequelize');
+const { Op, col } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId } = require('../../utils/cityMapper');
 
@@ -89,7 +89,7 @@ class InventarioController {
       // Filtrar por stock bajo
       if (low_stock === 'true') {
         whereClause[Op.and] = [
-          { stock_inicial: { [Op.lte]: Op.col('stock_minimo') } }
+          { stock_inicial: { [Op.lte]: col('stock_minimo') } }
         ];
       }
 
@@ -197,7 +197,8 @@ class InventarioController {
       // Verificar que el usuario tenga acceso a este inventario
       const userCityId = req.user?.ciudad_id || req.user?.ciudad?.id;
       if (userCityId !== null && inventario.fkid_ciudad !== userCityId) {
-        return res.status(403).json({
+        // El usuario no debe ver inventarios de otras ciudades: se responde como no encontrado
+        return res.status(404).json({
           success: false,
           message: 'No tienes permiso para ver este inventario'
         });
@@ -577,7 +578,8 @@ class InventarioController {
       // Verificar que el usuario tenga acceso a esta ciudad
       const userCityId = req.user?.ciudad_id || req.user?.ciudad?.id;
       if (userCityId !== null && ciudadIdFinal !== userCityId) {
-        return res.status(403).json({
+        // Si la ciudad no está dentro del alcance del usuario, se trata como no encontrada
+        return res.status(404).json({
           success: false,
           message: 'No tienes permiso para ver inventario de esta ciudad'
         });
@@ -748,7 +750,7 @@ class InventarioController {
         where: { 
           ...baseWhere,
           stock_inicial: {
-            [Op.lte]: Op.col('stock_minimo')
+            [Op.lte]: col('stock_minimo')
           }
         }
       });

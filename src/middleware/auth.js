@@ -98,7 +98,7 @@ const authenticateToken = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Error en autenticación:', error);
-    return res.status(403).json({
+    return res.status(401).json({
       success: false,
       message: 'Token inválido o expirado'
     });
@@ -115,7 +115,7 @@ const requireRole = (roles) => {
     }
 
     if (!req.user.rol || !roles.includes(req.user.rol.nombre)) {
-      return res.status(403).json({
+      return res.status(422).json({
         success: false,
         message: 'Permisos insuficientes'
       });

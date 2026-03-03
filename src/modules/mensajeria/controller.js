@@ -331,7 +331,8 @@ class MensajeriaController {
           console.log('Webhook verificado');
           return res.status(200).send(challenge);
         } else {
-          return res.status(403).send('Forbidden');
+          // La verificación del webhook falló: no es un error de autenticación de usuario
+          return res.status(400).send('Verificación del webhook fallida');
         }
       }
 

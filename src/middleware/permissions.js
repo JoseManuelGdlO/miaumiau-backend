@@ -28,7 +28,7 @@ const requirePermission = (requiredPermissions) => {
         );
 
         if (!hasPermission) {
-          return res.status(403).json({
+          return res.status(422).json({
             success: false,
             message: 'Permisos insuficientes',
             required: permissions,
@@ -59,7 +59,7 @@ const requirePermission = (requiredPermissions) => {
       });
 
       if (!userWithPermissions || !userWithPermissions.rol) {
-        return res.status(403).json({
+        return res.status(422).json({
           success: false,
           message: 'Usuario sin rol asignado'
         });
@@ -79,7 +79,7 @@ const requirePermission = (requiredPermissions) => {
       );
 
       if (!hasPermission) {
-        return res.status(403).json({
+        return res.status(422).json({
           success: false,
           message: 'Permisos insuficientes',
           required: permissions,
@@ -135,7 +135,7 @@ const requireAllPermissions = (requiredPermissions) => {
       });
 
       if (!userWithPermissions || !userWithPermissions.rol) {
-        return res.status(403).json({
+        return res.status(422).json({
           success: false,
           message: 'Usuario sin rol asignado'
         });
@@ -154,7 +154,7 @@ const requireAllPermissions = (requiredPermissions) => {
           !userPermissions.includes(permission)
         );
         
-        return res.status(403).json({
+        return res.status(422).json({
           success: false,
           message: 'Permisos insuficientes',
           required: requiredPermissions,
@@ -207,7 +207,7 @@ const requireSuperAdmin = () => {
         return next();
       }
 
-      return res.status(403).json({
+      return res.status(422).json({
         success: false,
         message: 'Se requiere rol de super administrador'
       });
@@ -253,7 +253,7 @@ const requireSuperAdminOrPermission = (requiredPermissions) => {
         );
 
         if (!hasPermission) {
-          return res.status(403).json({
+          return res.status(422).json({
             success: false,
             message: 'Permisos insuficientes',
             required: permissions,

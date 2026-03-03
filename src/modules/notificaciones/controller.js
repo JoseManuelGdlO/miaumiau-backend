@@ -675,31 +675,69 @@ class NotificacionController {
   async getDashboardKPIs(req, res, next) {
     try {
       const ahora = new Date();
-      const inicioMesActual = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-      const finMesActual = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0, 23, 59, 59, 999);
-      
-      const inicioMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
-      const finMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth(), 0, 23, 59, 59, 999);
+      let inicioMesActual, finMesActual, inicioMesAnterior, finMesAnterior;
 
-      // 1. CONVERSACIONES ACTIVAS (Total actual de conversaciones activas)
-      const conversacionesActivasActual = await Conversacion.count({
-        where: {
-          status: 'activa',
-          baja_logica: false
+      const mesQuery = req.query.mes != null ? parseInt(req.query.mes, 10) : null;
+      const anioQuery = req.query.anio != null ? parseInt(req.query.anio, 10) : null;
+      const anioActual = ahora.getFullYear();
+
+      if (mesQuery != null || anioQuery != null) {
+        if (!Number.isInteger(mesQuery) || mesQuery < 1 || mesQuery > 12 ||
+            !Number.isInteger(anioQuery) || anioQuery < 2020 || anioQuery > anioActual + 1) {
+          return res.status(400).json({
+            success: false,
+            message: 'Parámetros inválidos: mes debe estar entre 1 y 12, año entre 2020 y ' + (anioActual + 1)
+          });
         }
-      });
+      }
 
-      // Para comparación: contar conversaciones activas al final del mes anterior
-      // Esto es una aproximación - contar las que estaban activas y fueron creadas antes del fin del mes anterior
-      const conversacionesActivasFinMesAnterior = await Conversacion.count({
-        where: {
-          status: 'activa',
-          baja_logica: false,
-          created_at: {
-            [Op.lte]: finMesAnterior
+      if (
+        Number.isInteger(mesQuery) && mesQuery >= 1 && mesQuery <= 12 &&
+        Number.isInteger(anioQuery) && anioQuery >= 2020 && anioQuery <= anioActual + 1
+      ) {
+        inicioMesActual = new Date(anioQuery, mesQuery - 1, 1);
+        finMesActual = new Date(anioQuery, mesQuery, 0, 23, 59, 59, 999);
+        inicioMesAnterior = new Date(anioQuery, mesQuery - 2, 1);
+        finMesAnterior = new Date(anioQuery, mesQuery - 1, 0, 23, 59, 59, 999);
+      } else {
+        inicioMesActual = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+        finMesActual = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0, 23, 59, 59, 999);
+        inicioMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        finMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth(), 0, 23, 59, 59, 999);
+      }
+
+      const periodoSeleccionado = mesQuery != null && anioQuery != null;
+
+      // 1. CONVERSACIONES: si hay mes/año seleccionado = creadas en el mes; si no = total activas actuales
+      let conversacionesActivasActual, conversacionesActivasFinMesAnterior;
+      if (periodoSeleccionado) {
+        conversacionesActivasActual = await Conversacion.count({
+          where: {
+            baja_logica: false,
+            created_at: { [Op.between]: [inicioMesActual, finMesActual] }
           }
-        }
-      });
+        });
+        conversacionesActivasFinMesAnterior = await Conversacion.count({
+          where: {
+            baja_logica: false,
+            created_at: { [Op.between]: [inicioMesAnterior, finMesAnterior] }
+          }
+        });
+      } else {
+        conversacionesActivasActual = await Conversacion.count({
+          where: {
+            status: 'activa',
+            baja_logica: false
+          }
+        });
+        conversacionesActivasFinMesAnterior = await Conversacion.count({
+          where: {
+            status: 'activa',
+            baja_logica: false,
+            created_at: { [Op.lte]: finMesAnterior }
+          }
+        });
+      }
 
       const cambioConversaciones = conversacionesActivasFinMesAnterior > 0
         ? ((conversacionesActivasActual - conversacionesActivasFinMesAnterior) / conversacionesActivasFinMesAnterior * 100).toFixed(1)
@@ -793,6 +831,9 @@ class NotificacionController {
         ? ((ventasMesActual - ventasMesAnterior) / ventasMesAnterior * 100).toFixed(1)
         : ventasMesActual > 0 ? '100' : '0';
 
+      const valorClientes = periodoSeleccionado ? clientesActual : totalClientesRegistrados;
+      const valorCiudades = periodoSeleccionado ? ciudadesNuevasEsteMes : ciudadesActivasActual;
+
       // Formatear respuesta
       res.status(200).json({
         success: true,
@@ -805,14 +846,14 @@ class NotificacionController {
               : `${cambioConversaciones}% desde el mes pasado`
           },
           clientesRegistrados: {
-            valor: totalClientesRegistrados,
+            valor: valorClientes,
             cambio: parseFloat(cambioClientes),
             cambioFormato: cambioClientes >= 0
               ? `+${cambioClientes}% desde el mes pasado`
               : `${cambioClientes}% desde el mes pasado`
           },
           ciudadesActivas: {
-            valor: ciudadesActivasActual,
+            valor: valorCiudades,
             cambio: cambioCiudades,
             cambioFormato: cambioCiudades >= 0
               ? `+${cambioCiudades} desde el mes pasado`
