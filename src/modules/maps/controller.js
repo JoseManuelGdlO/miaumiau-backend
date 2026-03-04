@@ -133,45 +133,79 @@ class MapsController {
         });
       }
 
-      // Convertir arrays de coordenadas a string
-      const originsStr = origins.map(c => `${c.lat},${c.lng}`).join('|');
-      const destinationsStr = destinations.map(c => `${c.lat},${c.lng}`).join('|');
+      const totalOrigins = origins.length;
+      const totalDestinations = destinations.length;
 
-      const response = await axios.get(
-        `https://maps.googleapis.com/maps/api/distancematrix/json`,
-        {
-          params: {
-            origins: originsStr,
-            destinations: destinationsStr,
-            key: apiKey,
-            units: 'metric'
-          }
-        }
+      if (totalOrigins === 0 || totalDestinations === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Los orígenes y destinos no pueden estar vacíos'
+        });
+      }
+
+      // Google impone un límite de elementos (origins * destinations) por petición.
+      // Usamos un límite conservador de 100 elementos y troceamos origins en chunks.
+      const MAX_ELEMENTS_PER_REQUEST = 100;
+      const maxOriginsPerChunk = Math.max(
+        1,
+        Math.floor(MAX_ELEMENTS_PER_REQUEST / totalDestinations)
       );
 
-      if (response.data.status === 'OK') {
-        const matrix = response.data.rows.map((row, i) =>
-          row.elements.map((element, j) => ({
+      const allOriginAddresses = [];
+      let destinationAddresses = null;
+      const fullMatrix = [];
+
+      for (let start = 0; start < totalOrigins; start += maxOriginsPerChunk) {
+        const end = Math.min(start + maxOriginsPerChunk, totalOrigins);
+        const originsChunk = origins.slice(start, end);
+
+        const originsStr = originsChunk.map(c => `${c.lat},${c.lng}`).join('|');
+        const destinationsStr = destinations.map(c => `${c.lat},${c.lng}`).join('|');
+
+        const response = await axios.get(
+          `https://maps.googleapis.com/maps/api/distancematrix/json`,
+          {
+            params: {
+              origins: originsStr,
+              destinations: destinationsStr,
+              key: apiKey,
+              units: 'metric'
+            }
+          }
+        );
+
+        if (response.data.status !== 'OK') {
+          return res.status(400).json({
+            success: false,
+            message: `Error de Google Maps: ${response.data.status}`,
+            error: response.data.error_message
+          });
+        }
+
+        if (!destinationAddresses) {
+          destinationAddresses = response.data.destination_addresses;
+        }
+
+        allOriginAddresses.push(...response.data.origin_addresses);
+
+        const chunkMatrix = response.data.rows.map(row =>
+          row.elements.map(element => ({
             distance: element.status === 'OK' ? element.distance.value / 1000 : null, // en km
             duration: element.status === 'OK' ? element.duration.value / 60 : null, // en minutos
             status: element.status
           }))
         );
 
-        return res.json({
-          success: true,
-          data: {
-            matrix: matrix,
-            origin_addresses: response.data.origin_addresses,
-            destination_addresses: response.data.destination_addresses
-          }
-        });
+        fullMatrix.push(...chunkMatrix);
       }
 
-      return res.status(400).json({
-        success: false,
-        message: `Error de Google Maps: ${response.data.status}`,
-        error: response.data.error_message
+      return res.json({
+        success: true,
+        data: {
+          matrix: fullMatrix,
+          origin_addresses: allOriginAddresses,
+          destination_addresses: destinationAddresses
+        }
       });
     } catch (error) {
       console.error('Error calculando matriz de distancias:', error);
