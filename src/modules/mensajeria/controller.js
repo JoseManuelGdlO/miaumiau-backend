@@ -2,6 +2,8 @@ const { Conversacion, ConversacionChat, ConversacionLog, Cliente } = require('..
 const { sendWhatsAppMessage } = require('../../utils/whatsapp');
 const { Sequelize } = require('sequelize');
 const { Op } = Sequelize;
+const moment = require('moment-timezone');
+const { getTimezoneForConversationId } = require('../../utils/conversationTimezone');
 
 /**
  * Busca un mensaje por whatsapp_message_id usando consulta SQL directa
@@ -248,9 +250,12 @@ class MensajeriaController {
         });
       }
 
-      const now = new Date();
-      const fecha = now.toISOString().split('T')[0];
-      const hora = now.toTimeString().split(' ')[0];
+      // Obtener timezone de la ciudad del mensaje (Cliente o Pedido); default America/Monterrey
+      const timezone = await getTimezoneForConversationId(conversacion.id);
+      const nowInTz = moment().tz(timezone);
+      const fecha = nowInTz.format('YYYY-MM-DD');
+      const hora = nowInTz.format('HH:mm:ss');
+      const nowAsDate = nowInTz.toDate();
 
       // Determinar el estado inicial del mensaje
       // Si tenemos message_id, el mensaje fue aceptado por WhatsApp (sent)
@@ -274,13 +279,15 @@ class MensajeriaController {
           status: sendResult.status,
           whatsapp_message_id: sendResult.messageId || null,
           whatsapp_status: whatsappStatus,
-          whatsapp_status_updated_at: now.toISOString()
-        }
+          whatsapp_status_updated_at: nowAsDate.toISOString()
+        },
+        createdAt: nowAsDate,
+        updatedAt: nowAsDate
       });
 
       // Actualizar la fecha de última actividad de la conversación
       await Conversacion.update(
-        { updatedAt: now },
+        { updatedAt: nowAsDate },
         { where: { id: conversacion.id } }
       );
 

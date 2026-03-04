@@ -1,5 +1,7 @@
 const { ConversacionChat, Conversacion, ConversacionLog } = require('../../models');
 const { Op } = require('sequelize');
+const moment = require('moment-timezone');
+const { getTimezoneForConversationId } = require('../../utils/conversationTimezone');
 
 class ConversacionChatController {
   // Obtener todos los mensajes de chat
@@ -147,10 +149,12 @@ class ConversacionChatController {
         });
       }
 
-      // Establecer fecha y hora actuales
-      const now = new Date();
-      const fecha = now.toISOString().split('T')[0];
-      const hora = now.toTimeString().split(' ')[0];
+      // Obtener timezone de la ciudad del mensaje (Cliente o Pedido); default America/Monterrey
+      const timezone = await getTimezoneForConversationId(fkid_conversacion);
+      const nowInTz = moment().tz(timezone);
+      const fecha = nowInTz.format('YYYY-MM-DD');
+      const hora = nowInTz.format('HH:mm:ss');
+      const nowAsDate = nowInTz.toDate();
 
       // Inicializar metadata: si viene en el body y es un objeto, usarlo; si no, usar objeto vacío
       // Esto asegura que siempre haya un objeto metadata (nunca null) para facilitar búsquedas y actualizaciones
@@ -177,7 +181,7 @@ class ConversacionChatController {
         metadata.whatsapp_status = 'pending';
         // Solo establecer la fecha si no viene ya parseada
         if (!metadata.whatsapp_status_updated_at) {
-          metadata.whatsapp_status_updated_at = now.toISOString();
+          metadata.whatsapp_status_updated_at = nowAsDate.toISOString();
         }
       }
 
@@ -193,12 +197,14 @@ class ConversacionChatController {
         from,
         mensaje,
         tipo_mensaje,
-        metadata
+        metadata,
+        createdAt: nowAsDate,
+        updatedAt: nowAsDate
       });
 
       // Actualizar la fecha de última actividad de la conversación
       await Conversacion.update(
-        { updatedAt: now },
+        { updatedAt: nowAsDate },
         { where: { id: conversacion.id } }
       );
 
