@@ -1,10 +1,35 @@
 const axios = require('axios');
 
+// Helper: llamar a la API de geocoding de Google
+async function callGeocodeApi(address, apiKey) {
+  const response = await axios.get(
+    `https://maps.googleapis.com/maps/api/geocode/json`,
+    {
+      params: {
+        address,
+        key: apiKey,
+        region: 'mx'
+      }
+    }
+  );
+  return response.data;
+}
+
+// Helper: detectar si la API encontró la calle (vs dirección genérica tipo "Ciudad, Mexico")
+function isStreetFound(formattedAddress, searchedAddress) {
+  const parts = formattedAddress.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length <= 3) return false;
+  if (searchedAddress && formattedAddress.toLowerCase().includes(searchedAddress.toLowerCase())) return true;
+  const streetPrefixes = ['c.', 'av.', 'calle', 'blvd', 'boulevard', 'privada', 'priv.', 'prolongación'];
+  const firstPart = parts[0].toLowerCase();
+  return streetPrefixes.some(prefix => firstPart.startsWith(prefix));
+}
+
 class MapsController {
   // Geocodificar una dirección
   async geocodeAddress(req, res, next) {
     try {
-      const { address, estado, ciudad } = req.body;
+      const { address, ciudad, codigo_postal, colonia } = req.body;
 
       if (!address) {
         return res.status(400).json({
@@ -21,43 +46,52 @@ class MapsController {
         });
       }
 
-      // Construir dirección completa con estado/ciudad para mejor precisión
+      // Construir dirección completa: address + colonia (opcional) + ciudad + codigo_postal (opcional)
       let fullAddress = address;
-      if (estado) {
-        fullAddress += `, ${estado}`;
-      }
-      if (ciudad && !address.includes(ciudad)) {
-        fullAddress += `, ${ciudad}`;
-      }
+      if (colonia) fullAddress += `, ${colonia}`;
+      if (ciudad && !address.includes(ciudad)) fullAddress += `, ${ciudad}`;
+      if (codigo_postal) fullAddress += `, ${codigo_postal}`;
 
       console.log(`[MAPS] Geocodificando dirección: ${fullAddress}`);
 
-      const response = await axios.get(
-        `https://maps.googleapis.com/maps/api/geocode/json`,
-        {
-          params: {
-            address: fullAddress,
-            key: apiKey,
-            region: 'mx' // Restringir búsqueda a México
-          }
-        }
-      );
+      let data = await callGeocodeApi(fullAddress, apiKey);
 
       console.log('[MAPS] Geocode respuesta cruda de Google:', {
-        status: response.data?.status,
-        resultsLength: Array.isArray(response.data?.results) ? response.data.results.length : null,
-        error_message: response.data?.error_message,
-        fullResponse: response.data
+        status: data?.status,
+        resultsLength: Array.isArray(data?.results) ? data.results.length : null,
+        error_message: data?.error_message
       });
 
-      if (response.data.status === 'OK' && response.data.results.length > 0) {
-        const location = response.data.results[0].geometry.location;
+      if (data.status === 'OK' && data.results.length > 0) {
+        const result = data.results[0];
+        const location = result.geometry.location;
+        const formattedAddress = result.formatted_address;
+
+        const streetFound = isStreetFound(formattedAddress, address);
+
+        if (!streetFound && (colonia || codigo_postal)) {
+          const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
+          console.log(`[MAPS] Calle no encontrada, intentando fallback: ${fallbackAddress}`);
+          const fallbackData = await callGeocodeApi(fallbackAddress, apiKey);
+          if (fallbackData.status === 'OK' && fallbackData.results.length > 0) {
+            const fb = fallbackData.results[0];
+            return res.json({
+              success: true,
+              data: {
+                lat: fb.geometry.location.lat,
+                lng: fb.geometry.location.lng,
+                formatted_address: fb.formatted_address
+              }
+            });
+          }
+        }
+
         return res.json({
           success: true,
           data: {
             lat: location.lat,
             lng: location.lng,
-            formatted_address: response.data.results[0].formatted_address
+            formatted_address: formattedAddress
           }
         });
       }
@@ -167,51 +201,59 @@ class MapsController {
 
       // Geocodificar todas las direcciones en paralelo
       const geocodePromises = addresses.map(async (addressData) => {
+        const addressKey = typeof addressData === 'string' ? addressData : addressData.address;
         try {
-          // addressData puede ser string o objeto con address, estado, ciudad
           const address = typeof addressData === 'string' ? addressData : addressData.address;
-          const estado = typeof addressData === 'object' ? addressData.estado : undefined;
           const ciudad = typeof addressData === 'object' ? addressData.ciudad : undefined;
-          
-          // Construir dirección completa
+          const codigo_postal = typeof addressData === 'object' ? addressData.codigo_postal : undefined;
+          const colonia = typeof addressData === 'object' ? addressData.colonia : undefined;
+
           let fullAddress = address;
-          if (estado) {
-            fullAddress += `, ${estado}`;
-          }
-          if (ciudad && !address.includes(ciudad)) {
-            fullAddress += `, ${ciudad}`;
-          }
-          
-          const response = await axios.get(
-            `https://maps.googleapis.com/maps/api/geocode/json`,
-            {
-              params: {
-                address: fullAddress,
-                key: apiKey,
-                region: 'mx' // Restringir búsqueda a México
+          if (colonia) fullAddress += `, ${colonia}`;
+          if (ciudad && !address.includes(ciudad)) fullAddress += `, ${ciudad}`;
+          if (codigo_postal) fullAddress += `, ${codigo_postal}`;
+
+          let data = await callGeocodeApi(fullAddress, apiKey);
+
+          if (data.status === 'OK' && data.results.length > 0) {
+            const result = data.results[0];
+            const location = result.geometry.location;
+            const formattedAddress = result.formatted_address;
+
+            const streetFound = isStreetFound(formattedAddress, address);
+
+            if (!streetFound && (colonia || codigo_postal)) {
+              const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
+              const fallbackData = await callGeocodeApi(fallbackAddress, apiKey);
+              if (fallbackData.status === 'OK' && fallbackData.results.length > 0) {
+                const fb = fallbackData.results[0];
+                return {
+                  address: addressKey,
+                  success: true,
+                  lat: fb.geometry.location.lat,
+                  lng: fb.geometry.location.lng,
+                  formatted_address: fb.formatted_address
+                };
               }
             }
-          );
 
-          if (response.data.status === 'OK' && response.data.results.length > 0) {
-            const location = response.data.results[0].geometry.location;
             return {
-              address: typeof addressData === 'string' ? addressData : addressData.address,
+              address: addressKey,
               success: true,
               lat: location.lat,
               lng: location.lng,
-              formatted_address: response.data.results[0].formatted_address
+              formatted_address: formattedAddress
             };
           }
 
           return {
-            address: typeof addressData === 'string' ? addressData : addressData.address,
+            address: addressKey,
             success: false,
-            error: response.data.status
+            error: data.status
           };
         } catch (error) {
           return {
-            address: address,
+            address: addressKey,
             success: false,
             error: error.message
           };
