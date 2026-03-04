@@ -196,6 +196,21 @@ class ClienteController {
       const email = req.body.email ?? req.body.correo_electronico;
       const fkid_ciudad = req.body.fkid_ciudad ?? req.body.ciudad_id;
 
+      const clienteInclude = [
+        {
+          model: City,
+          as: 'ciudad',
+          attributes: ['id', 'nombre', 'departamento']
+        },
+        {
+          model: Mascota,
+          as: 'mascotas',
+          where: { isActive: true },
+          required: false,
+          attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
+        }
+      ];
+
       // Verificar que el email no exista (si se proporciona)
       if (email) {
         const existingCliente = await Cliente.findOne({
@@ -203,9 +218,17 @@ class ClienteController {
         });
 
         if (existingCliente) {
-          return res.status(400).json({
-            success: false,
-            message: 'Ya existe un cliente con ese correo electrónico'
+          const clienteCompleto = await Cliente.findByPk(existingCliente.id, {
+            include: clienteInclude
+          });
+
+          return res.status(200).json({
+            success: true,
+            message: 'Ya existe un cliente con ese correo electrónico',
+            data: {
+              cliente: clienteCompleto,
+              alreadyExists: true
+            }
           });
         }
       }
@@ -216,9 +239,17 @@ class ClienteController {
       });
 
       if (existingPhone) {
-        return res.status(400).json({
-          success: false,
-          message: 'Ya existe un cliente con ese número de teléfono'
+        const clienteCompleto = await Cliente.findByPk(existingPhone.id, {
+          include: clienteInclude
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'Ya existe un cliente con ese número de teléfono',
+          data: {
+            cliente: clienteCompleto,
+            alreadyExists: true
+          }
         });
       }
 
@@ -245,20 +276,7 @@ class ClienteController {
 
       // Obtener el cliente creado con sus relaciones
       const clienteCompleto = await Cliente.findByPk(cliente.id, {
-        include: [
-          {
-            model: City,
-            as: 'ciudad',
-            attributes: ['id', 'nombre', 'departamento']
-          },
-          {
-            model: Mascota,
-            as: 'mascotas',
-            where: { isActive: true },
-            required: false,
-            attributes: ['id', 'nombre', 'edad', 'genero', 'raza']
-          }
-        ]
+        include: clienteInclude
       });
 
       res.status(201).json({
