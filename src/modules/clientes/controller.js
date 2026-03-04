@@ -218,6 +218,11 @@ class ClienteController {
         });
 
         if (existingCliente) {
+          // Si el cliente existe pero está inactivo, reactivarlo
+          if (!existingCliente.isActive) {
+            await existingCliente.update({ isActive: true });
+          }
+
           const clienteCompleto = await Cliente.findByPk(existingCliente.id, {
             include: clienteInclude
           });
@@ -239,6 +244,11 @@ class ClienteController {
       });
 
       if (existingPhone) {
+        // Si el cliente existe pero está inactivo, reactivarlo
+        if (!existingPhone.isActive) {
+          await existingPhone.update({ isActive: true });
+        }
+
         const clienteCompleto = await Cliente.findByPk(existingPhone.id, {
           include: clienteInclude
         });
