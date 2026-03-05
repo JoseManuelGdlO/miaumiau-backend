@@ -1591,20 +1591,6 @@ class PedidoController {
       const maxPedidosPorHorario = ciudadConfig ? ciudadConfig.getMaxPedidosPorHorario() : 5;
       const diasTrabajo = ciudadConfig ? ciudadConfig.getDiasTrabajo() : [0, 1, 2, 3, 4, 5, 6];
 
-      // Obtener rango horario de entrega (por ciudad o por defecto)
-      const DEFAULT_HORA_INICIO = 8;
-      const DEFAULT_HORA_FIN = 18;
-      let horaInicio = DEFAULT_HORA_INICIO;
-      let horaFin = DEFAULT_HORA_FIN;
-
-      if (ciudadConfig && typeof ciudadConfig.getHorasEntrega === 'function') {
-        const horas = ciudadConfig.getHorasEntrega();
-        if (horas && typeof horas.inicio === 'number' && typeof horas.fin === 'number') {
-          horaInicio = horas.inicio;
-          horaFin = horas.fin;
-        }
-      }
-
       // Calcular fecha de inicio (día siguiente)
       const fechaInicioDisponibilidad = new Date(fechaInicio);
       fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
@@ -1638,6 +1624,17 @@ class PedidoController {
             motivo_no_disponible: 'Día no laboral'
           });
           continue;
+        }
+
+        // Horario de entrega para este día: por día de la semana o general de la ciudad (fallback 8-18)
+        let horaInicio = 8;
+        let horaFin = 18;
+        if (ciudadConfig && typeof ciudadConfig.getHorasEntregaParaDia === 'function') {
+          const horas = ciudadConfig.getHorasEntregaParaDia(diaSemana);
+          if (horas && typeof horas.inicio === 'number' && typeof horas.fin === 'number') {
+            horaInicio = horas.inicio;
+            horaFin = horas.fin;
+          }
         }
 
         // Rango del único horario de entrega (configurable: hora inicio, hora fin)

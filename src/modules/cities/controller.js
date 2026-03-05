@@ -2,6 +2,36 @@ const { City } = require('../../models');
 const { Op } = require('sequelize');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
+// Validar horario_por_dia: objeto con claves "0"-"6", valores { inicio, fin } (0-23, inicio < fin)
+function validateHorarioPorDia(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return 'horario_por_dia debe ser un objeto';
+  }
+  const validKeys = ['0', '1', '2', '3', '4', '5', '6'];
+  for (const key of Object.keys(value)) {
+    if (!validKeys.includes(String(key))) {
+      return `horario_por_dia: clave "${key}" inválida. Debe ser "0"-"6" (0=domingo, 6=sábado)`;
+    }
+    const slot = value[key];
+    if (!slot || typeof slot !== 'object') {
+      return `horario_por_dia["${key}"] debe ser un objeto con inicio y fin`;
+    }
+    const inicio = typeof slot.inicio === 'number' ? slot.inicio : parseInt(slot.inicio, 10);
+    const fin = typeof slot.fin === 'number' ? slot.fin : parseInt(slot.fin, 10);
+    if (!Number.isInteger(inicio) || !Number.isInteger(fin)) {
+      return `horario_por_dia["${key}"]: inicio y fin deben ser números`;
+    }
+    if (inicio < 0 || inicio > 23 || fin < 0 || fin > 23) {
+      return `horario_por_dia["${key}"]: inicio y fin deben estar entre 0 y 23`;
+    }
+    if (inicio >= fin) {
+      return `horario_por_dia["${key}"]: inicio debe ser menor que fin`;
+    }
+  }
+  return null;
+}
+
 class CityController {
   // Obtener todas las ciudades
   async getAllCities(req, res, next) {
@@ -120,8 +150,7 @@ class CityController {
         notas_adicionales,
         max_pedidos_por_horario = 5,
         dias_trabajo = [0, 1, 2, 3, 4, 5, 6],
-        hora_inicio_entrega,
-        hora_fin_entrega
+        horario_por_dia
       } = req.body;
 
       // Verificar si la ciudad ya existe
@@ -163,56 +192,15 @@ class CityController {
         }
       }
 
-      // Helper para parsear horas (acepta número o string de dígitos)
-      const parseHour = (value) => {
-        if (value === undefined || value === null || value === '') return null;
-        if (typeof value === 'number') return value;
-        const parsed = parseInt(value, 10);
-        return Number.isNaN(parsed) ? NaN : parsed;
-      };
-
-      const inicioParsed = parseHour(hora_inicio_entrega);
-      const finParsed = parseHour(hora_fin_entrega);
-
-      // Validar horas de entrega si se proporcionan
-      if (!Number.isNaN(inicioParsed) && inicioParsed !== null) {
-        if (inicioParsed < 0 || inicioParsed > 23) {
+      if (horario_por_dia !== undefined && horario_por_dia !== null) {
+        const horarioError = validateHorarioPorDia(horario_por_dia);
+        if (horarioError) {
           return res.status(400).json({
             success: false,
-            message: 'hora_inicio_entrega debe estar entre 0 y 23'
+            message: horarioError
           });
         }
-      }
-
-      if (!Number.isNaN(finParsed) && finParsed !== null) {
-        if (finParsed < 0 || finParsed > 23) {
-          return res.status(400).json({
-            success: false,
-            message: 'hora_fin_entrega debe estar entre 0 y 23'
-          });
-        }
-      }
-
-      if (
-        !Number.isNaN(inicioParsed) &&
-        !Number.isNaN(finParsed) &&
-        inicioParsed !== null &&
-        finParsed !== null
-      ) {
-        if (inicioParsed >= finParsed) {
-          return res.status(400).json({
-            success: false,
-            message: 'hora_inicio_entrega debe ser menor que hora_fin_entrega'
-          });
-        }
-      }
-
-      const horasEntregaData = {};
-      if (!Number.isNaN(inicioParsed)) {
-        horasEntregaData.hora_inicio_entrega = inicioParsed;
-      }
-      if (!Number.isNaN(finParsed)) {
-        horasEntregaData.hora_fin_entrega = finParsed;
+        var horasEntregaData = { horario_por_dia };
       }
 
       const city = await City.create({
@@ -314,62 +302,17 @@ class CityController {
         }
       }
 
-      // Helper para parsear horas (acepta número o string de dígitos)
-      const parseHour = (value) => {
-        if (value === undefined || value === null || value === '') return null;
-        if (typeof value === 'number') return value;
-        const parsed = parseInt(value, 10);
-        return Number.isNaN(parsed) ? NaN : parsed;
-      };
-
-      if ('hora_inicio_entrega' in updateData || 'hora_fin_entrega' in updateData) {
-        const inicioParsed = parseHour(updateData.hora_inicio_entrega);
-        const finParsed = parseHour(updateData.hora_fin_entrega);
-
-        if (!Number.isNaN(inicioParsed) && inicioParsed !== null) {
-          if (inicioParsed < 0 || inicioParsed > 23) {
+      if (updateData.horario_por_dia !== undefined) {
+        if (updateData.horario_por_dia !== null) {
+          const horarioError = validateHorarioPorDia(updateData.horario_por_dia);
+          if (horarioError) {
             return res.status(400).json({
               success: false,
-              message: 'hora_inicio_entrega debe estar entre 0 y 23'
+              message: horarioError
             });
           }
         }
-
-        if (!Number.isNaN(finParsed) && finParsed !== null) {
-          if (finParsed < 0 || finParsed > 23) {
-            return res.status(400).json({
-              success: false,
-              message: 'hora_fin_entrega debe estar entre 0 y 23'
-            });
-          }
-        }
-
-        if (
-          !Number.isNaN(inicioParsed) &&
-          !Number.isNaN(finParsed) &&
-          inicioParsed !== null &&
-          finParsed !== null
-        ) {
-          if (inicioParsed >= finParsed) {
-            return res.status(400).json({
-              success: false,
-              message: 'hora_inicio_entrega debe ser menor que hora_fin_entrega'
-            });
-          }
-        }
-
-        if (!Number.isNaN(inicioParsed)) {
-          updateData.hora_inicio_entrega = inicioParsed;
-        } else if (updateData.hora_inicio_entrega === null) {
-          // Permitir limpiar el valor explícitamente con null
-          updateData.hora_inicio_entrega = null;
-        }
-
-        if (!Number.isNaN(finParsed)) {
-          updateData.hora_fin_entrega = finParsed;
-        } else if (updateData.hora_fin_entrega === null) {
-          updateData.hora_fin_entrega = null;
-        }
+        // null o objeto válido: se persiste tal cual
       }
 
       await city.update(updateData);

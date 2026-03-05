@@ -61,24 +61,6 @@ module.exports = (sequelize, DataTypes) => {
         max: 1440 // 24 horas en minutos
       }
     },
-    hora_inicio_entrega: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      comment: 'Hora de inicio del turno de entregas (0-23)',
-      validate: {
-        min: 0,
-        max: 23
-      }
-    },
-    hora_fin_entrega: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      comment: 'Hora de fin del turno de entregas (0-23)',
-      validate: {
-        min: 0,
-        max: 23
-      }
-    },
     horario_atencion: {
       type: DataTypes.STRING(100),
       allowNull: true,
@@ -156,6 +138,40 @@ module.exports = (sequelize, DataTypes) => {
         }
       }
     },
+    horario_por_dia: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Horario por día de la semana: claves "0"-"6", valores { inicio, fin } (0-23)',
+      validate: {
+        isValidHorarioPorDia(value) {
+          if (value === null || value === undefined) return;
+          if (typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error('horario_por_dia debe ser un objeto');
+          }
+          const validKeys = ['0', '1', '2', '3', '4', '5', '6'];
+          for (const key of Object.keys(value)) {
+            if (!validKeys.includes(String(key))) {
+              throw new Error(`horario_por_dia: clave "${key}" inválida. Debe ser "0"-"6"`);
+            }
+            const slot = value[key];
+            if (!slot || typeof slot !== 'object') {
+              throw new Error(`horario_por_dia["${key}"] debe ser { inicio, fin }`);
+            }
+            const inicio = slot.inicio;
+            const fin = slot.fin;
+            if (typeof inicio !== 'number' || typeof fin !== 'number') {
+              throw new Error(`horario_por_dia["${key}"]: inicio y fin deben ser números`);
+            }
+            if (inicio < 0 || inicio > 23 || fin < 0 || fin > 23) {
+              throw new Error(`horario_por_dia["${key}"]: inicio y fin deben estar entre 0 y 23`);
+            }
+            if (inicio >= fin) {
+              throw new Error(`horario_por_dia["${key}"]: inicio debe ser menor que fin`);
+            }
+          }
+        }
+      }
+    },
     baja_logica: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
@@ -205,29 +221,25 @@ module.exports = (sequelize, DataTypes) => {
     return this.save();
   };
 
-  // Método helper para obtener horas de entrega (con valores por defecto)
+  // Método helper para obtener horas de entrega por defecto
   City.prototype.getHorasEntrega = function() {
-    const DEFAULT_INICIO = 8;
-    const DEFAULT_FIN = 18;
+    return { inicio: 9, fin: 18 };
+  };
 
-    const inicioRaw = this.hora_inicio_entrega;
-    const finRaw = this.hora_fin_entrega;
-
-    const inicio = typeof inicioRaw === 'number' ? inicioRaw : DEFAULT_INICIO;
-    const fin = typeof finRaw === 'number' ? finRaw : DEFAULT_FIN;
-
-    // Validar que las horas estén en rango y que inicio < fin
-    const inicioValido = Number.isInteger(inicio) && inicio >= 0 && inicio <= 23;
-    const finValido = Number.isInteger(fin) && fin >= 0 && fin <= 23 && fin > inicio;
-
-    if (!inicioValido || !finValido) {
-      return {
-        inicio: DEFAULT_INICIO,
-        fin: DEFAULT_FIN
-      };
+  // Método helper para obtener horas de entrega para un día de la semana (0-6)
+  City.prototype.getHorasEntregaParaDia = function(diaSemana) {
+    const dayKey = String(diaSemana);
+    if (this.horario_por_dia && typeof this.horario_por_dia === 'object' && this.horario_por_dia[dayKey]) {
+      const slot = this.horario_por_dia[dayKey];
+      const inicio = slot?.inicio;
+      const fin = slot?.fin;
+      if (typeof inicio === 'number' && typeof fin === 'number' &&
+          inicio >= 0 && inicio <= 23 && fin >= 0 && fin <= 23 && fin > inicio) {
+        return { inicio, fin };
+      }
     }
-
-    return { inicio, fin };
+    // Si no hay configuración válida para ese día, usar horario global por defecto
+    return this.getHorasEntrega();
   };
 
   // Método helper para obtener días de trabajo
