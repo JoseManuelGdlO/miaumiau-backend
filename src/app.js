@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -6,6 +7,8 @@ const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const cron = require('node-cron');
 require('dotenv').config();
+
+const { ensureUploadsDirs } = require('./utils/uploadImages');
 
 const { sequelize } = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
@@ -39,6 +42,7 @@ const paqueteRoutes = require('./modules/paquetes/routes');
 const mensajeriaRoutes = require('./modules/mensajeria/routes');
 const mapsRoutes = require('./modules/maps/routes');
 const pagosRoutes = require('./modules/pagos/routes');
+const catalogoRoutes = require('./modules/catalogo/routes');
 
 const app = express();
 
@@ -141,9 +145,26 @@ app.use((req, res, next) => {
 });
 app.use(express.json({
   limit: '10mb',
-  type: (req) => !(req.method === 'POST' && req.path === '/api/conversaciones-chat')
+  type: (req) => {
+    if (req.method === 'POST' && req.path === '/api/conversaciones-chat') return false;
+    if (req.is('multipart/form-data')) return false;
+    return true;
+  }
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Carpeta de uploads (imágenes de productos y combos) y ruta estática
+// CORS explícito para /uploads: el frontend puede estar en otro origen (puerto) y cargar imágenes
+ensureUploadsDirs();
+app.use('/uploads', (req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Catálogo público por ciudad (CSV para Meta) - sin /api, sin auth
+app.use('/catalogo', catalogoRoutes);
 
 // Rutas
 app.use('/api/auth', authRoutes);

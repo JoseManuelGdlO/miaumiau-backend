@@ -5,6 +5,7 @@ const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
+const { uploadPaquetes } = require('../../utils/uploadImages');
 
 // Validaciones para crear paquete (todos los campos requeridos)
 const validatePaquete = [
@@ -189,6 +190,30 @@ router.patch('/:id/toggle-status',
   validateId, 
   validateToggleStatus, 
   paqueteController.togglePaqueteStatus
+);
+
+router.post('/:id/imagen',
+  authenticateToken,
+  requireSuperAdminOrPermission('editar_paquetes'),
+  validateId,
+  (req, res, next) => {
+    uploadPaquetes.single('imagen')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.code === 'LIMIT_FILE_SIZE' ? 'La imagen no debe superar 5 MB' : (err.message || 'Error al subir la imagen')
+        });
+      }
+      if (req.fileValidationError) {
+        return res.status(400).json({
+          success: false,
+          message: req.fileValidationError
+        });
+      }
+      next();
+    });
+  },
+  paqueteController.uploadPaqueteImage
 );
 
 router.get('/search/term', 

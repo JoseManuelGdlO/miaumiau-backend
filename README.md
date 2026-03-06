@@ -91,6 +91,12 @@ JWT_SECRET=tu_jwt_secret_muy_seguro
 JWT_EXPIRE=24h
 JWT_REFRESH_SECRET=tu_jwt_refresh_secret_muy_seguro
 JWT_REFRESH_EXPIRE=7d
+
+# URLs públicas (para imágenes y catálogo Meta)
+# En EasyPanel usa la URL base del backend (ej. https://api.tudominio.com)
+BASE_URL=
+# Alternativa: PUBLIC_URL
+# PUBLIC_URL=
 ```
 
 ## 📚 API Endpoints
@@ -157,6 +163,12 @@ curl -X GET http://localhost:3000/api/auth/profile \
 ```bash
 npm test
 ```
+
+## 🚢 Despliegue en EasyPanel
+
+- **Volumen para imágenes**: Monta un volumen persistente en el servicio del backend para que las imágenes de productos y combos no se pierdan al reiniciar. Ejemplo: ruta en el host `./data/uploads` → ruta en el contenedor `/app/uploads` (o la ruta donde la app escribe `uploads/`).
+- **Variable BASE_URL**: Configura la variable de entorno `BASE_URL` con la URL pública del backend (ej. `https://intelekia-miaumiau-back.vvggha.easypanel.host`). Así las URLs de las imágenes y del CSV de catálogo serán absolutas para Meta y el frontend.
+- **Catálogo Meta**: La URL del feed CSV por ciudad es `GET /catalogo/:slug/catalogo.csv` (pública, sin auth). Ejemplo: `https://tu-backend.com/catalogo/DURANGO/catalogo.csv`. Cada ciudad debe tener el campo `slug` configurado (ej. DURANGO, CDMX).
 
 ## 🐳 Docker
 

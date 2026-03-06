@@ -23,6 +23,12 @@ module.exports = (sequelize, DataTypes) => {
         notEmpty: true
       }
     },
+    slug: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      unique: true,
+      comment: 'Slug para URLs del catálogo por ciudad (ej. DURANGO, CDMX)'
+    },
     direccion_operaciones: {
       type: DataTypes.TEXT,
       allowNull: false,
@@ -192,6 +198,10 @@ module.exports = (sequelize, DataTypes) => {
       },
       {
         fields: ['baja_logica']
+      },
+      {
+        fields: ['slug'],
+        unique: true
       },
       {
         fields: ['nombre', 'departamento'],

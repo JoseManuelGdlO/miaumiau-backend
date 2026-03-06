@@ -349,6 +349,53 @@ class PaqueteController {
     }
   }
 
+  // Subir imagen del paquete/combo
+  async uploadPaqueteImage(req, res, next) {
+    try {
+      const { id } = req.params;
+      if (!req.file || !req.file.filename) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se recibió ninguna imagen. Envía el archivo en el campo "imagen".'
+        });
+      }
+
+      const paquete = await Paquete.findByPk(id);
+      if (!paquete) {
+        return res.status(404).json({
+          success: false,
+          message: 'Paquete no encontrado'
+        });
+      }
+
+      const baseUrl = (process.env.IMAGE_BASE_URL || process.env.BASE_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '');
+      const imagenUrl = baseUrl ? `${baseUrl}/uploads/paquetes/${req.file.filename}` : `/uploads/paquetes/${req.file.filename}`;
+
+      await paquete.update(
+        { imagen_url: imagenUrl },
+        { fields: ['imagen_url'], validate: false }
+      );
+
+      const paqueteActualizado = await Paquete.findByPk(id, {
+        include: [
+          {
+            model: ProductoPaquete,
+            as: 'productos',
+            include: [{ model: Inventario, as: 'producto', attributes: ['id', 'nombre', 'descripcion', 'precio_venta'] }]
+          }
+        ]
+      });
+
+      res.json({
+        success: true,
+        message: 'Imagen subida correctamente',
+        data: { paquete: paqueteActualizado }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Obtener paquetes activos
   async getPaquetesActivos(req, res, next) {
     try {

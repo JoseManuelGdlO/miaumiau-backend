@@ -5,6 +5,7 @@ const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
+const { uploadProductos } = require('../../utils/uploadImages');
 
 // Validaciones
 const validateInventario = [
@@ -257,6 +258,30 @@ router.patch('/:id/stock',
   validateId, 
   validateStockUpdate, 
   inventarioController.updateStock
+);
+
+router.post('/:id/imagen',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_inventarios'),
+  validateId,
+  (req, res, next) => {
+    uploadProductos.single('imagen')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.code === 'LIMIT_FILE_SIZE' ? 'La imagen no debe superar 5 MB' : (err.message || 'Error al subir la imagen')
+        });
+      }
+      if (req.fileValidationError) {
+        return res.status(400).json({
+          success: false,
+          message: req.fileValidationError
+        });
+      }
+      next();
+    });
+  },
+  inventarioController.uploadInventarioImage
 );
 
 // Rutas para consultas específicas

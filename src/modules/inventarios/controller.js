@@ -514,6 +514,52 @@ class InventarioController {
     }
   }
 
+  // Subir imagen de producto
+  async uploadInventarioImage(req, res, next) {
+    try {
+      const { id } = req.params;
+      if (!req.file || !req.file.filename) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se recibió ninguna imagen. Envía el archivo en el campo "imagen".'
+        });
+      }
+
+      const inventario = await Inventario.findByPk(id);
+      if (!inventario) {
+        return res.status(404).json({
+          success: false,
+          message: 'Inventario no encontrado'
+        });
+      }
+
+      const baseUrl = (process.env.IMAGE_BASE_URL || process.env.BASE_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '');
+      const imagenUrl = baseUrl ? `${baseUrl}/uploads/productos/${req.file.filename}` : `/uploads/productos/${req.file.filename}`;
+
+      await inventario.update(
+        { imagen_url: imagenUrl },
+        { fields: ['imagen_url'], validate: false }
+      );
+
+      const inventarioActualizado = await Inventario.findByPk(id, {
+        include: [
+          { model: Peso, as: 'peso', attributes: ['id', 'cantidad', 'unidad_medida'] },
+          { model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre', 'descripcion'] },
+          { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'] },
+          { model: Proveedor, as: 'proveedor', attributes: ['id', 'nombre', 'correo', 'telefono'] }
+        ]
+      });
+
+      res.json({
+        success: true,
+        message: 'Imagen subida correctamente',
+        data: { inventario: inventarioActualizado }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Obtener inventarios por categoría
   async getInventariosByCategory(req, res, next) {
     try {

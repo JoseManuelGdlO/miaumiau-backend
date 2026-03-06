@@ -47,6 +47,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
       allowNull: false
+    },
+    imagen_url: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      comment: 'URL pública de la imagen del combo (para catálogo Meta y UI)'
     }
   }, {
     tableName: 'paquetes',
