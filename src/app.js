@@ -112,8 +112,37 @@ app.options('*', (req, res) => {
 // Logging
 app.use(morgan('combined'));
 
-// Body parsing
-app.use(express.json({ limit: '10mb' }));
+// Body parsing: POST /api/conversaciones-chat puede enviar JSON con saltos de línea literales
+// en "mensaje"; los normalizamos antes de parsear para aceptar esos payloads.
+const { normalizeJsonMensaje } = require('./utils/normalizeJsonMensaje');
+app.use((req, res, next) => {
+  const isConversacionesChatPost = req.method === 'POST' && req.path === '/api/conversaciones-chat';
+  const isJson = req.is('application/json');
+  if (isConversacionesChatPost && isJson) {
+    const chunks = [];
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const raw = chunks.join('');
+      try {
+        req.body = JSON.parse(normalizeJsonMensaje(raw));
+        next();
+      } catch (e) {
+        res.status(400).json({
+          success: false,
+          message: 'JSON inválido',
+          error: e.message
+        });
+      }
+    });
+  } else {
+    next();
+  }
+});
+app.use(express.json({
+  limit: '10mb',
+  type: (req) => !(req.method === 'POST' && req.path === '/api/conversaciones-chat')
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Rutas
