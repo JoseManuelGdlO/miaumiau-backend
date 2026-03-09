@@ -30,7 +30,7 @@ function buildProductRow(p, baseUrl) {
   const brand = (p.proveedor && p.proveedor.nombre) ? String(p.proveedor.nombre).slice(0, 100) : 'Miaumiau';
   const availability = (p.stock_inicial > 0) ? 'in stock' : 'out of stock';
   return [
-    csvEscape(p.sku),
+    csvEscape(`PROD-${p.id}`),
     csvEscape((p.nombre || '').slice(0, 200)),
     csvEscape((p.descripcion || '').slice(0, 9999)),
     availability,
