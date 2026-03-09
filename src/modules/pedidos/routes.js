@@ -289,6 +289,13 @@ router.post('/',
   pedidoController.createPedido
 );
 
+router.post(
+  '/validar-stock',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_pedidos'),
+  pedidoController.validarStockPedido
+);
+
 router.put('/:id', 
   authenticateToken, 
   requireSuperAdminOrPermission('ver_pedidos'), 

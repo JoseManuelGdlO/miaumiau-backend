@@ -73,6 +73,129 @@ const updateConversacionesWithCliente = async (telefono, id_cliente, id_pedido =
   }
 };
 
+// Helper para calcular productos por paquete a partir de un payload simple
+const calcularProductosPorPaqueteDesdePayload = async (paquetesArray, erroresStock = []) => {
+  const productosPorPaquete = {};
+
+  if (!Array.isArray(paquetesArray) || paquetesArray.length === 0) {
+    return productosPorPaquete;
+  }
+
+  for (const paqueteItem of paquetesArray) {
+    if (!paqueteItem) continue;
+
+    const paqueteId = paqueteItem.fkid_paquete ?? paqueteItem.id;
+    const cantidadPaquetes = parseInt(paqueteItem.cantidad);
+
+    if (!paqueteId || isNaN(cantidadPaquetes) || cantidadPaquetes <= 0) {
+      continue;
+    }
+
+    const paqueteData = await Paquete.findByPk(paqueteId);
+    if (!paqueteData) {
+      erroresStock.push(`Paquete con ID ${paqueteId} no existe`);
+      continue;
+    }
+
+    if (paqueteData.is_active === false) {
+      erroresStock.push(`El paquete con ID ${paqueteId} no está activo`);
+      continue;
+    }
+
+    const productosPaquete = await ProductoPaquete.findAll({
+      where: {
+        fkid_paquete: paqueteId
+      }
+    });
+
+    if (productosPaquete.length === 0) {
+      erroresStock.push(`El paquete con ID ${paqueteId} no tiene productos asociados`);
+      continue;
+    }
+
+    for (const productoPaquete of productosPaquete) {
+      const cantidadTotal = cantidadPaquetes * productoPaquete.cantidad;
+      if (!productosPorPaquete[productoPaquete.fkid_producto]) {
+        productosPorPaquete[productoPaquete.fkid_producto] = 0;
+      }
+      productosPorPaquete[productoPaquete.fkid_producto] += cantidadTotal;
+    }
+  }
+
+  return productosPorPaquete;
+};
+
+// Helper principal para validar stock a partir de productos y paquetes
+const calcularYValidarStock = async ({ productos = [], paquetes = [] }) => {
+  const erroresStock = [];
+
+  const productosAProcesar = Array.isArray(productos)
+    ? productos
+        .map((producto, index) => {
+          if (!producto) return null;
+
+          const fkid_producto = producto.fkid_producto ?? producto.id;
+          const cantidad = parseInt(producto.cantidad);
+
+          if (!fkid_producto || isNaN(cantidad) || cantidad <= 0) {
+            erroresStock.push(`Producto en la posición ${index} tiene datos inválidos`);
+            return null;
+          }
+
+          return { fkid_producto, cantidad };
+        })
+        .filter(Boolean)
+    : [];
+
+  const productosPorPaquete = await calcularProductosPorPaqueteDesdePayload(paquetes, erroresStock);
+
+  // Validar stock de productos directos (sumando si también están en paquetes)
+  for (const producto of productosAProcesar) {
+    const productoInventario = await Inventario.findByPk(producto.fkid_producto);
+    if (!productoInventario) {
+      erroresStock.push(`Producto con ID ${producto.fkid_producto} no encontrado en inventario`);
+      continue;
+    }
+
+    const cantidadDirecta = producto.cantidad;
+    const cantidadDePaquetes = productosPorPaquete[producto.fkid_producto] || 0;
+    const cantidadRequerida = cantidadDirecta + cantidadDePaquetes;
+
+    if (productoInventario.stock_inicial < cantidadRequerida) {
+      erroresStock.push(
+        `Stock insuficiente para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Disponible: ${productoInventario.stock_inicial}, Requerido: ${cantidadRequerida}`
+      );
+    }
+  }
+
+  // Validar stock de productos solo en paquetes (que no están como productos directos)
+  const productosDirectosIds = productosAProcesar.map(p => p.fkid_producto);
+
+  for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
+    // Solo validar si no está ya como producto directo
+    if (productosDirectosIds.includes(parseInt(productoId))) {
+      continue;
+    }
+
+    const producto = await Inventario.findByPk(productoId);
+    if (!producto) {
+      erroresStock.push(`Producto con ID ${productoId} no encontrado en inventario`);
+      continue;
+    }
+
+    if (producto.stock_inicial < cantidadTotal) {
+      erroresStock.push(
+        `Stock insuficiente para ${producto.nombre} (SKU: ${producto.sku}) en paquetes. Disponible: ${producto.stock_inicial}, Requerido: ${cantidadTotal}`
+      );
+    }
+  }
+
+  return {
+    isValid: erroresStock.length === 0,
+    erroresStock
+  };
+};
+
 class PedidoController {
   // Obtener todos los pedidos
   async getAllPedidos(req, res, next) {
@@ -774,6 +897,88 @@ class PedidoController {
         success: true,
         message: 'Pedido creado exitosamente',
         data: { pedido: pedidoCompleto }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Validar stock para un conjunto de productos y paquetes sin crear pedido
+  async validarStockPedido(req, res, next) {
+    try {
+      const { productos = [], paquetes = [] } = req.body || {};
+
+      if ((!Array.isArray(productos) || productos.length === 0) &&
+          (!Array.isArray(paquetes) || paquetes.length === 0)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Debe proporcionar al menos un producto o paquete para validar stock'
+        });
+      }
+
+      const erroresValidacion = [];
+
+      if (Array.isArray(productos)) {
+        productos.forEach((producto, index) => {
+          if (!producto) {
+            erroresValidacion.push(`El producto en la posición ${index} es inválido`);
+            return;
+          }
+
+          const id = producto.fkid_producto ?? producto.id;
+          const cantidad = parseInt(producto.cantidad);
+
+          if (!id || !Number.isInteger(Number(id)) || Number(id) < 1) {
+            erroresValidacion.push(`El ID del producto en la posición ${index} debe ser un número entero positivo`);
+          }
+
+          if (isNaN(cantidad) || cantidad < 1) {
+            erroresValidacion.push(`La cantidad del producto en la posición ${index} debe ser un número entero positivo`);
+          }
+        });
+      }
+
+      if (Array.isArray(paquetes)) {
+        paquetes.forEach((paquete, index) => {
+          if (!paquete) {
+            erroresValidacion.push(`El paquete en la posición ${index} es inválido`);
+            return;
+          }
+
+          const id = paquete.fkid_paquete ?? paquete.id;
+          const cantidad = parseInt(paquete.cantidad);
+
+          if (!id || !Number.isInteger(Number(id)) || Number(id) < 1) {
+            erroresValidacion.push(`El ID del paquete en la posición ${index} debe ser un número entero positivo`);
+          }
+
+          if (isNaN(cantidad) || cantidad < 1) {
+            erroresValidacion.push(`La cantidad del paquete en la posición ${index} debe ser un número entero positivo`);
+          }
+        });
+      }
+
+      if (erroresValidacion.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Datos de productos/paquetes inválidos',
+          errors: erroresValidacion
+        });
+      }
+
+      const { isValid, erroresStock } = await calcularYValidarStock({ productos, paquetes });
+
+      if (!isValid) {
+        return res.status(200).json({
+          success: false,
+          message: 'Stock insuficiente para los productos solicitados',
+          errors: erroresStock
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Stock suficiente para los productos solicitados'
       });
     } catch (error) {
       next(error);
