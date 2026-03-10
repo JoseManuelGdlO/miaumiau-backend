@@ -8,6 +8,8 @@ const morgan = require('morgan');
 const cron = require('node-cron');
 require('dotenv').config();
 
+const BACKEND_VERSION = process.env.BACKEND_VERSION || '1.0.0';
+
 const { ensureUploadsDirs } = require('./utils/uploadImages');
 
 const { sequelize } = require('./config/database');
@@ -199,6 +201,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     message: 'Miaumiau API está funcionando correctamente',
+    version: BACKEND_VERSION,
+    env: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString()
   });
 });
@@ -225,7 +229,7 @@ const startServer = async () => {
     
     // Iniciar servidor
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+      console.log(`🚀 Servidor Miaumiau v${BACKEND_VERSION} corriendo en puerto ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
     });
 
