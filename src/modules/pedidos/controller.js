@@ -149,6 +149,15 @@ const calcularYValidarStock = async ({ productos = [], paquetes = [] }) => {
 
   const productosPorPaquete = await calcularProductosPorPaqueteDesdePayload(paquetes, erroresStock);
 
+  // Conjunto de todos los IDs de productos en el carrito (directos + paquetes) para regla de compra mínima
+  const todosLosProductosIds = new Set([
+    ...productosAProcesar.map(p => p.fkid_producto),
+    ...Object.keys(productosPorPaquete).map(k => parseInt(k, 10))
+  ]);
+
+  const esProductoUnicoEnCarrito = (productoId) =>
+    todosLosProductosIds.size === 1 && todosLosProductosIds.has(productoId);
+
   // Validar stock de productos directos (sumando si también están en paquetes)
   for (const producto of productosAProcesar) {
     const productoInventario = await Inventario.findByPk(producto.fkid_producto);
@@ -166,14 +175,25 @@ const calcularYValidarStock = async ({ productos = [], paquetes = [] }) => {
         `Stock insuficiente para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Disponible: ${productoInventario.stock_inicial}, Requerido: ${cantidadRequerida}`
       );
     }
+
+    // Validar compra mínima: solo aplica si es el único producto en el carrito
+    const compraMinima = productoInventario.compra_minima;
+    if (compraMinima != null && compraMinima >= 1 && esProductoUnicoEnCarrito(producto.fkid_producto)) {
+      if (cantidadRequerida < compraMinima) {
+        erroresStock.push(
+          `Compra mínima no cumplida para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Mínimo: ${compraMinima}, solicitado: ${cantidadRequerida}`
+        );
+      }
+    }
   }
 
   // Validar stock de productos solo en paquetes (que no están como productos directos)
   const productosDirectosIds = productosAProcesar.map(p => p.fkid_producto);
 
   for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
+    const productoIdInt = parseInt(productoId, 10);
     // Solo validar si no está ya como producto directo
-    if (productosDirectosIds.includes(parseInt(productoId))) {
+    if (productosDirectosIds.includes(productoIdInt)) {
       continue;
     }
 
@@ -187,6 +207,16 @@ const calcularYValidarStock = async ({ productos = [], paquetes = [] }) => {
       erroresStock.push(
         `Stock insuficiente para ${producto.nombre} (SKU: ${producto.sku}) en paquetes. Disponible: ${producto.stock_inicial}, Requerido: ${cantidadTotal}`
       );
+    }
+
+    // Validar compra mínima para productos solo en paquetes
+    const compraMinima = producto.compra_minima;
+    if (compraMinima != null && compraMinima >= 1 && esProductoUnicoEnCarrito(productoIdInt)) {
+      if (cantidadTotal < compraMinima) {
+        erroresStock.push(
+          `Compra mínima no cumplida para ${producto.nombre} (SKU: ${producto.sku}). Mínimo: ${compraMinima}, solicitado: ${cantidadTotal}`
+        );
+      }
     }
   }
 
@@ -724,69 +754,25 @@ class PedidoController {
         return productosPorPaquete;
       };
 
-      // Calcular cantidad de productos por paquete
+      // Calcular cantidad de productos por paquete (para restar stock después)
       const productosPorPaquete = paquetes && paquetes.length > 0 
         ? await calcularProductosPorPaquete(paquetes) 
         : {};
 
-      // Validar y restar stock al crear el pedido
-      const erroresStock = [];
-      
-      // Validar stock de productos directos (sumando si también están en paquetes)
-      for (const producto of productosAProcesar) {
-        if (!producto.fkid_producto) {
-          // Producto regalo sin ID - omitir (se registra pero no se puede actualizar stock)
-          continue;
-        }
+      // Validar stock y compra mínima usando el helper compartido (excluye productos regalo sin fkid_producto)
+      const productosParaValidar = productosAProcesar.filter(p => p.fkid_producto != null);
+      const { isValid, erroresStock } = await calcularYValidarStock({
+        productos: productosParaValidar,
+        paquetes
+      });
 
-        const productoInventario = await Inventario.findByPk(producto.fkid_producto);
-        if (!productoInventario) {
-          erroresStock.push(`Producto con ID ${producto.fkid_producto} no encontrado en inventario`);
-          continue;
-        }
-
-        const cantidadDirecta = parseInt(producto.cantidad);
-        const cantidadDePaquetes = productosPorPaquete[producto.fkid_producto] || 0;
-        const cantidadRequerida = cantidadDirecta + cantidadDePaquetes;
-
-        if (productoInventario.stock_inicial < cantidadRequerida) {
-          erroresStock.push(
-            `Stock insuficiente para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Disponible: ${productoInventario.stock_inicial}, Requerido: ${cantidadRequerida}`
-          );
-        }
-      }
-
-      // Validar stock de productos solo en paquetes (que no están como productos directos)
-      const productosDirectosIds = productosAProcesar
-        .map(p => p.fkid_producto)
-        .filter(id => id !== null);
-      
-      for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
-        // Solo validar si no está ya como producto directo
-        if (productosDirectosIds.includes(parseInt(productoId))) {
-          continue; // Ya se validó arriba
-        }
-
-        const producto = await Inventario.findByPk(productoId);
-        if (!producto) {
-          erroresStock.push(`Producto con ID ${productoId} no encontrado en inventario`);
-          continue;
-        }
-
-        if (producto.stock_inicial < cantidadTotal) {
-          erroresStock.push(
-            `Stock insuficiente para ${producto.nombre} (SKU: ${producto.sku}) en paquetes. Disponible: ${producto.stock_inicial}, Requerido: ${cantidadTotal}`
-          );
-        }
-      }
-
-      // Si hay errores de stock, retornar error y eliminar el pedido creado
-      if (erroresStock.length > 0) {
+      // Si hay errores de stock o compra mínima, retornar error y eliminar el pedido creado
+      if (!isValid) {
         // Eliminar el pedido creado ya que no se puede completar
         await pedido.destroy();
         return res.status(400).json({
           success: false,
-          message: 'Stock insuficiente para crear el pedido',
+          message: 'No se puede crear el pedido',
           errors: erroresStock
         });
       }

@@ -116,6 +116,15 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING(500),
       allowNull: true,
       comment: 'URL pública de la imagen del producto (para catálogo Meta y UI)'
+    },
+    compra_minima: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+      validate: {
+        min: 1
+      },
+      comment: 'Cantidad mínima de compra del producto (null = sin restricción)'
     }
   }, {
     tableName: 'inventarios',

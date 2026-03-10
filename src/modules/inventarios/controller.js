@@ -228,7 +228,8 @@ class InventarioController {
         stock_maximo = 1000,
         costo_unitario,
         precio_venta,
-        fkid_proveedor
+        fkid_proveedor,
+        compra_minima
       } = req.body;
 
       // Verificar si el SKU ya existe
@@ -274,7 +275,7 @@ class InventarioController {
         });
       }
 
-      const inventario = await Inventario.create({
+      const createData = {
         nombre,
         sku,
         fkid_peso,
@@ -287,7 +288,15 @@ class InventarioController {
         costo_unitario,
         precio_venta,
         fkid_proveedor
-      });
+      };
+
+      if (compra_minima !== undefined && compra_minima !== null) {
+        createData.compra_minima = parseInt(compra_minima, 10);
+      } else {
+        createData.compra_minima = null;
+      }
+
+      const inventario = await Inventario.create(createData);
 
       // Obtener el inventario creado con sus relaciones
       const inventarioCompleto = await Inventario.findByPk(inventario.id, {
