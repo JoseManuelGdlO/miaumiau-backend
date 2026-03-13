@@ -194,6 +194,12 @@ router.get('/',
   cityController.getAllCities
 );
 
+router.get('/points-of-sale',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  cityController.getAllPointsOfSale
+);
+
 router.get('/:id', 
   authenticateToken, 
   requireSuperAdminOrPermission('ver_ciudades'), 

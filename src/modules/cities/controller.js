@@ -532,6 +532,63 @@ class CityController {
     }
   }
 
+  // Listar todos los puntos de venta en ciudades activas
+  async getAllPointsOfSale(req, res, next) {
+    try {
+      // Obtener solo ciudades activas y no dadas de baja lógicamente
+      const activeCities = await City.findAll({
+        where: {
+          baja_logica: false,
+          estado_inicial: 'activa'
+        }
+      });
+
+      if (!activeCities || activeCities.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            pointsOfSale: [],
+            total: 0
+          }
+        });
+      }
+
+      const allPoints = [];
+
+      for (const city of activeCities) {
+        const puntos = await CityPointOfSale.findByCity(city.id);
+
+        if (!puntos || puntos.length === 0) {
+          continue;
+        }
+
+        for (const punto of puntos) {
+          const puntoData = typeof punto.toJSON === 'function' ? punto.toJSON() : punto;
+
+          // Si existe baja_logica en el modelo, evitar incluir los puntos dados de baja
+          if (puntoData.baja_logica) {
+            continue;
+          }
+
+          allPoints.push({
+            ciudad: city.nombre,
+            ...puntoData
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          pointsOfSale: allPoints,
+          total: allPoints.length
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Obtener departamentos disponibles
   async getDepartments(req, res, next) {
     try {
