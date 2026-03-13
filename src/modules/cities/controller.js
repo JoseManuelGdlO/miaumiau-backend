@@ -1,4 +1,4 @@
-const { City } = require('../../models');
+const { City, CityPointOfSale } = require('../../models');
 const { Op } = require('sequelize');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
@@ -114,7 +114,16 @@ class CityController {
       }
       
       // Validar que la ciudad existe (puede ser que el ID sea válido pero la ciudad no exista)
-      const city = await City.findByPk(cityId);
+      const city = await City.findByPk(cityId, {
+        include: [
+          {
+            model: CityPointOfSale,
+            as: 'puntos_venta',
+            where: { baja_logica: false },
+            required: false
+          }
+        ]
+      });
       
       if (!city) {
         return res.status(404).json({
@@ -602,6 +611,143 @@ class CityController {
           totalZones,
           averageDeliveryTime: avgDeliveryTime ? Math.round(avgDeliveryTime.dataValues.avg_time) : 0
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Listar puntos de venta por ciudad
+  async getPointsOfSale(req, res, next) {
+    try {
+      const { cityId } = req.params;
+
+      const city = await City.findByPk(cityId);
+      if (!city) {
+        return res.status(404).json({
+          success: false,
+          message: 'Ciudad no encontrada'
+        });
+      }
+
+      const puntos = await CityPointOfSale.findByCity(city.id);
+
+      res.json({
+        success: true,
+        data: {
+          pointsOfSale: puntos,
+          total: puntos.length
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Crear punto de venta para una ciudad
+  async createPointOfSale(req, res, next) {
+    try {
+      const { cityId } = req.params;
+      const { nombre, direccion, telefono, encargado } = req.body;
+
+      const city = await City.findByPk(cityId);
+      if (!city) {
+        return res.status(404).json({
+          success: false,
+          message: 'Ciudad no encontrada'
+        });
+      }
+
+      const punto = await CityPointOfSale.create({
+        city_id: city.id,
+        nombre,
+        direccion,
+        telefono,
+        encargado
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Punto de venta creado exitosamente',
+        data: { pointOfSale: punto }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Actualizar punto de venta
+  async updatePointOfSale(req, res, next) {
+    try {
+      const { cityId, pointId } = req.params;
+      const updateData = req.body;
+
+      const city = await City.findByPk(cityId);
+      if (!city) {
+        return res.status(404).json({
+          success: false,
+          message: 'Ciudad no encontrada'
+        });
+      }
+
+      const punto = await CityPointOfSale.findOne({
+        where: {
+          id: pointId,
+          city_id: city.id
+        }
+      });
+
+      if (!punto) {
+        return res.status(404).json({
+          success: false,
+          message: 'Punto de venta no encontrado'
+        });
+      }
+
+      await punto.update(updateData);
+
+      res.json({
+        success: true,
+        message: 'Punto de venta actualizado exitosamente',
+        data: { pointOfSale: punto }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Eliminar (baja lógica) punto de venta
+  async deletePointOfSale(req, res, next) {
+    try {
+      const { cityId, pointId } = req.params;
+
+      const city = await City.findByPk(cityId);
+      if (!city) {
+        return res.status(404).json({
+          success: false,
+          message: 'Ciudad no encontrada'
+        });
+      }
+
+      const punto = await CityPointOfSale.findOne({
+        where: {
+          id: pointId,
+          city_id: city.id
+        }
+      });
+
+      if (!punto) {
+        return res.status(404).json({
+          success: false,
+          message: 'Punto de venta no encontrado'
+        });
+      }
+
+      await punto.update({ baja_logica: true });
+
+      res.json({
+        success: true,
+        message: 'Punto de venta eliminado exitosamente'
       });
     } catch (error) {
       next(error);

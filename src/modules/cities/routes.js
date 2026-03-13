@@ -110,6 +110,42 @@ const validateStatus = [
   handleValidationErrors
 ];
 
+const validatePointOfSale = [
+  body('nombre')
+    .isLength({ min: 2, max: 150 })
+    .withMessage('El nombre del punto de venta debe tener entre 2 y 150 caracteres'),
+
+  body('direccion')
+    .isLength({ min: 5, max: 1000 })
+    .withMessage('La dirección debe tener entre 5 y 1000 caracteres'),
+
+  body('telefono')
+    .optional()
+    .matches(/^[\+]?[0-9\s\-\(\)]+$/)
+    .withMessage('El teléfono debe tener un formato válido'),
+
+  body('encargado')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('El nombre del encargado no puede exceder 100 caracteres'),
+
+  handleValidationErrors
+];
+
+const validateCityIdParam = [
+  param('cityId')
+    .isInt({ min: 1 })
+    .withMessage('cityId debe ser un número entero positivo'),
+  handleValidationErrors
+];
+
+const validatePointIdParam = [
+  param('pointId')
+    .isInt({ min: 1 })
+    .withMessage('pointId debe ser un número entero positivo'),
+  handleValidationErrors
+];
+
 const validateQuery = [
   query('departamento')
     .optional()
@@ -221,6 +257,39 @@ router.get('/status/:estado',
   requireSuperAdminOrPermission('ver_ciudades'), 
   validateStatus, 
   cityController.getCitiesByStatus
+);
+
+// Rutas de puntos de venta por ciudad
+router.get('/:cityId/points-of-sale',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  validateCityIdParam,
+  cityController.getPointsOfSale
+);
+
+router.post('/:cityId/points-of-sale',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  validateCityIdParam,
+  validatePointOfSale,
+  cityController.createPointOfSale
+);
+
+router.put('/:cityId/points-of-sale/:pointId',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  validateCityIdParam,
+  validatePointIdParam,
+  validatePointOfSale,
+  cityController.updatePointOfSale
+);
+
+router.delete('/:cityId/points-of-sale/:pointId',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  validateCityIdParam,
+  validatePointIdParam,
+  cityController.deletePointOfSale
 );
 
 module.exports = router;

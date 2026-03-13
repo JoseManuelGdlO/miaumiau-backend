@@ -33,6 +33,7 @@ const Paquete = require('./Paquete');
 const ProductoPaquete = require('./ProductoPaquete');
 const PaquetePedido = require('./PaquetePedido');
 const WhatsAppPhoneNumber = require('./WhatsAppPhoneNumber');
+const CityPointOfSale = require('./CityPointOfSale');
 
 // Inicializar modelos
 const models = {
@@ -66,7 +67,8 @@ const models = {
   Paquete: Paquete(sequelize, DataTypes),
   ProductoPaquete: ProductoPaquete(sequelize, DataTypes),
   PaquetePedido: PaquetePedido(sequelize, DataTypes),
-  WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes)
+  WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes),
+  CityPointOfSale: CityPointOfSale(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -148,6 +150,17 @@ models.PromotionCity.belongsTo(models.Promotion, {
 models.PromotionCity.belongsTo(models.City, {
   foreignKey: 'city_id',
   as: 'city'
+});
+
+// Asociaciones para CityPointOfSale (puntos de venta por ciudad)
+models.City.hasMany(models.CityPointOfSale, {
+  foreignKey: 'city_id',
+  as: 'puntos_venta'
+});
+
+models.CityPointOfSale.belongsTo(models.City, {
+  foreignKey: 'city_id',
+  as: 'ciudad'
 });
 
 // Asociaciones para PromotionUsage
