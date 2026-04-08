@@ -34,6 +34,7 @@ const ProductoPaquete = require('./ProductoPaquete');
 const PaquetePedido = require('./PaquetePedido');
 const WhatsAppPhoneNumber = require('./WhatsAppPhoneNumber');
 const CityPointOfSale = require('./CityPointOfSale');
+const SiteSetting = require('./SiteSetting');
 
 // Inicializar modelos
 const models = {
@@ -68,7 +69,8 @@ const models = {
   ProductoPaquete: ProductoPaquete(sequelize, DataTypes),
   PaquetePedido: PaquetePedido(sequelize, DataTypes),
   WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes),
-  CityPointOfSale: CityPointOfSale(sequelize, DataTypes)
+  CityPointOfSale: CityPointOfSale(sequelize, DataTypes),
+  SiteSetting: SiteSetting(sequelize, DataTypes)
 };
 
 // Definir asociaciones

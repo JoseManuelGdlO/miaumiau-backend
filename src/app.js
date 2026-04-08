@@ -45,6 +45,10 @@ const mensajeriaRoutes = require('./modules/mensajeria/routes');
 const mapsRoutes = require('./modules/maps/routes');
 const pagosRoutes = require('./modules/pagos/routes');
 const catalogoRoutes = require('./modules/catalogo/routes');
+const {
+  publicSiteSettingsRoutes,
+  siteSettingsRoutes,
+} = require('./modules/site-settings/routes');
 
 const app = express();
 
@@ -77,11 +81,15 @@ app.use(cors({
       'http://localhost:8080',
       'http://127.0.0.1:8080',
       'http://127.0.0.1:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
       'http://192.168.1.64:8080',
       'http://192.168.1.64:3000',
       'https://intelekia-miaumiau-front.vvggha.easypanel.host',
       'https://officina.miaumiau.com.mx',
-      process.env.FRONTEND_URL
+      process.env.FRONTEND_URL,
+      process.env.PUBLIC_WEB_URL,
+      process.env.MARKETING_URL
     ].filter(Boolean);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -195,6 +203,8 @@ app.use('/api/paquetes', paqueteRoutes);
 app.use('/api/mensajeria', mensajeriaRoutes);
 app.use('/api/maps', mapsRoutes);
 app.use('/api/pagos', pagosRoutes);
+app.use('/api/public', publicSiteSettingsRoutes);
+app.use('/api/site-settings', siteSettingsRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {
