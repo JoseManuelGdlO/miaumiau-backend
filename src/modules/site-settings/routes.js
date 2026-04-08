@@ -15,6 +15,13 @@ protectedRouter.put(
   siteSettingsController.updateHeroYoutubeVideoId
 );
 
+protectedRouter.put(
+  '/public-links',
+  authenticateToken,
+  requireSuperAdminOrPermission('configurar_sistema'),
+  siteSettingsController.updatePublicLinks
+);
+
 module.exports = {
   publicSiteSettingsRoutes: publicRouter,
   siteSettingsRoutes: protectedRouter,
