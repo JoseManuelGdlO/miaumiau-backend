@@ -208,7 +208,8 @@ class PortalController {
           'puntos_lealtad',
           'must_change_password',
           'direccion_entrega',
-          'fkid_ciudad'
+          'fkid_ciudad',
+          'isActive'
         ],
         include: [{ model: City, as: 'ciudad', attributes: ['id', 'nombre'] }]
       });
