@@ -40,10 +40,7 @@ async function requirePortalPasswordComplete(req, res, next) {
 
 router.post(
   '/auth/login',
-  [
-    body('telefono').notEmpty().withMessage('Teléfono requerido'),
-    body('password').notEmpty().withMessage('Contraseña requerida')
-  ],
+  [body('telefono').notEmpty().withMessage('Teléfono requerido')],
   validate,
   portalController.login.bind(portalController)
 );
@@ -53,7 +50,7 @@ router.post(
   authenticateClientePortal,
   [
     body('newPassword').isLength({ min: 6 }).withMessage('Mínimo 6 caracteres'),
-    body('currentPassword').notEmpty().withMessage('Contraseña actual requerida')
+    body('currentPassword').optional()
   ],
   validate,
   portalController.changePassword.bind(portalController)

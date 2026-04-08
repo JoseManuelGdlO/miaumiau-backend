@@ -27,10 +27,10 @@ class PortalController {
   async login(req, res, next) {
     try {
       const { telefono, password } = req.body;
-      if (!telefono || !password) {
+      if (!telefono) {
         return res.status(400).json({
           success: false,
-          message: 'Teléfono y contraseña son requeridos'
+          message: 'Teléfono requerido'
         });
       }
 
@@ -42,21 +42,8 @@ class PortalController {
         });
       }
 
-      let valid = false;
-      if (cliente.password_hash) {
-        valid = await bcrypt.compare(password, cliente.password_hash);
-      } else {
-        valid = apellidoMatchesPassword(cliente.nombre_completo, password);
-      }
-
-      if (!valid) {
-        return res.status(401).json({
-          success: false,
-          message: 'Teléfono o contraseña incorrectos'
-        });
-      }
-
       const verificado = cliente.portal_pedido_verificado === true;
+
       if (!verificado) {
         const { numero_pedido: numeroPedidoRaw } = req.body;
         const numeroPedido = numeroPedidoRaw != null ? String(numeroPedidoRaw).trim() : '';
@@ -103,6 +90,27 @@ class PortalController {
 
         cliente.portal_pedido_verificado = true;
         await cliente.save();
+      } else {
+        if (!password || !String(password).trim()) {
+          return res.status(400).json({
+            success: false,
+            message: 'Contraseña requerida'
+          });
+        }
+
+        let valid = false;
+        if (cliente.password_hash) {
+          valid = await bcrypt.compare(password, cliente.password_hash);
+        } else {
+          valid = apellidoMatchesPassword(cliente.nombre_completo, password);
+        }
+
+        if (!valid) {
+          return res.status(401).json({
+            success: false,
+            message: 'Teléfono o contraseña incorrectos'
+          });
+        }
       }
 
       const mustChangePassword = cliente.must_change_password === true;
@@ -148,8 +156,10 @@ class PortalController {
       let currentOk = false;
       if (cliente.password_hash) {
         currentOk = currentPassword && (await bcrypt.compare(currentPassword, cliente.password_hash));
-      } else {
+      } else if (currentPassword && String(currentPassword).trim()) {
         currentOk = apellidoMatchesPassword(cliente.nombre_completo, currentPassword);
+      } else {
+        currentOk = !cliente.password_hash && cliente.must_change_password === true;
       }
 
       if (!currentOk) {
