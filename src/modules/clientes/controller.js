@@ -308,6 +308,7 @@ class ClienteController {
       const updateData = { ...req.body };
       delete updateData.password_hash;
       delete updateData.must_change_password;
+      delete updateData.portal_pedido_verificado;
 
       const cliente = await Cliente.findByPk(id);
       

@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
-const { Cliente, Pedido, ClientePuntosMovimiento, City } = require('../../models');
+const { Cliente, Pedido, ClientePuntosMovimiento, City, sequelize } = require('../../models');
 const { generatePortalToken } = require('../../utils/jwt');
 const { normalizeTelefono } = require('../../utils/portalPhone');
 const { apellidoMatchesPassword } = require('../../utils/portalPassword');
@@ -54,6 +54,55 @@ class PortalController {
           success: false,
           message: 'Teléfono o contraseña incorrectos'
         });
+      }
+
+      const verificado = cliente.portal_pedido_verificado === true;
+      if (!verificado) {
+        const { numero_pedido: numeroPedidoRaw } = req.body;
+        const numeroPedido = numeroPedidoRaw != null ? String(numeroPedidoRaw).trim() : '';
+        if (!numeroPedido) {
+          return res.status(400).json({
+            success: false,
+            code: 'PEDIDO_REQUERIDO',
+            message:
+              'Indica el número de pedido que te enviamos por WhatsApp (por ejemplo PED-…).'
+          });
+        }
+
+        const numeroLower = numeroPedido.toLowerCase();
+        const pedidoMatch = await Pedido.findOne({
+          where: {
+            fkid_cliente: cliente.id,
+            baja_logica: false,
+            estado: { [Op.ne]: 'cancelado' },
+            [Op.and]: sequelize.where(
+              sequelize.fn('LOWER', sequelize.col('numero_pedido')),
+              numeroLower
+            )
+          }
+        });
+
+        if (!pedidoMatch) {
+          const pedidosCount = await Pedido.count({
+            where: {
+              fkid_cliente: cliente.id,
+              baja_logica: false,
+              estado: { [Op.ne]: 'cancelado' }
+            }
+          });
+          const message =
+            pedidosCount === 0
+              ? 'No encontramos pedidos activos asociados a tu cuenta. Si compraste por WhatsApp, contacta soporte.'
+              : 'El número de pedido no coincide con ninguna de tus compras. Revísalo en el mensaje de WhatsApp.';
+          return res.status(403).json({
+            success: false,
+            code: 'PEDIDO_NO_COINCIDE',
+            message
+          });
+        }
+
+        cliente.portal_pedido_verificado = true;
+        await cliente.save();
       }
 
       const mustChangePassword = cliente.must_change_password === true;

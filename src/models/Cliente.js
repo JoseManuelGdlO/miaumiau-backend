@@ -71,6 +71,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: true
     },
+    portal_pedido_verificado: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
     notas_especiales: {
       type: DataTypes.TEXT,
       allowNull: true,
