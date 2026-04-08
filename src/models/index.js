@@ -35,6 +35,7 @@ const PaquetePedido = require('./PaquetePedido');
 const WhatsAppPhoneNumber = require('./WhatsAppPhoneNumber');
 const CityPointOfSale = require('./CityPointOfSale');
 const SiteSetting = require('./SiteSetting');
+const ClientePuntosMovimiento = require('./ClientePuntosMovimiento');
 
 // Inicializar modelos
 const models = {
@@ -70,7 +71,8 @@ const models = {
   PaquetePedido: PaquetePedido(sequelize, DataTypes),
   WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes),
   CityPointOfSale: CityPointOfSale(sequelize, DataTypes),
-  SiteSetting: SiteSetting(sequelize, DataTypes)
+  SiteSetting: SiteSetting(sequelize, DataTypes),
+  ClientePuntosMovimiento: ClientePuntosMovimiento(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -382,6 +384,16 @@ models.Mascota.belongsTo(models.Cliente, {
 models.City.hasMany(models.Cliente, {
   foreignKey: 'fkid_ciudad',
   as: 'clientes'
+});
+
+models.Cliente.hasMany(models.ClientePuntosMovimiento, {
+  foreignKey: 'fkid_cliente',
+  as: 'puntos_movimientos'
+});
+
+models.ClientePuntosMovimiento.belongsTo(models.Cliente, {
+  foreignKey: 'fkid_cliente',
+  as: 'cliente'
 });
 
 // Asociaciones para Ruta

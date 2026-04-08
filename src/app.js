@@ -49,6 +49,7 @@ const {
   publicSiteSettingsRoutes,
   siteSettingsRoutes,
 } = require('./modules/site-settings/routes');
+const portalClienteRoutes = require('./modules/portal/routes');
 
 const app = express();
 
@@ -175,6 +176,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Catálogo público por ciudad (CSV para Meta) - sin /api, sin auth
 app.use('/catalogo', catalogoRoutes);
+
+// Portal de clientes (tienda web)
+app.use('/api/portal', portalClienteRoutes);
 
 // Rutas
 app.use('/api/auth', authRoutes);

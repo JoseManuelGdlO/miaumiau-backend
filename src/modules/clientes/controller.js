@@ -1,6 +1,8 @@
+const bcrypt = require('bcryptjs');
 const { Cliente, Mascota, City, Pedido } = require('../../models');
 const { Op } = require('sequelize');
 const XLSX = require('xlsx');
+const { registrarCambioPuntosDesdeImport } = require('../../services/clientePuntosLedger');
 const multer = require('multer');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
@@ -303,7 +305,9 @@ class ClienteController {
   async updateCliente(req, res, next) {
     try {
       const { id } = req.params;
-      const updateData = req.body;
+      const updateData = { ...req.body };
+      delete updateData.password_hash;
+      delete updateData.must_change_password;
 
       const cliente = await Cliente.findByPk(id);
       
@@ -361,11 +365,24 @@ class ClienteController {
         }
       }
 
+      const prevPuntos = cliente.puntos_lealtad;
       await cliente.update({
         ...updateData,
         email: updateEmail ?? cliente.email,
         fkid_ciudad: updateCiudadId ?? cliente.fkid_ciudad
       });
+
+      if (
+        updateData.puntos_lealtad !== undefined &&
+        prevPuntos !== cliente.puntos_lealtad
+      ) {
+        await registrarCambioPuntosDesdeImport(
+          cliente.id,
+          prevPuntos,
+          cliente.puntos_lealtad,
+          'edicion_panel'
+        );
+      }
 
       // Obtener el cliente actualizado con sus relaciones
       const clienteActualizado = await Cliente.findByPk(id, {
@@ -389,6 +406,46 @@ class ClienteController {
         success: true,
         message: 'Cliente actualizado exitosamente',
         data: { cliente: clienteActualizado }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async resetPortalPassword(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { newPassword, forcePasswordChange = true } = req.body;
+
+      if (!newPassword || String(newPassword).length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'La nueva contraseña debe tener al menos 6 caracteres'
+        });
+      }
+
+      const cliente = await Cliente.unscoped().findByPk(id);
+      if (!cliente) {
+        return res.status(404).json({
+          success: false,
+          message: 'Cliente no encontrado'
+        });
+      }
+
+      const hash = await bcrypt.hash(String(newPassword), 10);
+      cliente.password_hash = hash;
+      cliente.must_change_password = Boolean(forcePasswordChange);
+      await cliente.save();
+
+      res.json({
+        success: true,
+        message: 'Contraseña del portal actualizada',
+        data: {
+          cliente: {
+            id: cliente.id,
+            must_change_password: cliente.must_change_password
+          }
+        }
       });
     } catch (error) {
       next(error);
@@ -1016,8 +1073,21 @@ class ClienteController {
               if (notasFinales) {
                 updateData.notas_especiales = notasFinales;
               }
-              
+
+              const prevPtsDup = clienteExistentePorTelefono.puntos_lealtad;
               await clienteExistentePorTelefono.update(updateData);
+              if (
+                puntosLealtad !== undefined &&
+                puntosLealtad !== null &&
+                prevPtsDup !== puntosLealtad
+              ) {
+                await registrarCambioPuntosDesdeImport(
+                  clienteExistentePorTelefono.id,
+                  prevPtsDup,
+                  puntosLealtad,
+                  'import_excel'
+                );
+              }
               results.updated++;
               results.total++;
               continue;
@@ -1054,8 +1124,21 @@ class ClienteController {
               if (notasFinales) {
                 updateData.notas_especiales = notasFinales;
               }
-              
+
+              const prevPtsTel = clienteExistentePorTelefono.puntos_lealtad;
               await clienteExistentePorTelefono.update(updateData);
+              if (
+                puntosLealtad !== undefined &&
+                puntosLealtad !== null &&
+                prevPtsTel !== puntosLealtad
+              ) {
+                await registrarCambioPuntosDesdeImport(
+                  clienteExistentePorTelefono.id,
+                  prevPtsTel,
+                  puntosLealtad,
+                  'import_excel'
+                );
+              }
               results.updated++;
               results.total++;
             } catch (updateError) {
@@ -1078,7 +1161,7 @@ class ClienteController {
 
           // Crear nuevo cliente solo si no existe
           try {
-            await Cliente.create({
+            const nuevoCliente = await Cliente.create({
               nombre_completo: nombreFinal,
               telefono,
               email: email || null,
@@ -1089,6 +1172,14 @@ class ClienteController {
               puntos_lealtad: puntosLealtad || 0,
               isActive: true
             });
+            if ((puntosLealtad || 0) > 0) {
+              await registrarCambioPuntosDesdeImport(
+                nuevoCliente.id,
+                0,
+                puntosLealtad || 0,
+                'import_excel_alta'
+              );
+            }
             results.created++;
             results.total++;
           } catch (createError) {

@@ -62,6 +62,15 @@ module.exports = (sequelize, DataTypes) => {
         min: 0
       }
     },
+    password_hash: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    must_change_password: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
+    },
     notas_especiales: {
       type: DataTypes.TEXT,
       allowNull: true,
@@ -80,6 +89,9 @@ module.exports = (sequelize, DataTypes) => {
     createdAt: 'created_at',
     updatedAt: 'updated_at',
     paranoid: false,
+    defaultScope: {
+      attributes: { exclude: ['password_hash'] }
+    },
     indexes: [
       {
         fields: ['email'],

@@ -197,6 +197,18 @@ router.post('/bulk-upload',
   clienteController.bulkUploadClientes
 );
 
+router.patch(
+  '/:id/portal-password',
+  requireSuperAdminOrPermission('editar_clientes'),
+  param('id').isInt({ min: 1 }).withMessage('ID inválido'),
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('La contraseña debe tener al menos 6 caracteres'),
+  body('forcePasswordChange').optional().isBoolean(),
+  validateRequest,
+  clienteController.resetPortalPassword
+);
+
 router.get('/:id',
   requireSuperAdminOrPermission('ver_clientes'),
   idValidation,
