@@ -53,6 +53,41 @@ const portalClienteRoutes = require('./modules/portal/routes');
 
 const app = express();
 
+/** Coincide con el header Origin del navegador (sin barra final). */
+function normalizeCorsOrigin(url) {
+  if (!url || typeof url !== 'string') return null;
+  const t = url.trim();
+  if (!t) return null;
+  return t.replace(/\/$/, '');
+}
+
+function getAllowedCorsOriginsSet() {
+  const set = new Set();
+  const add = (u) => {
+    const n = normalizeCorsOrigin(u);
+    if (n) set.add(n);
+  };
+  [
+    'http://localhost:3000',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:4173',
+    'http://127.0.0.1:4173',
+    'http://192.168.1.64:8080',
+    'http://192.168.1.64:3000',
+    'https://intelekia-miaumiau-front.vvggha.easypanel.host',
+    'https://officina.miaumiau.com.mx',
+    process.env.FRONTEND_URL,
+    process.env.PUBLIC_WEB_URL,
+    process.env.MARKETING_URL,
+    ...(process.env.CORS_EXTRA_ORIGINS || '').split(',')
+  ].forEach(add);
+  return set;
+}
+
 // Configurar trust proxy para funcionar detrás de proxy reverso (EasyPanel, nginx, etc.)
 // Esto permite que Express confíe en los headers X-Forwarded-* del proxy
 app.set('trust proxy', true);
@@ -71,29 +106,16 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CORS
+// CORS — el Origin es la URL de la página (no la del API). Añade dominios en
+// PUBLIC_WEB_URL / FRONTEND_URL o CORS_EXTRA_ORIGINS (coma-separado, sin espacios extra).
 app.use(cors({
   origin: function (origin, callback) {
     // Permitir requests sin origin (como mobile apps o Postman)
     if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:8080',
-      'http://127.0.0.1:8080',
-      'http://127.0.0.1:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://192.168.1.64:8080',
-      'http://192.168.1.64:3000',
-      'https://intelekia-miaumiau-front.vvggha.easypanel.host',
-      'https://officina.miaumiau.com.mx',
-      process.env.FRONTEND_URL,
-      process.env.PUBLIC_WEB_URL,
-      process.env.MARKETING_URL
-    ].filter(Boolean);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+
+    const allowed = getAllowedCorsOriginsSet();
+    const norm = normalizeCorsOrigin(origin);
+    if (norm && allowed.has(norm)) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
