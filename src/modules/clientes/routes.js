@@ -199,7 +199,7 @@ router.post('/bulk-upload',
 
 router.patch(
   '/:id/portal-password',
-  requireSuperAdminOrPermission('editar_clientes'),
+  requireSuperAdminOrPermission(['editar_clientes', 'ver_clientes']),
   param('id').isInt({ min: 1 }).withMessage('ID inválido'),
   body('newPassword')
     .isLength({ min: 6 })
