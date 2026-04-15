@@ -18,6 +18,11 @@ const validateGenerarLinkStripe = [
     .withMessage('El teléfono debe tener entre 7 y 20 caracteres')
     .matches(/^[\+]?[0-9\s\-\(\)]+$/)
     .withMessage('El teléfono solo puede contener números, espacios, guiones, paréntesis y +'),
+
+  body('pedido_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('El pedido_id debe ser un número entero positivo'),
   
   body('productos')
     .optional()

@@ -256,7 +256,9 @@ class PortalController {
           'total',
           'subtotal',
           'direccion_entrega',
-          'metodo_pago'
+          'metodo_pago',
+          'stripe_link_url',
+          'stripe_link_id'
         ],
         order: [['fecha_pedido', 'DESC']],
         limit,

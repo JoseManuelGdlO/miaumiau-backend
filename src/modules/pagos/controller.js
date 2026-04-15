@@ -1,4 +1,4 @@
-const { Paquete } = require('../../models');
+const { Paquete, Pedido } = require('../../models');
 const { createStripePaymentLink } = require('../../services/stripePaymentLink');
 
 class PagosController {
@@ -10,7 +10,7 @@ class PagosController {
   async generarLinkStripe(req, res, next) {
     try {
       
-      const { telefono, productos = [], paquetes = [], promocion_aplicada } = req.body;
+      const { telefono, productos = [], paquetes = [], pedido_id } = req.body;
 
       const hasProductos = Array.isArray(productos) && productos.length > 0;
       const hasPaquetes = Array.isArray(paquetes) && paquetes.length > 0;
@@ -113,6 +113,17 @@ class PagosController {
         });
       }
 
+      let pedido = null;
+      if (pedido_id) {
+        pedido = await Pedido.findByPk(pedido_id);
+        if (!pedido) {
+          return res.status(404).json({
+            success: false,
+            message: 'Pedido no encontrado'
+          });
+        }
+      }
+
       // --------------------
       // 3. Generar payment link en Stripe
       // --------------------
@@ -125,6 +136,15 @@ class PagosController {
           extraMetadata: {}
         });
 
+        let persistidoEnPedido = false;
+        if (pedido) {
+          await pedido.update({
+            stripe_link_id: paymentLinkId,
+            stripe_link_url: paymentLinkUrl
+          });
+          persistidoEnPedido = true;
+        }
+
         // --------------------
         // 4. Retornar formato específico para n8n con información de debug
         // --------------------
@@ -135,9 +155,13 @@ class PagosController {
             : 'Los descuentos ya fueron aplicados a los precios de los productos mediante /aplicarCodigo';
 
         return res.json({
+          success: true,
           precioTotal: total,
           url: paymentLinkUrl,
           stripe_link_id: paymentLinkId,
+          stripe_link_url: paymentLinkUrl,
+          pedido_id: pedido ? pedido.id : null,
+          persistido_en_pedido: persistidoEnPedido,
           debug: {
             calculo: {
               productos: productosProcesados,
