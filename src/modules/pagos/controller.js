@@ -1,5 +1,5 @@
-const axios = require('axios');
 const { Paquete } = require('../../models');
+const { createStripePaymentLink } = require('../../services/stripePaymentLink');
 
 class PagosController {
   /**
@@ -116,48 +116,14 @@ class PagosController {
       // --------------------
       // 3. Generar payment link en Stripe
       // --------------------
-      const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-      if (!stripeSecretKey) {
-        return res.status(500).json({
-          success: false,
-          message: 'Stripe API key no configurada en el servidor'
-        });
-      }
-
-      // Convertir precio total a centavos (Stripe requiere el monto en la unidad más pequeña)
       const unitAmount = total * 100;
 
-      // Preparar datos para Stripe API (form-urlencoded)
-      // Stripe requiere form-urlencoded para la API REST tradicional
-      const stripeData = new URLSearchParams();
-      stripeData.append('line_items[0][price_data][currency]', 'mxn');
-      stripeData.append('line_items[0][price_data][product_data][name]', 'Miau Miau Pago servicios');
-      stripeData.append('line_items[0][price_data][unit_amount]', unitAmount.toString());
-      stripeData.append('line_items[0][quantity]', '1');
-      stripeData.append('metadata[telefono]', telefono);
-
       try {
-        const stripeResponse = await axios.post(
-          'https://api.stripe.com/v1/payment_links',
-          stripeData.toString(),
-          {
-            headers: {
-              'Authorization': `Bearer ${stripeSecretKey}`,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            }
-          }
-        );
-
-        // Extraer URL y ID del payment link
-        const paymentLinkUrl = stripeResponse.data.url;
-        const paymentLinkId = stripeResponse.data.id;
-
-        if (!paymentLinkUrl || !paymentLinkId) {
-          return res.status(500).json({
-            success: false,
-            message: 'Error al generar el link de pago: respuesta inválida de Stripe'
-          });
-        }
+        const { url: paymentLinkUrl, id: paymentLinkId } = await createStripePaymentLink({
+          unitAmountCentavos: unitAmount,
+          telefono,
+          extraMetadata: {}
+        });
 
         // --------------------
         // 4. Retornar formato específico para n8n con información de debug
@@ -185,40 +151,22 @@ class PagosController {
             }
           }
         });
-
       } catch (stripeError) {
-        // Manejar errores de Stripe API
-        let errorMessage = 'Error al generar el link de pago en Stripe';
-        
-        if (stripeError.response) {
-          // Error de respuesta de Stripe
-          const stripeErrorData = stripeError.response.data;
-          errorMessage = stripeErrorData?.error?.message || errorMessage;
-          
-          console.error('Error de Stripe API:', {
-            status: stripeError.response.status,
-            error: stripeErrorData
-          });
+        const status = stripeError.statusCode || 500;
+        const message = stripeError.message || 'Error al generar el link de pago en Stripe';
 
-          return res.status(stripeError.response.status || 500).json({
-            success: false,
-            message: errorMessage
-          });
-        } else if (stripeError.request) {
-          // Error de red
-          console.error('Error de red al conectar con Stripe:', stripeError.message);
-          return res.status(503).json({
-            success: false,
-            message: 'Error de conexión con Stripe. Por favor, intenta de nuevo más tarde.'
-          });
-        } else {
-          // Error desconocido
-          console.error('Error desconocido al llamar a Stripe:', stripeError.message);
-          return res.status(500).json({
-            success: false,
-            message: errorMessage
+        if (status >= 500 || stripeError.code === 'STRIPE_NETWORK') {
+          console.error('Error al generar link Stripe (pagos):', {
+            status,
+            code: stripeError.code,
+            message
           });
         }
+
+        return res.status(status).json({
+          success: false,
+          message
+        });
       }
 
     } catch (error) {

@@ -296,6 +296,14 @@ router.post(
   pedidoController.validarStockPedido
 );
 
+router.post(
+  '/:id/stripe-payment-link',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_pedidos'),
+  validateId,
+  pedidoController.generarStripePaymentLinkPedido
+);
+
 router.put('/:id', 
   authenticateToken, 
   requireSuperAdminOrPermission('ver_pedidos'), 

@@ -1,4 +1,5 @@
 const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage, Conversacion, ConversacionLog } = require('../../models');
+const { createStripePaymentLink } = require('../../services/stripePaymentLink');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
@@ -463,6 +464,142 @@ class PedidoController {
         success: true,
         data: { pedido }
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Genera un Payment Link de Stripe para el total del pedido y guarda id + URL en el pedido.
+   * Idempotente: si ya hay link guardado, devuelve el existente.
+   */
+  async generarStripePaymentLinkPedido(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      const pedido = await Pedido.findByPk(id, {
+        include: [
+          {
+            model: Cliente,
+            as: 'cliente',
+            attributes: ['telefono'],
+            required: false
+          }
+        ]
+      });
+
+      if (!pedido) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pedido no encontrado'
+        });
+      }
+
+      if (pedido.metodo_pago !== 'tarjeta') {
+        return res.status(400).json({
+          success: false,
+          message: 'Solo los pedidos con método de pago "tarjeta" pueden generar un link de Stripe'
+        });
+      }
+
+      const existingUrl = pedido.stripe_link_url && String(pedido.stripe_link_url).trim();
+      const existingId = pedido.stripe_link_id && String(pedido.stripe_link_id).trim();
+      if (existingUrl && existingId) {
+        return res.json({
+          success: true,
+          data: {
+            stripe_link_id: existingId,
+            stripe_link_url: existingUrl,
+            url: existingUrl
+          }
+        });
+      }
+
+      const totalNum = parseFloat(pedido.total);
+      if (!Number.isFinite(totalNum) || totalNum <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El total del pedido debe ser mayor a 0 para generar un link de pago'
+        });
+      }
+
+      const sumProductos = await ProductoPedido.sum('precio_total', { where: { fkid_pedido: id } });
+      const sumPaquetes = await PaquetePedido.sum('precio_total', { where: { fkid_pedido: id } });
+      const sumLines =
+        (parseFloat(sumProductos) || 0) + (parseFloat(sumPaquetes) || 0);
+      const subtotalPedido = parseFloat(pedido.subtotal);
+      if (
+        Number.isFinite(sumLines) &&
+        Number.isFinite(subtotalPedido) &&
+        Math.abs(sumLines - subtotalPedido) > 0.05
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            'Inconsistencia entre las líneas del pedido y el subtotal; no se generó el link de pago'
+        });
+      }
+
+      const telefono =
+        (pedido.telefono_referencia && String(pedido.telefono_referencia).trim()) ||
+        (pedido.cliente?.telefono && String(pedido.cliente.telefono).trim()) ||
+        '';
+      if (!telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'Se requiere teléfono en el pedido o en el cliente para generar el link de pago'
+        });
+      }
+
+      const unitAmountCentavos = Math.round(totalNum * 100);
+      if (unitAmountCentavos < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'El monto en centavos es inválido para Stripe'
+        });
+      }
+
+      try {
+        const { url, id: linkId } = await createStripePaymentLink({
+          unitAmountCentavos,
+          telefono,
+          extraMetadata: {
+            pedido_id: String(pedido.id),
+            numero_pedido: String(pedido.numero_pedido || '').slice(0, 100)
+          }
+        });
+
+        await pedido.update({
+          stripe_link_id: linkId,
+          stripe_link_url: url
+        });
+
+        return res.json({
+          success: true,
+          data: {
+            stripe_link_id: linkId,
+            stripe_link_url: url,
+            url
+          }
+        });
+      } catch (stripeError) {
+        const status = stripeError.statusCode || 500;
+        const message = stripeError.message || 'Error al generar el link de pago en Stripe';
+
+        if (status >= 500 || stripeError.code === 'STRIPE_NETWORK') {
+          console.error('Error al generar link Stripe (pedido):', {
+            pedidoId: id,
+            status,
+            code: stripeError.code,
+            message
+          });
+        }
+
+        return res.status(status).json({
+          success: false,
+          message
+        });
+      }
     } catch (error) {
       next(error);
     }
