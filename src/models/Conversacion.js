@@ -1,5 +1,3 @@
-const { Op } = require('sequelize');
-
 module.exports = (sequelize, DataTypes) => {
   const Conversacion = sequelize.define('Conversacion', {
     id: {
@@ -132,18 +130,8 @@ module.exports = (sequelize, DataTypes) => {
 
     const { ConversacionLog } = this.sequelize.models;
     if (ConversacionLog) {
-      // Restaurar logs de error ocultados al cerrar (simétrico a changeStatus)
-      await ConversacionLog.update(
-        { baja_logica: false },
-        {
-          where: {
-            fkid_conversacion: this.id,
-            baja_logica: true,
-            [Op.or]: [{ nivel: 'error' }, { tipo_log: 'error' }],
-          },
-        }
-      );
-
+      // Los logs de error siguen con baja_logica (ocultos al cerrar/resolver);
+      // no se restauran: la conversación ya fue resuelta y no debe volver al KPI de errores.
       await ConversacionLog.createLog(
         this.id,
         {
