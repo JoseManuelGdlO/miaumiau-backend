@@ -149,6 +149,12 @@ class ConversacionChatController {
         });
       }
 
+      await conversacion.reactivateIfClosed({
+        motivo: 'nuevo_mensaje',
+        mensaje_from: from,
+        changed_by: req.user?.id || 'sistema',
+      });
+
       // Obtener timezone de la ciudad del mensaje (Cliente o Pedido); default America/Monterrey
       const timezone = await getTimezoneForConversationId(fkid_conversacion);
       const nowInTz = moment().tz(timezone);

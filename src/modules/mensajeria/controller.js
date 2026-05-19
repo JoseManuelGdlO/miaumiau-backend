@@ -162,6 +162,11 @@ class MensajeriaController {
         });
       }
 
+      await conversacion.reactivateIfClosed({
+        motivo: 'mensaje_agente',
+        changed_by: req.user?.id || 'sistema',
+      });
+
       const telefono = extractPhoneFromConversation(conversacion);
       if (!telefono) {
         console.error('[WhatsApp] Error: No se encontró teléfono válido', {

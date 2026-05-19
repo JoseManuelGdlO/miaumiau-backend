@@ -1,3 +1,5 @@
+const { Op } = require('sequelize');
+
 module.exports = (sequelize, DataTypes) => {
   const Conversacion = sequelize.define('Conversacion', {
     id: {
@@ -114,6 +116,50 @@ module.exports = (sequelize, DataTypes) => {
   Conversacion.prototype.close = function() {
     this.status = 'cerrada';
     return this.save();
+  };
+
+  /**
+   * Reabre una conversación cerrada (p. ej. mensaje nuevo del cliente o del agente).
+   * @returns {Promise<boolean>} true si cambió de cerrada a activa
+   */
+  Conversacion.prototype.reactivateIfClosed = async function(meta = {}) {
+    if (this.status !== 'cerrada') {
+      return false;
+    }
+
+    const statusAnterior = this.status;
+    await this.update({ status: 'activa' });
+
+    const { ConversacionLog } = this.sequelize.models;
+    if (ConversacionLog) {
+      // Restaurar logs de error ocultados al cerrar (simétrico a changeStatus)
+      await ConversacionLog.update(
+        { baja_logica: false },
+        {
+          where: {
+            fkid_conversacion: this.id,
+            baja_logica: true,
+            [Op.or]: [{ nivel: 'error' }, { tipo_log: 'error' }],
+          },
+        }
+      );
+
+      await ConversacionLog.createLog(
+        this.id,
+        {
+          status_anterior: statusAnterior,
+          status_nuevo: 'activa',
+          motivo: meta.motivo || 'nueva_actividad',
+          ...meta,
+        },
+        'sistema',
+        'info',
+        meta.descripcion ||
+          `Conversación reabierta automáticamente (${statusAnterior} → activa)`
+      );
+    }
+
+    return true;
   };
 
   Conversacion.prototype.wait = function() {

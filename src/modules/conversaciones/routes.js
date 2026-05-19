@@ -113,6 +113,16 @@ const validateQuery = [
       return Array.isArray(value) && value.every(id => Number.isInteger(Number(id)));
     })
     .withMessage('El parámetro flags debe ser una lista de IDs separados por comas o un array'),
+
+  query('has_error')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('El parámetro has_error debe ser true o false'),
+
+  query('has_escalation')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('El parámetro has_escalation debe ser true o false'),
   
   handleValidationErrors
 ];

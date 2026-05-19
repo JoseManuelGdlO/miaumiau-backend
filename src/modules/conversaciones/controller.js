@@ -42,6 +42,39 @@ const findClienteByTelefono = async (telefonoRaw) => {
   return cliente;
 };
 
+// Subconsultas sin correlación (compatibles con MySQL; el EXISTS con "conversaciones"."id" fallaba)
+const ERROR_CONVERSATION_IDS_SQL = `(
+  SELECT DISTINCT cl.fkid_conversacion
+  FROM conversaciones_logs AS cl
+  WHERE cl.baja_logica = false
+  AND (cl.nivel = 'error' OR cl.tipo_log = 'error')
+)`;
+
+const ESCALATION_CONVERSATION_IDS_SQL = `(
+  SELECT DISTINCT cl.fkid_conversacion
+  FROM conversaciones_logs AS cl
+  WHERE cl.baja_logica = false
+  AND cl.tipo_log = 'escalacion'
+)`;
+
+const conversationIdsWithErrorCondition = {
+  id: { [Op.in]: Sequelize.literal(ERROR_CONVERSATION_IDS_SQL) },
+};
+
+const conversationIdsWithEscalationCondition = {
+  id: { [Op.in]: Sequelize.literal(ESCALATION_CONVERSATION_IDS_SQL) },
+};
+
+const appendWhereCondition = (whereClause, condition) => {
+  if (!whereClause || Object.keys(whereClause).length === 0) {
+    return condition;
+  }
+  if (whereClause[Op.and]) {
+    return { [Op.and]: [...whereClause[Op.and], condition] };
+  }
+  return { [Op.and]: [whereClause, condition] };
+};
+
 class ConversacionController {
   // Obtener todas las conversaciones
   async getAllConversaciones(req, res, next) {
@@ -56,6 +89,8 @@ class ConversacionController {
         start_date,
         end_date,
         flags,
+        has_error,
+        has_escalation,
         page = 1,
         limit = 10
       } = req.query;
@@ -260,6 +295,20 @@ class ConversacionController {
         } else {
           whereClause[Op.or] = searchConditions;
         }
+      }
+
+      if (has_error === 'true') {
+        whereClause = appendWhereCondition(
+          whereClause,
+          conversationIdsWithErrorCondition
+        );
+      }
+
+      if (has_escalation === 'true') {
+        whereClause = appendWhereCondition(
+          whereClause,
+          conversationIdsWithEscalationCondition
+        );
       }
 
       const { count, rows: conversaciones } = await Conversacion.findAndCountAll({
@@ -571,6 +620,11 @@ class ConversacionController {
             await conversacion.update({ whatsapp_phone_number_id });
           }
         }
+
+        await conversacion.reactivateIfClosed({
+          motivo: 'find_or_create',
+          from,
+        });
       }
 
       // Actualizar la fecha de última actividad de la conversación
@@ -758,6 +812,20 @@ class ConversacionController {
       const statusAnterior = conversacion.status;
       conversacion.status = status;
       await conversacion.save();
+
+      // Al cerrar/resolver, descartar logs de error para que deje de contar en KPI y filtros
+      if (status === 'cerrada') {
+        await ConversacionLog.update(
+          { baja_logica: true },
+          {
+            where: {
+              fkid_conversacion: conversacion.id,
+              baja_logica: false,
+              [Op.or]: [{ nivel: 'error' }, { tipo_log: 'error' }],
+            },
+          }
+        );
+      }
 
       // Crear log del cambio de status
       await ConversacionLog.createLog(
@@ -953,6 +1021,22 @@ class ConversacionController {
 
       const conversacionesPorTipo = await Conversacion.getConversationsByUserType();
 
+      const baseWhere = { baja_logica: false };
+
+      const errores = await Conversacion.count({
+        where: appendWhereCondition(
+          { ...baseWhere },
+          conversationIdsWithErrorCondition
+        ),
+      });
+
+      const escaladas = await Conversacion.count({
+        where: appendWhereCondition(
+          { ...baseWhere },
+          conversationIdsWithEscalationCondition
+        ),
+      });
+
       res.json({
         success: true,
         data: {
@@ -961,7 +1045,12 @@ class ConversacionController {
           conversacionesCerradas,
           conversacionesPausadas,
           conversacionesEnEspera,
-          conversacionesPorTipo
+          conversacionesPorTipo,
+          activas: conversacionesActivas,
+          cerradas: conversacionesCerradas,
+          errores,
+          escaladas,
+          resueltas: conversacionesCerradas,
         }
       });
     } catch (error) {
