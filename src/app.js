@@ -80,6 +80,7 @@ function getAllowedCorsOriginsSet() {
     'http://192.168.1.64:3000',
     'https://intelekia-miaumiau-front.vvggha.easypanel.host',
     'https://officina.miaumiau.com.mx',
+    'https://miaumiau.com.mx',
     process.env.FRONTEND_URL,
     process.env.PUBLIC_WEB_URL,
     process.env.MARKETING_URL,
