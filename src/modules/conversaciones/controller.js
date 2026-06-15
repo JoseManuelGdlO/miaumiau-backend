@@ -20,7 +20,7 @@ const resolvePhoneNumberId = async (rawPhone) => {
   const mapping = await WhatsAppPhoneNumber.findOne({
     where: { telefono: normalized }
   });
-  return mapping?.phoneid || "990229367500305";
+  return mapping?.phoneid || "986416624552272";
 };
 
 // Función helper para buscar cliente por teléfono
