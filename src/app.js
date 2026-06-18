@@ -51,6 +51,7 @@ const {
 } = require('./modules/site-settings/routes');
 const portalClienteRoutes = require('./modules/portal/routes');
 const n8nRoutes = require('./modules/n8n/routes');
+const pushRoutes = require('./modules/push/routes');
 
 const app = express();
 
@@ -232,6 +233,7 @@ app.use('/api/mensajeria', mensajeriaRoutes);
 app.use('/api/maps', mapsRoutes);
 app.use('/api/pagos', pagosRoutes);
 app.use('/api/n8n', n8nRoutes);
+app.use('/api/push', pushRoutes);
 app.use('/api/public', publicSiteSettingsRoutes);
 app.use('/api/site-settings', siteSettingsRoutes);
 

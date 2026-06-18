@@ -10,6 +10,7 @@ const {
   findPedidoActivoPorTelefono,
   toPedidoResumen,
 } = require('./pedidoActivo');
+const { sendPushToUsersWithPermission } = require('../../services/pushService');
 
 const NOTIFICACION_TIPO = 'modificacion_pedido_activo';
 const ANTI_SPAM_HORAS = 2;
@@ -190,6 +191,16 @@ class N8nController {
       }
 
       await transaction.commit();
+
+      try {
+        await sendPushToUsersWithPermission('ver_notificaciones', {
+          title: notificacion.nombre,
+          body: notificacion.descripcion,
+          url: `/dashboard/conversations/${fkid_conversacion}`,
+        });
+      } catch (pushError) {
+        console.warn('[push] alerta-modificacion-pedido', pushError.message);
+      }
 
       res.status(201).json({
         success: true,

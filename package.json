@@ -40,6 +40,7 @@
     "node-cron": "^4.2.1",
     "pg": "^8.16.3",
     "sequelize": "^6.35.0",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

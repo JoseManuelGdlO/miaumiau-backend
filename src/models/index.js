@@ -36,6 +36,7 @@ const WhatsAppPhoneNumber = require('./WhatsAppPhoneNumber');
 const CityPointOfSale = require('./CityPointOfSale');
 const SiteSetting = require('./SiteSetting');
 const ClientePuntosMovimiento = require('./ClientePuntosMovimiento');
+const PushSubscription = require('./PushSubscription');
 
 // Inicializar modelos
 const models = {
@@ -72,7 +73,8 @@ const models = {
   WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes),
   CityPointOfSale: CityPointOfSale(sequelize, DataTypes),
   SiteSetting: SiteSetting(sequelize, DataTypes),
-  ClientePuntosMovimiento: ClientePuntosMovimiento(sequelize, DataTypes)
+  ClientePuntosMovimiento: ClientePuntosMovimiento(sequelize, DataTypes),
+  PushSubscription: PushSubscription(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -128,6 +130,16 @@ models.Role.hasMany(models.User, {
 models.City.hasMany(models.User, {
   foreignKey: 'ciudad_id',
   as: 'usuarios'
+});
+
+models.User.hasMany(models.PushSubscription, {
+  foreignKey: 'user_id',
+  as: 'pushSubscriptions'
+});
+
+models.PushSubscription.belongsTo(models.User, {
+  foreignKey: 'user_id',
+  as: 'usuario'
 });
 
 // Asociaciones para Promotion
