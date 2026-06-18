@@ -10,7 +10,7 @@ const {
   findPedidoActivoPorTelefono,
   toPedidoResumen,
 } = require('./pedidoActivo');
-const { sendPushToUsersWithPermission } = require('../../services/pushService');
+const { sendPushForNotificacion } = require('../../services/pushService');
 const { createConversationChatMessage } = require('../../services/conversacionChatService');
 const { downloadAndSaveConversationImage } = require('../../utils/whatsapp');
 const { deleteConversationImage } = require('../../utils/uploadImages');
@@ -196,11 +196,7 @@ class N8nController {
       await transaction.commit();
 
       try {
-        await sendPushToUsersWithPermission('ver_notificaciones', {
-          title: notificacion.nombre,
-          body: notificacion.descripcion,
-          url: `/dashboard/conversations/${fkid_conversacion}`,
-        });
+        await sendPushForNotificacion(notificacion);
       } catch (pushError) {
         console.warn('[push] alerta-modificacion-pedido', pushError.message);
       }

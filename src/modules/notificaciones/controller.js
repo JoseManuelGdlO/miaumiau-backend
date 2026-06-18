@@ -1,5 +1,6 @@
 const { Notificacion, Sequelize, Conversacion, Pedido, Cliente, Inventario, City, ProductoPedido } = require('../../models');
 const { Op } = require('sequelize');
+const { sendPushForNotificacion } = require('../../services/pushService');
 
 class NotificacionController {
   // Obtener todas las notificaciones
@@ -116,6 +117,12 @@ class NotificacionController {
         hora_creacion,
         datos: datos || null
       });
+
+      try {
+        await sendPushForNotificacion(notificacion);
+      } catch (pushError) {
+        console.warn('[push] create-notificacion', pushError.message);
+      }
 
       res.status(201).json({
         success: true,

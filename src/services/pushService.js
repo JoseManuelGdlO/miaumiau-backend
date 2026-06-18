@@ -56,7 +56,55 @@ async function sendPushToUsersWithPermission(permissionName, { title, body, url 
   return { sent };
 }
 
+const CONVERSATION_DETAIL_PATH = '/dashboard/conversations';
+const NOTIFICATIONS_PATH = '/dashboard/notifications';
+
+function resolvePushUrlFromDatos(datos) {
+  if (!datos || typeof datos !== 'object') {
+    return NOTIFICATIONS_PATH;
+  }
+
+  const accion = datos.accion;
+  if (accion?.tipo === 'ir_conversacion') {
+    const conversacionId = accion.conversacionId ?? datos.conversacionId ?? datos.conversationId;
+    if (conversacionId != null) {
+      return `${CONVERSATION_DETAIL_PATH}/${conversacionId}`;
+    }
+
+    if (accion.ruta) {
+      const rutaMatch = String(accion.ruta).match(/\/(?:conversations|conversaciones)\/(\d+)/);
+      if (rutaMatch) {
+        return `${CONVERSATION_DETAIL_PATH}/${rutaMatch[1]}`;
+      }
+      if (String(accion.ruta).startsWith('/')) {
+        return accion.ruta;
+      }
+    }
+  }
+
+  if (datos.actionUrl) {
+    return datos.actionUrl;
+  }
+
+  const conversacionId = datos.conversacionId ?? datos.conversationId;
+  if (conversacionId != null) {
+    return `${CONVERSATION_DETAIL_PATH}/${conversacionId}`;
+  }
+
+  return NOTIFICATIONS_PATH;
+}
+
+async function sendPushForNotificacion(notificacion) {
+  return sendPushToUsersWithPermission('ver_notificaciones', {
+    title: notificacion.nombre,
+    body: notificacion.descripcion || '',
+    url: resolvePushUrlFromDatos(notificacion.datos),
+  });
+}
+
 module.exports = {
   configureVapid,
   sendPushToUsersWithPermission,
+  resolvePushUrlFromDatos,
+  sendPushForNotificacion,
 };
