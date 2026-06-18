@@ -1,4 +1,4 @@
-const { City, CityPointOfSale } = require('../../models');
+const { City, CityPointOfSale, Cliente } = require('../../models');
 const { Op } = require('sequelize');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 
@@ -141,6 +141,81 @@ class CityController {
     }
   }
 
+  // Obtener número de soporte al cliente por cityId o teléfono de cliente
+  async getNumeroSoporteCliente(req, res, next) {
+    try {
+      const { cityId, telefono } = req.params;
+      let city = null;
+
+      if (cityId) {
+        const resolvedCityId = await mapCityNameToId(cityId);
+        if (!resolvedCityId) {
+          return res.status(404).json({
+            success: false,
+            message: `Ciudad con ID ${cityId} no encontrada`
+          });
+        }
+
+        city = await City.findByPk(resolvedCityId, {
+          attributes: ['id', 'nombre', 'numero_soporte_cliente']
+        });
+
+        if (!city) {
+          return res.status(404).json({
+            success: false,
+            message: `Ciudad con ID ${cityId} no encontrada`
+          });
+        }
+      } else if (telefono) {
+        const cliente = await Cliente.findOne({
+          where: {
+            telefono,
+            isActive: true
+          },
+          include: [
+            {
+              model: City,
+              as: 'ciudad',
+              attributes: ['id', 'nombre', 'numero_soporte_cliente']
+            }
+          ]
+        });
+
+        if (!cliente) {
+          return res.status(404).json({
+            success: false,
+            message: 'Cliente no encontrado con ese número de teléfono'
+          });
+        }
+
+        if (!cliente.ciudad) {
+          return res.status(404).json({
+            success: false,
+            message: 'No se encontró ciudad asociada al cliente'
+          });
+        }
+
+        city = cliente.ciudad;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Debe proporcionar cityId o telefono'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ciudad_id: city.id,
+          nombre: city.nombre,
+          numero_soporte_cliente: city.numero_soporte_cliente
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Crear nueva ciudad
   async createCity(req, res, next) {
     try {
@@ -156,6 +231,7 @@ class CityController {
         manager,
         telefono,
         email_contacto,
+        numero_soporte_cliente,
         notas_adicionales,
         max_pedidos_por_horario = 5,
         dias_trabajo = [0, 1, 2, 3, 4, 5, 6],
@@ -224,6 +300,7 @@ class CityController {
         manager,
         telefono,
         email_contacto,
+        numero_soporte_cliente,
         notas_adicionales,
         max_pedidos_por_horario,
         dias_trabajo,

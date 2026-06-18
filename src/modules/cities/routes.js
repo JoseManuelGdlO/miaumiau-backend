@@ -65,6 +65,11 @@ const validateCity = [
     .withMessage('Debe ser un email válido')
     .normalizeEmail(),
   
+  body('numero_soporte_cliente')
+    .optional({ nullable: true })
+    .isLength({ min: 10, max: 20 })
+    .withMessage('El número de soporte debe tener un formato válido'),
+  
   body('notas_adicionales')
     .optional()
     .isLength({ max: 1000 })
@@ -198,6 +203,19 @@ router.get('/points-of-sale',
   authenticateToken,
   requireSuperAdminOrPermission('ver_ciudades'),
   cityController.getAllPointsOfSale
+);
+
+router.get('/telefono/:telefono/numero-soporte-cliente',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  cityController.getNumeroSoporteCliente
+);
+
+router.get('/:cityId/numero-soporte-cliente',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_ciudades'),
+  validateCityIdParam,
+  cityController.getNumeroSoporteCliente
 );
 
 router.get('/:id', 

@@ -97,6 +97,14 @@ module.exports = (sequelize, DataTypes) => {
         len: [0, 100]
       }
     },
+    numero_soporte_cliente: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: '618 1892035',
+      validate: {
+        len: [0, 20]
+      }
+    },
     notas_adicionales: {
       type: DataTypes.TEXT,
       allowNull: true,
