@@ -11,6 +11,9 @@ const {
   toPedidoResumen,
 } = require('./pedidoActivo');
 const { sendPushToUsersWithPermission } = require('../../services/pushService');
+const { createConversationChatMessage } = require('../../services/conversacionChatService');
+const { downloadAndSaveConversationImage } = require('../../utils/whatsapp');
+const { deleteConversationImage } = require('../../utils/uploadImages');
 
 const NOTIFICACION_TIPO = 'modificacion_pedido_activo';
 const ANTI_SPAM_HORAS = 2;
@@ -218,6 +221,66 @@ class N8nController {
       });
     } catch (error) {
       await transaction.rollback();
+      next(error);
+    }
+  }
+
+  async recibirImagenWhatsApp(req, res, next) {
+    let savedFilename = null;
+
+    try {
+      const {
+        fkid_conversacion: fkidConversacion,
+        media_id: mediaId,
+        mime_type: mimeType,
+        mensaje,
+        whatsapp_message_id: whatsappMessageId,
+        caption,
+      } = req.body;
+
+      const result = await downloadAndSaveConversationImage(mediaId, mimeType || null);
+
+      if (!result.success) {
+        const status = result.status || 502;
+        return res.status(status).json({
+          success: false,
+          message: result.error || 'No se pudo descargar la imagen de WhatsApp',
+        });
+      }
+
+      savedFilename = result.filename;
+
+      const chat = await createConversationChatMessage({
+        fkid_conversacion: fkidConversacion,
+        from: 'usuario',
+        mensaje,
+        tipo_mensaje: 'imagen',
+        metadata: {
+          canal: 'whatsapp',
+          whatsapp_message_id: whatsappMessageId,
+          media_id: mediaId,
+          mime_type: result.mime_type,
+          image_url: result.image_url,
+          caption: caption || null,
+        },
+        changed_by: req.user?.id || 'n8n',
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Imagen recibida y guardada en la conversación',
+        data: {
+          chat,
+          image_url: result.image_url,
+          filename: result.filename,
+          mime_type: result.mime_type,
+          size_bytes: result.size_bytes,
+        },
+      });
+    } catch (error) {
+      if (savedFilename) {
+        deleteConversationImage(savedFilename);
+      }
       next(error);
     }
   }

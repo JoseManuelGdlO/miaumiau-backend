@@ -4,6 +4,7 @@ const mensajeriaController = require('./controller');
 const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { handleValidationErrors } = require('../../utils/validation');
+const { uploadConversaciones } = require('../../utils/uploadImages');
 
 const router = express.Router();
 
@@ -58,6 +59,42 @@ router.post(
   requireSuperAdminOrPermission('enviar_conversaciones_chat'),
   validateSendMessage,
   mensajeriaController.sendWhatsAppMessage
+);
+
+router.post(
+  '/send-whatsapp-image',
+  authenticateToken,
+  requireSuperAdminOrPermission('enviar_conversaciones_chat'),
+  (req, res, next) => {
+    uploadConversaciones.single('imagen')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.code === 'LIMIT_FILE_SIZE'
+            ? 'La imagen no debe superar 5 MB'
+            : (err.message || 'Error al subir la imagen'),
+        });
+      }
+      next();
+    });
+  },
+  body('conversacionId')
+    .notEmpty()
+    .withMessage('conversacionId es requerido')
+    .custom((value) => {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 1) {
+        throw new Error('conversacionId debe ser un número entero positivo');
+      }
+      return true;
+    }),
+  body('caption')
+    .optional()
+    .trim()
+    .isLength({ max: 1024 })
+    .withMessage('El caption no puede exceder 1024 caracteres'),
+  handleValidationErrors,
+  mensajeriaController.sendWhatsAppImageMessage
 );
 
 // Webhook de WhatsApp (sin autenticación, usa verify token)

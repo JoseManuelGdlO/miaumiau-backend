@@ -1,5 +1,5 @@
 const { Conversacion, ConversacionChat, ConversacionLog, Cliente } = require('../../models');
-const { sendWhatsAppMessage } = require('../../utils/whatsapp');
+const { sendWhatsAppMessage, sendWhatsAppImage, uploadWhatsAppMedia, buildPublicImageUrl } = require('../../utils/whatsapp');
 const { Sequelize } = require('sequelize');
 const { Op } = Sequelize;
 const moment = require('moment-timezone');
@@ -324,6 +324,176 @@ class MensajeriaController {
         success: true,
         message: 'Mensaje enviado exitosamente',
         data: { chat: chatCompleto }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async sendWhatsAppImageMessage(req, res, next) {
+    try {
+      const conversacionId = Number(req.body.conversacionId);
+      const caption = typeof req.body.caption === 'string' ? req.body.caption.trim() : '';
+
+      if (!req.file || !req.file.filename) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se recibió ninguna imagen. Envía el archivo en el campo "imagen".',
+        });
+      }
+
+      if (req.fileValidationError) {
+        return res.status(400).json({
+          success: false,
+          message: req.fileValidationError,
+        });
+      }
+
+      const conversacion = await Conversacion.findByPk(conversacionId, {
+        include: [
+          {
+            model: Cliente,
+            as: 'cliente',
+            attributes: ['id', 'telefono'],
+            required: false,
+          },
+        ],
+      });
+
+      if (!conversacion) {
+        return res.status(404).json({
+          success: false,
+          message: 'Conversación no encontrada',
+        });
+      }
+
+      await conversacion.reactivateIfClosed({
+        motivo: 'mensaje_agente',
+        changed_by: req.user?.id || 'sistema',
+      });
+
+      const telefono = extractPhoneFromConversation(conversacion);
+      if (!telefono) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se encontró un teléfono válido para la conversación',
+        });
+      }
+
+      const phoneNumberId = conversacion.whatsapp_phone_number_id;
+      if (!phoneNumberId) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se encontró el phone_number_id para la conversación',
+        });
+      }
+
+      const imageUrl = buildPublicImageUrl(req.file.filename);
+      const filePath = req.file.path;
+
+      const uploadResult = await uploadWhatsAppMedia(phoneNumberId, filePath, req.file.mimetype);
+      if (!uploadResult.success) {
+        return res.status(502).json({
+          success: false,
+          message: 'No se pudo subir la imagen a WhatsApp',
+          error: uploadResult.error || uploadResult.data,
+          telefono,
+        });
+      }
+
+      const sendResult = await sendWhatsAppImage(telefono, phoneNumberId, {
+        id: uploadResult.mediaId,
+        caption: caption || undefined,
+      });
+
+      if (sendResult.errors?.length > 0) {
+        const errorMessages = sendResult.errors.map((e) => `${e.code}: ${e.title} - ${e.message}`).join('; ');
+        return res.status(502).json({
+          success: false,
+          message: 'WhatsApp reportó errores al enviar la imagen',
+          error: errorMessages,
+          errors: sendResult.errors,
+          telefono,
+        });
+      }
+
+      if (!sendResult.success) {
+        return res.status(502).json({
+          success: false,
+          message: 'No se pudo enviar la imagen por WhatsApp',
+          error: sendResult.error || sendResult.data,
+          telefono,
+        });
+      }
+
+      const timezone = await getTimezoneForConversationId(conversacion.id);
+      const nowInTz = moment().tz(timezone);
+      const fecha = nowInTz.format('YYYY-MM-DD');
+      const hora = nowInTz.format('HH:mm:ss');
+      const nowAsDate = nowInTz.toDate();
+
+      const mensaje = caption || '[imagen]';
+      let whatsappStatus = 'pending';
+      if (sendResult.messageId) {
+        whatsappStatus = 'sent';
+      } else if (!sendResult.success) {
+        whatsappStatus = 'failed';
+      }
+
+      const chat = await ConversacionChat.create({
+        fkid_conversacion: conversacion.id,
+        fecha,
+        hora,
+        from: 'agente',
+        mensaje,
+        tipo_mensaje: 'imagen',
+        metadata: {
+          canal: 'whatsapp',
+          image_url: imageUrl,
+          mime_type: req.file.mimetype,
+          filename: req.file.filename,
+          status: sendResult.status,
+          whatsapp_message_id: sendResult.messageId || null,
+          whatsapp_status: whatsappStatus,
+          whatsapp_status_updated_at: nowAsDate.toISOString(),
+        },
+        createdAt: nowAsDate,
+        updatedAt: nowAsDate,
+      });
+
+      await Conversacion.update(
+        { updatedAt: nowAsDate },
+        { where: { id: conversacion.id } }
+      );
+
+      await ConversacionLog.createLog(
+        conversacion.id,
+        {
+          mensaje_id: chat.id,
+          from: 'agente',
+          tipo_mensaje: 'imagen',
+          telefono,
+        },
+        'mensaje',
+        'info',
+        `Imagen enviada por agente${caption ? `: ${caption.substring(0, 50)}` : ''}`
+      );
+
+      const chatCompleto = await ConversacionChat.findByPk(chat.id, {
+        include: [
+          {
+            model: Conversacion,
+            as: 'conversacion',
+            attributes: ['id', 'from', 'status', 'tipo_usuario'],
+            required: false,
+          },
+        ],
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Imagen enviada exitosamente',
+        data: { chat: chatCompleto },
       });
     } catch (error) {
       next(error);

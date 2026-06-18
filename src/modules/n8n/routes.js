@@ -49,6 +49,47 @@ const validateAlertaModificacionPedido = [
   handleValidationErrors,
 ];
 
+const validateWhatsAppImagen = [
+  body('fkid_conversacion')
+    .isInt({ min: 1 })
+    .withMessage('fkid_conversacion debe ser un número entero positivo'),
+
+  body('media_id')
+    .trim()
+    .notEmpty()
+    .withMessage('media_id es obligatorio')
+    .isLength({ max: 255 })
+    .withMessage('media_id no puede exceder 255 caracteres'),
+
+  body('mime_type')
+    .optional()
+    .trim()
+    .isIn(['image/jpeg', 'image/png', 'image/webp'])
+    .withMessage('mime_type debe ser image/jpeg, image/png o image/webp'),
+
+  body('mensaje')
+    .trim()
+    .notEmpty()
+    .withMessage('mensaje es obligatorio')
+    .isLength({ min: 1, max: 5000 })
+    .withMessage('mensaje debe tener entre 1 y 5000 caracteres'),
+
+  body('whatsapp_message_id')
+    .trim()
+    .notEmpty()
+    .withMessage('whatsapp_message_id es obligatorio')
+    .isLength({ max: 255 })
+    .withMessage('whatsapp_message_id no puede exceder 255 caracteres'),
+
+  body('caption')
+    .optional()
+    .trim()
+    .isLength({ max: 1024 })
+    .withMessage('caption no puede exceder 1024 caracteres'),
+
+  handleValidationErrors,
+];
+
 router.get(
   '/pedido-activo',
   authenticateToken,
@@ -63,6 +104,14 @@ router.post(
   requireSuperAdminOrPermission('crear_notificaciones'),
   validateAlertaModificacionPedido,
   n8nController.crearAlertaModificacionPedido
+);
+
+router.post(
+  '/whatsapp-imagen',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_conversaciones_chat'),
+  validateWhatsAppImagen,
+  n8nController.recibirImagenWhatsApp
 );
 
 module.exports = router;

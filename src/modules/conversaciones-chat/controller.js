@@ -1,7 +1,6 @@
 const { ConversacionChat, Conversacion, ConversacionLog } = require('../../models');
 const { Op } = require('sequelize');
-const moment = require('moment-timezone');
-const { getTimezoneForConversationId } = require('../../utils/conversationTimezone');
+const { createConversationChatMessage } = require('../../services/conversacionChatService');
 
 class ConversacionChatController {
   // Obtener todos los mensajes de chat
@@ -140,7 +139,6 @@ class ConversacionChatController {
         metadata: metadataBody
       } = req.body;
 
-      // Verificar que la conversación existe
       const conversacion = await Conversacion.findByPk(fkid_conversacion);
       if (!conversacion) {
         return res.status(400).json({
@@ -149,95 +147,13 @@ class ConversacionChatController {
         });
       }
 
-      await conversacion.reactivateIfClosed({
-        motivo: 'nuevo_mensaje',
-        mensaje_from: from,
-        changed_by: req.user?.id || 'sistema',
-      });
-
-      // Obtener timezone de la ciudad del mensaje (Cliente o Pedido); default America/Monterrey
-      const timezone = await getTimezoneForConversationId(fkid_conversacion);
-      const nowInTz = moment().tz(timezone);
-      const fecha = nowInTz.format('YYYY-MM-DD');
-      const hora = nowInTz.format('HH:mm:ss');
-      const nowAsDate = nowInTz.toDate();
-
-      // Inicializar metadata: si viene en el body y es un objeto, usarlo; si no, usar objeto vacío
-      // Esto asegura que siempre haya un objeto metadata (nunca null) para facilitar búsquedas y actualizaciones
-      const metadata = (metadataBody && typeof metadataBody === 'object' && !Array.isArray(metadataBody))
-        ? metadataBody
-        : {};
-
-      // Parsear whatsapp_status_updated_at si viene como timestamp Unix (número o string numérico)
-      // WhatsApp envía timestamps en segundos, necesitamos convertirlos a ISO string
-      if (metadata.whatsapp_status_updated_at) {
-        const timestamp = metadata.whatsapp_status_updated_at;
-        // Si es un número o string numérico (timestamp Unix en segundos)
-        if (typeof timestamp === 'number' || (typeof timestamp === 'string' && /^\d+$/.test(timestamp))) {
-          // Convertir de segundos a milisegundos y luego a ISO string
-          metadata.whatsapp_status_updated_at = new Date(parseInt(timestamp) * 1000).toISOString();
-        }
-        // Si ya es una fecha ISO string válida, dejarlo como está
-        // Si no es válido, se mantendrá el valor original (puede causar error pero es mejor que perder datos)
-      }
-
-      // Si el mensaje viene de WhatsApp y tiene whatsapp_message_id, asegurarse de guardarlo
-      // Esto es útil cuando n8n u otros servicios crean mensajes con el whatsapp_message_id
-      if (metadata.whatsapp_message_id && !metadata.whatsapp_status) {
-        metadata.whatsapp_status = 'pending';
-        // Solo establecer la fecha si no viene ya parseada
-        if (!metadata.whatsapp_status_updated_at) {
-          metadata.whatsapp_status_updated_at = nowAsDate.toISOString();
-        }
-      }
-
-      // Si el mensaje viene de WhatsApp pero no tiene canal especificado, agregarlo
-      if (metadata.whatsapp_message_id && !metadata.canal) {
-        metadata.canal = 'whatsapp';
-      }
-
-      const chat = await ConversacionChat.create({
+      const chatCompleto = await createConversationChatMessage({
         fkid_conversacion,
-        fecha,
-        hora,
         from,
         mensaje,
         tipo_mensaje,
-        metadata,
-        createdAt: nowAsDate,
-        updatedAt: nowAsDate
-      });
-
-      // Actualizar la fecha de última actividad de la conversación
-      await Conversacion.update(
-        { updatedAt: nowAsDate },
-        { where: { id: conversacion.id } }
-      );
-
-      // Crear log del mensaje
-      await ConversacionLog.createLog(
-        fkid_conversacion,
-        { 
-          mensaje_id: chat.id,
-          from: from,
-          tipo_mensaje: tipo_mensaje,
-          mensaje_length: mensaje.length
-        },
-        'mensaje',
-        'info',
-        `Nuevo mensaje de ${from}: ${mensaje.substring(0, 50)}...`
-      );
-
-      // Obtener el mensaje creado con sus relaciones
-      const chatCompleto = await ConversacionChat.findByPk(chat.id, {
-        include: [
-          {
-            model: Conversacion,
-            as: 'conversacion',
-            attributes: ['id', 'from', 'status', 'tipo_usuario'],
-            required: false
-          }
-        ]
+        metadata: metadataBody,
+        changed_by: req.user?.id || 'sistema',
       });
 
       res.status(201).json({
