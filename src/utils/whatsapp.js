@@ -12,6 +12,9 @@ const {
 
 const { WHATSAPP_API_URL, WHATSAPP_API_TOKEN } = process.env;
 
+const WHATSAPP_REOPEN_TEMPLATE_NAME = process.env.WHATSAPP_REOPEN_TEMPLATE_NAME || 'saludo_inicial';
+const WHATSAPP_TEMPLATE_LANGUAGE = process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'es_MX';
+
 const buildRequestOptions = (apiUrl, phoneNumberId) => {
   const url = new URL(`${apiUrl.replace(/\/$/, '')}/${phoneNumberId}/messages`);
   return {
@@ -183,6 +186,27 @@ const sendWhatsAppMessage = (phone, message, phoneNumberId) => sendWhatsAppPaylo
     text: { body: message },
   },
   'Enviando mensaje de texto'
+);
+
+const sendWhatsAppTemplate = (
+  phone,
+  phoneNumberId,
+  templateName = WHATSAPP_REOPEN_TEMPLATE_NAME,
+  { languageCode = WHATSAPP_TEMPLATE_LANGUAGE, components = [] } = {}
+) => sendWhatsAppPayload(
+  phone,
+  phoneNumberId,
+  {
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: languageCode },
+      components,
+    },
+  },
+  `Enviando plantilla ${templateName}`
 );
 
 const isValidPublicHttpsUrl = (url) => {
@@ -428,9 +452,12 @@ const downloadAndSaveConversationImage = async (mediaId, mimeTypeHint = null) =>
 
 module.exports = {
   sendWhatsAppMessage,
+  sendWhatsAppTemplate,
   sendWhatsAppImage,
   uploadWhatsAppMedia,
   downloadAndSaveConversationImage,
   buildPublicImageUrl,
   isValidPublicHttpsUrl,
+  WHATSAPP_REOPEN_TEMPLATE_NAME,
+  WHATSAPP_TEMPLATE_LANGUAGE,
 };

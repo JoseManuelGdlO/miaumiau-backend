@@ -1,5 +1,16 @@
 const { Conversacion, ConversacionChat, ConversacionLog, Cliente } = require('../../models');
-const { sendWhatsAppMessage, sendWhatsAppImage, uploadWhatsAppMedia, buildPublicImageUrl } = require('../../utils/whatsapp');
+const {
+  sendWhatsAppMessage,
+  sendWhatsAppTemplate,
+  sendWhatsAppImage,
+  uploadWhatsAppMedia,
+  buildPublicImageUrl,
+} = require('../../utils/whatsapp');
+const {
+  extractPhoneFromConversation,
+  isWhatsAppWindowOpen,
+  WHATSAPP_REOPEN_TEMPLATE_NAME,
+} = require('../../services/whatsappWindowService');
 const { Sequelize } = require('sequelize');
 const { Op } = Sequelize;
 const moment = require('moment-timezone');
@@ -38,106 +49,6 @@ async function findChatByWhatsAppMessageId(whatsappMessageId, sinceDate = null) 
     order: [['created_at', 'DESC']] // Obtener el más reciente si hay duplicados
   });
 }
-
-// Función para normalizar números de teléfono (solo números)
-const normalizePhone = (value) => {
-  if (!value) return null;
-  const normalized = String(value).replace(/\D/g, '');
-  return normalized || null;
-};
-
-// Función para formatear número para WhatsApp (con código de país)
-// Sistema mexicano: código de país 52
-const formatPhoneForWhatsApp = (phone) => {
-  if (!phone) return null;
-  
-  // Normalizar: solo números
-  const normalized = normalizePhone(phone);
-  if (!normalized) return null;
-  
-  // Si el número ya tiene código de país (México: 52), asegurar formato correcto
-  // Si empieza con 52, ya tiene código de país
-  if (normalized.startsWith('52')) {
-    // Verificar que tenga al menos 12 dígitos (52 + 10 dígitos mexicanos)
-    if (normalized.length >= 12) {
-      return normalized;
-    }
-  }
-  
-  // Si empieza con 1 (código de país de México para móviles), ya está completo
-  // Los números mexicanos móviles tienen 10 dígitos y empiezan con 1
-  if (normalized.length === 10 && normalized.startsWith('1')) {
-    return '52' + normalized;
-  }
-  
-  // Si empieza con 0, remover el 0 y agregar código de país
-  if (normalized.startsWith('0')) {
-    const withoutZero = normalized.substring(1);
-    // Si después de quitar el 0 tiene 10 dígitos y empieza con 1, agregar 52
-    if (withoutZero.length === 10 && withoutZero.startsWith('1')) {
-      return '52' + withoutZero;
-    }
-    return '52' + withoutZero;
-  }
-  
-  // Si tiene 10 dígitos (formato local mexicano), agregar código de país
-  if (normalized.length === 10) {
-    return '52' + normalized;
-  }
-  
-  // Si tiene menos de 10 dígitos, asumir que es número local y agregar código de país
-  if (normalized.length < 10) {
-    // Remover cualquier 0 inicial y agregar código de país
-    const withoutLeadingZero = normalized.replace(/^0+/, '');
-    return '52' + withoutLeadingZero;
-  }
-  
-  // Si ya tiene más de 11 dígitos, asumir que ya tiene código de país
-  return normalized;
-};
-
-const extractPhoneFromConversation = (conversacion) => {
-  let rawPhone = null;
-  
-  // Prioridad 1: SIEMPRE usar el campo 'from' de la conversación
-  // Esto es crítico porque los clientes nuevos usan un cliente dummy (id=1)
-  // y el teléfono real está en el campo 'from' de la conversación
-  if (typeof conversacion?.from === 'string' && conversacion.from.trim()) {
-    rawPhone = conversacion.from;
-  }
-  // Prioridad 2: solo usar teléfono del cliente como fallback si no hay 'from'
-  else if (conversacion?.cliente?.telefono) {
-    rawPhone = conversacion.cliente.telefono;
-  }
-  
-  if (!rawPhone) {
-    return null;
-  }
-  
-  // Formatear el número para WhatsApp
-  const formattedPhone = formatPhoneForWhatsApp(rawPhone);
-  
-  // Verificar si el número podría estar en formato incorrecto
-  const normalized = normalizePhone(rawPhone);
-  const isMexicanFormat = normalized && normalized.startsWith('52') && normalized.length >= 12;
-  const isValidMexicanLength = normalized && normalized.length >= 12 && normalized.length <= 13;
-  
-  // Log para debugging
-  console.log('[WhatsApp] Extracción de teléfono:', {
-    conversacionId: conversacion?.id,
-    rawPhone,
-    formattedPhone,
-    clienteTelefono: conversacion?.cliente?.telefono,
-    from: conversacion?.from,
-    fuente: typeof conversacion?.from === 'string' ? 'from' : 'cliente',
-    formatoDetectado: isMexicanFormat ? 'mexicano (52)' : 'formato local',
-    longitudNormalizada: normalized?.length,
-    longitudFormateada: formattedPhone?.length,
-    advertencia: !isValidMexicanLength ? 'Longitud de número puede ser incorrecta' : null
-  });
-  
-  return formattedPhone;
-};
 
 class MensajeriaController {
   async sendWhatsAppMessage(req, res, next) {
@@ -199,60 +110,95 @@ class MensajeriaController {
         mensajeLength: mensaje.length
       });
 
-      const sendResult = await sendWhatsAppMessage(telefono, mensaje, phoneNumberId);
-      
-      console.log('[WhatsApp] Resultado del envío:', {
-        conversacionId: conversacion.id,
-        telefono,
-        success: sendResult.success,
-        status: sendResult.status,
-        messageId: sendResult.messageId,
-        error: sendResult.error,
-        errors: sendResult.errors,
-        wa_id: sendResult.parsedData?.contacts?.[0]?.wa_id,
-        input: sendResult.parsedData?.contacts?.[0]?.input,
-        data: sendResult.data
-      });
-      
-      // Verificar si hay errores en la respuesta aunque el status sea 200
-      if (sendResult.errors && Array.isArray(sendResult.errors) && sendResult.errors.length > 0) {
-        const errorMessages = sendResult.errors.map(e => `${e.code}: ${e.title} - ${e.message}`).join('; ');
-        console.error('[WhatsApp] Errores en respuesta de WhatsApp:', {
+      const windowOpen = await isWhatsAppWindowOpen(conversacion.id);
+      let templateUsed = false;
+      let operatorWhatsappTextSent = false;
+      let sendResult = null;
+
+      if (windowOpen) {
+        sendResult = await sendWhatsAppMessage(telefono, mensaje, phoneNumberId);
+        operatorWhatsappTextSent = true;
+
+        console.log('[WhatsApp] Resultado del envío:', {
           conversacionId: conversacion.id,
           telefono,
+          success: sendResult.success,
+          status: sendResult.status,
+          messageId: sendResult.messageId,
+          error: sendResult.error,
           errors: sendResult.errors,
-          errorMessages
+          wa_id: sendResult.parsedData?.contacts?.[0]?.wa_id,
+          input: sendResult.parsedData?.contacts?.[0]?.input,
+          data: sendResult.data
         });
-        
-        return res.status(502).json({
-          success: false,
-          message: 'WhatsApp reportó errores al enviar el mensaje',
-          error: errorMessages,
-          errors: sendResult.errors,
-          telefono: telefono
-        });
-      }
-      
-      if (!sendResult.success) {
-        return res.status(502).json({
-          success: false,
-          message: 'No se pudo enviar el mensaje por WhatsApp',
-          error: sendResult.error || sendResult.data,
-          telefono: telefono // Incluir el teléfono en la respuesta para debugging
-        });
-      }
-      
-      // Advertencia si wa_id no coincide con input (puede indicar formato incorrecto)
-      const wa_id = sendResult.parsedData?.contacts?.[0]?.wa_id;
-      const input = sendResult.parsedData?.contacts?.[0]?.input;
-      if (wa_id && input && wa_id !== input) {
-        console.warn('[WhatsApp] ADVERTENCIA: WhatsApp normalizó el número:', {
+
+        if (sendResult.errors && Array.isArray(sendResult.errors) && sendResult.errors.length > 0) {
+          const errorMessages = sendResult.errors.map(e => `${e.code}: ${e.title} - ${e.message}`).join('; ');
+          console.error('[WhatsApp] Errores en respuesta de WhatsApp:', {
+            conversacionId: conversacion.id,
+            telefono,
+            errors: sendResult.errors,
+            errorMessages
+          });
+
+          return res.status(502).json({
+            success: false,
+            message: 'WhatsApp reportó errores al enviar el mensaje',
+            error: errorMessages,
+            errors: sendResult.errors,
+            telefono: telefono
+          });
+        }
+
+        if (!sendResult.success) {
+          return res.status(502).json({
+            success: false,
+            message: 'No se pudo enviar el mensaje por WhatsApp',
+            error: sendResult.error || sendResult.data,
+            telefono: telefono
+          });
+        }
+
+        const wa_id = sendResult.parsedData?.contacts?.[0]?.wa_id;
+        const input = sendResult.parsedData?.contacts?.[0]?.input;
+        if (wa_id && input && wa_id !== input) {
+          console.warn('[WhatsApp] ADVERTENCIA: WhatsApp normalizó el número:', {
+            conversacionId: conversacion.id,
+            telefonoEnviado: telefono,
+            input: input,
+            wa_id: wa_id,
+            mensaje: 'El número fue normalizado por WhatsApp. Verificar que sea el número correcto.'
+          });
+        }
+      } else {
+        templateUsed = true;
+        console.log('[WhatsApp] Ventana cerrada, enviando plantilla de apertura:', {
           conversacionId: conversacion.id,
-          telefonoEnviado: telefono,
-          input: input,
-          wa_id: wa_id,
-          mensaje: 'El número fue normalizado por WhatsApp. Verificar que sea el número correcto.'
+          telefono,
+          template: WHATSAPP_REOPEN_TEMPLATE_NAME,
         });
+
+        sendResult = await sendWhatsAppTemplate(telefono, phoneNumberId, WHATSAPP_REOPEN_TEMPLATE_NAME);
+
+        if (sendResult.errors && Array.isArray(sendResult.errors) && sendResult.errors.length > 0) {
+          const errorMessages = sendResult.errors.map(e => `${e.code}: ${e.title} - ${e.message}`).join('; ');
+          return res.status(502).json({
+            success: false,
+            message: 'No se pudo enviar la plantilla de apertura de ventana de WhatsApp',
+            error: errorMessages,
+            errors: sendResult.errors,
+            telefono,
+          });
+        }
+
+        if (!sendResult.success) {
+          return res.status(502).json({
+            success: false,
+            message: 'No se pudo enviar la plantilla de apertura de ventana de WhatsApp',
+            error: sendResult.error || sendResult.data,
+            telefono,
+          });
+        }
       }
 
       // Obtener timezone de la ciudad del mensaje (Cliente o Pedido); default America/Monterrey
@@ -262,15 +208,30 @@ class MensajeriaController {
       const hora = nowInTz.format('HH:mm:ss');
       const nowAsDate = nowInTz.toDate();
 
-      // Determinar el estado inicial del mensaje
-      // Si tenemos message_id, el mensaje fue aceptado por WhatsApp (sent)
-      // Si no, puede estar en pending o failed
       let whatsappStatus = 'pending';
-      if (sendResult.messageId) {
+      if (operatorWhatsappTextSent && sendResult?.messageId) {
         whatsappStatus = 'sent';
-      } else if (!sendResult.success) {
+      } else if (operatorWhatsappTextSent && !sendResult?.success) {
         whatsappStatus = 'failed';
       }
+
+      const chatMetadata = templateUsed
+        ? {
+            canal: 'whatsapp',
+            whatsapp_pending_delivery: true,
+            whatsapp_delivered: false,
+            operator_whatsapp_text_sent: false,
+            template_used_on_send: true,
+            reopen_template_name: WHATSAPP_REOPEN_TEMPLATE_NAME,
+          }
+        : {
+            canal: 'whatsapp',
+            status: sendResult.status,
+            whatsapp_message_id: sendResult.messageId || null,
+            whatsapp_status: whatsappStatus,
+            whatsapp_status_updated_at: nowAsDate.toISOString(),
+            operator_whatsapp_text_sent: true,
+          };
 
       const chat = await ConversacionChat.create({
         fkid_conversacion: conversacion.id,
@@ -279,13 +240,7 @@ class MensajeriaController {
         from: 'agente',
         mensaje,
         tipo_mensaje: 'texto',
-        metadata: {
-          canal: 'whatsapp',
-          status: sendResult.status,
-          whatsapp_message_id: sendResult.messageId || null,
-          whatsapp_status: whatsappStatus,
-          whatsapp_status_updated_at: nowAsDate.toISOString()
-        },
+        metadata: chatMetadata,
         createdAt: nowAsDate,
         updatedAt: nowAsDate
       });
@@ -296,17 +251,23 @@ class MensajeriaController {
         { where: { id: conversacion.id } }
       );
 
+      const logDescripcion = templateUsed
+        ? `Mensaje del agente guardado en panel (pendiente WhatsApp): ${mensaje.substring(0, 50)}...`
+        : `Mensaje enviado por agente: ${mensaje.substring(0, 50)}...`;
+
       await ConversacionLog.createLog(
         conversacion.id,
         {
           mensaje_id: chat.id,
           from: 'agente',
           tipo_mensaje: 'texto',
-          telefono
+          telefono,
+          template_used: templateUsed,
+          operator_whatsapp_text_sent: operatorWhatsappTextSent,
         },
         'mensaje',
         'info',
-        `Mensaje enviado por agente: ${mensaje.substring(0, 50)}...`
+        logDescripcion
       );
 
       const chatCompleto = await ConversacionChat.findByPk(chat.id, {
@@ -322,8 +283,15 @@ class MensajeriaController {
 
       res.status(201).json({
         success: true,
-        message: 'Mensaje enviado exitosamente',
-        data: { chat: chatCompleto }
+        message: templateUsed
+          ? 'Plantilla de apertura enviada; mensaje guardado en el historial'
+          : 'Mensaje enviado exitosamente',
+        data: {
+          chat: chatCompleto,
+          template_used: templateUsed,
+          operator_whatsapp_text_sent: operatorWhatsappTextSent,
+          delivered: true,
+        }
       });
     } catch (error) {
       next(error);

@@ -1,6 +1,7 @@
 const moment = require('moment-timezone');
 const { ConversacionChat, Conversacion, ConversacionLog } = require('../models');
 const { getTimezoneForConversationId } = require('../utils/conversationTimezone');
+const { flushPendingAgentMessages } = require('./whatsappWindowService');
 
 async function createConversationChatMessage({
   fkid_conversacion,
@@ -77,6 +78,10 @@ async function createConversationChatMessage({
     'info',
     `Nuevo mensaje de ${from}: ${mensaje.substring(0, 50)}...`
   );
+
+  if (from === 'usuario') {
+    await flushPendingAgentMessages(fkid_conversacion);
+  }
 
   return ConversacionChat.findByPk(chat.id, {
     include: [
