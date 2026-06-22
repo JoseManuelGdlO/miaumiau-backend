@@ -27,45 +27,71 @@ const updateConversacionesWithCliente = async (telefono, id_cliente, id_pedido =
     const telefonoNormalizado = normalizePhone(telefono);
     if (!telefonoNormalizado) return;
     
-    // Buscar conversaciones activas que tengan este teléfono en 'from' y no tengan cliente asignado
+    // Buscar conversaciones con este teléfono en 'from' sin cliente o con el mismo cliente
     const conversaciones = await Conversacion.findAll({
       where: {
         from: {
           [Op.like]: `%${telefonoNormalizado}%`
         },
-        id_cliente: null,
-        baja_logica: false
+        baja_logica: false,
+        [Op.or]: [
+          { id_cliente: null },
+          { id_cliente }
+        ]
       }
     });
-    
-    // Actualizar cada conversación encontrada
+
+    let actualizadas = 0;
+
     for (const conversacion of conversaciones) {
-      const updateData = { id_cliente };
-      
-      // Si se proporciona id_pedido y la conversación no tiene uno, actualizarlo
+      const clienteAnterior = conversacion.id_cliente ?? null;
+      const updateData = {};
+
+      if (!conversacion.id_cliente) {
+        updateData.id_cliente = id_cliente;
+      }
+
       if (id_pedido && !conversacion.id_pedido) {
         updateData.id_pedido = id_pedido;
       }
-      
+
+      if (Object.keys(updateData).length === 0) {
+        continue;
+      }
+
       await conversacion.update(updateData);
-      
-      // Crear log de la actualización
+      actualizadas += 1;
+
+      const vinculoCliente = Boolean(updateData.id_cliente);
+      const vinculoPedido = Boolean(updateData.id_pedido);
+      const motivo = vinculoCliente
+        ? 'Cliente identificado al crear pedido'
+        : 'Pedido vinculado al crear pedido';
+
+      const partesDescripcion = [];
+      if (vinculoCliente) {
+        partesDescripcion.push(`cliente ${id_cliente}`);
+      }
+      if (vinculoPedido) {
+        partesDescripcion.push(`pedido ${id_pedido}`);
+      }
+
       await ConversacionLog.createLog(
         conversacion.id,
-        { 
-          cliente_anterior: null,
-          cliente_nuevo: id_cliente,
-          pedido_id: id_pedido || null,
+        {
+          cliente_anterior: clienteAnterior,
+          cliente_nuevo: vinculoCliente ? id_cliente : clienteAnterior,
+          pedido_id: vinculoPedido ? id_pedido : (conversacion.id_pedido ?? null),
           updated_by: 'sistema',
-          motivo: 'Cliente identificado al crear pedido'
+          motivo
         },
         'sistema',
         'info',
-        `Conversación actualizada con cliente ${id_cliente}${id_pedido ? ` y pedido ${id_pedido}` : ''}`
+        `Conversación actualizada con ${partesDescripcion.join(' y ')}`
       );
     }
-    
-    return conversaciones.length;
+
+    return actualizadas;
   } catch (error) {
     // No fallar el proceso si hay error al actualizar conversaciones
     // Solo loguear el error para debugging
