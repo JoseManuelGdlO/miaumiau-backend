@@ -181,26 +181,7 @@ class ConversacionChatController {
         });
       }
 
-      // Guardar el mensaje anterior para el log
-      const mensajeAnterior = chat.mensaje;
-
       await chat.update(updateData);
-
-      // Crear log si cambió el mensaje
-      if (updateData.mensaje && updateData.mensaje !== mensajeAnterior) {
-        await ConversacionLog.createLog(
-          chat.fkid_conversacion,
-          { 
-            mensaje_id: chat.id,
-            mensaje_anterior: mensajeAnterior,
-            mensaje_nuevo: updateData.mensaje,
-            updated_by: req.user?.id || 'sistema'
-          },
-          'mensaje',
-          'info',
-          'Mensaje actualizado'
-        );
-      }
 
       // Obtener el mensaje actualizado con sus relaciones
       const chatActualizado = await ConversacionChat.findByPk(id, {

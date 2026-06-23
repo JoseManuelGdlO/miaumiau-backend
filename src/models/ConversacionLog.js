@@ -120,7 +120,7 @@ module.exports = (sequelize, DataTypes) => {
         fkid_conversacion: conversacionId,
         baja_logica: false
       },
-      order: [['created_at', 'ASC']]
+      order: [['created_at', 'DESC']]
     });
   };
 

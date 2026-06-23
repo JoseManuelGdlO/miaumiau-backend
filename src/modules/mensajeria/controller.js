@@ -251,25 +251,6 @@ class MensajeriaController {
         { where: { id: conversacion.id } }
       );
 
-      const logDescripcion = templateUsed
-        ? `Mensaje del agente guardado en panel (pendiente WhatsApp): ${mensaje.substring(0, 50)}...`
-        : `Mensaje enviado por agente: ${mensaje.substring(0, 50)}...`;
-
-      await ConversacionLog.createLog(
-        conversacion.id,
-        {
-          mensaje_id: chat.id,
-          from: 'agente',
-          tipo_mensaje: 'texto',
-          telefono,
-          template_used: templateUsed,
-          operator_whatsapp_text_sent: operatorWhatsappTextSent,
-        },
-        'mensaje',
-        'info',
-        logDescripcion
-      );
-
       const chatCompleto = await ConversacionChat.findByPk(chat.id, {
         include: [
           {
@@ -434,19 +415,6 @@ class MensajeriaController {
         { where: { id: conversacion.id } }
       );
 
-      await ConversacionLog.createLog(
-        conversacion.id,
-        {
-          mensaje_id: chat.id,
-          from: 'agente',
-          tipo_mensaje: 'imagen',
-          telefono,
-        },
-        'mensaje',
-        'info',
-        `Imagen enviada por agente${caption ? `: ${caption.substring(0, 50)}` : ''}`
-      );
-
       const chatCompleto = await ConversacionChat.findByPk(chat.id, {
         include: [
           {
@@ -551,19 +519,20 @@ class MensajeriaController {
 
                 updatedCount++;
 
-                // Log de la actualización
-                await ConversacionLog.createLog(
-                  chat.fkid_conversacion,
-                  {
-                    mensaje_id: chat.id,
-                    whatsapp_message_id: messageId,
-                    status_anterior: metadata.whatsapp_status || 'unknown',
-                    status_nuevo: status
-                  },
-                  'mensaje',
-                  status === 'failed' ? 'error' : 'info',
-                  `Estado de WhatsApp actualizado: ${status}`
-                );
+                if (status === 'failed') {
+                  await ConversacionLog.createLog(
+                    chat.fkid_conversacion,
+                    {
+                      mensaje_id: chat.id,
+                      whatsapp_message_id: messageId,
+                      status_anterior: metadata.whatsapp_status || 'unknown',
+                      status_nuevo: status
+                    },
+                    'mensaje',
+                    'error',
+                    `Estado de WhatsApp actualizado: ${status}`
+                  );
+                }
               }
             }
           }
@@ -647,20 +616,21 @@ class MensajeriaController {
         attributes: ['id', 'from', 'status']
       });
 
-      // Log de la actualización
-      await ConversacionLog.createLog(
-        chat.fkid_conversacion,
-        {
-          mensaje_id: chat.id,
-          whatsapp_message_id: messageId,
-          status_anterior: previousStatus,
-          status_nuevo: status,
-          fuente: 'n8n'
-        },
-        'mensaje',
-        status === 'failed' ? 'error' : 'info',
-        `Estado de WhatsApp actualizado desde n8n: ${status}`
-      );
+      if (status === 'failed') {
+        await ConversacionLog.createLog(
+          chat.fkid_conversacion,
+          {
+            mensaje_id: chat.id,
+            whatsapp_message_id: messageId,
+            status_anterior: previousStatus,
+            status_nuevo: status,
+            fuente: 'n8n'
+          },
+          'mensaje',
+          'error',
+          `Estado de WhatsApp actualizado desde n8n: ${status}`
+        );
+      }
 
       res.status(200).json({
         success: true,
@@ -750,20 +720,21 @@ class MensajeriaController {
 
         await chat.update({ metadata: updatedMetadata });
 
-        // Log de la actualización
-        await ConversacionLog.createLog(
-          chat.fkid_conversacion,
-          {
-            mensaje_id: chat.id,
-            whatsapp_message_id: messageId,
-            status_anterior: previousStatus,
-            status_nuevo: status,
-            fuente: 'n8n'
-          },
-          'mensaje',
-          status === 'failed' ? 'error' : 'info',
-          `Estado de WhatsApp actualizado desde n8n: ${status}`
-        );
+        if (status === 'failed') {
+          await ConversacionLog.createLog(
+            chat.fkid_conversacion,
+            {
+              mensaje_id: chat.id,
+              whatsapp_message_id: messageId,
+              status_anterior: previousStatus,
+              status_nuevo: status,
+              fuente: 'n8n'
+            },
+            'mensaje',
+            'error',
+            `Estado de WhatsApp actualizado desde n8n: ${status}`
+          );
+        }
 
         // Obtener información de la conversación
         const conversacion = await Conversacion.findByPk(chat.fkid_conversacion, {

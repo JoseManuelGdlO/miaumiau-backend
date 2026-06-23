@@ -199,20 +199,6 @@ async function flushPendingAgentMessages(conversacionId) {
         },
       });
 
-      await ConversacionLog.createLog(
-        conversacionId,
-        {
-          mensaje_id: pending.id,
-          from: 'agente',
-          tipo_mensaje: 'texto',
-          telefono,
-          whatsapp_message_id: sendResult.messageId || null,
-        },
-        'mensaje',
-        'info',
-        `Mensaje pendiente del agente reenviado por WhatsApp: ${pending.mensaje.substring(0, 50)}...`
-      );
-
       flushed += 1;
     }
 

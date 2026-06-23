@@ -18,28 +18,34 @@ const extractPhone = (value) => {
   return match ? match[0] : null;
 };
 
+// Función helper para buscar conversaciones por teléfono
+const findConversacionesByTelefono = async (telefono, { id_cliente = null } = {}) => {
+  const telefonoNormalizado = normalizePhone(telefono);
+  if (!telefonoNormalizado) return [];
+
+  const where = {
+    from: {
+      [Op.like]: `%${telefonoNormalizado}%`
+    },
+    baja_logica: false,
+  };
+
+  if (id_cliente) {
+    where[Op.or] = [
+      { id_cliente: null },
+      { id_cliente }
+    ];
+  }
+
+  return Conversacion.findAll({ where });
+};
+
 // Función helper para actualizar conversaciones con el cliente real
 const updateConversacionesWithCliente = async (telefono, id_cliente, id_pedido = null) => {
   if (!telefono || !id_cliente) return;
   
   try {
-    // Normalizar el teléfono
-    const telefonoNormalizado = normalizePhone(telefono);
-    if (!telefonoNormalizado) return;
-    
-    // Buscar conversaciones con este teléfono en 'from' sin cliente o con el mismo cliente
-    const conversaciones = await Conversacion.findAll({
-      where: {
-        from: {
-          [Op.like]: `%${telefonoNormalizado}%`
-        },
-        baja_logica: false,
-        [Op.or]: [
-          { id_cliente: null },
-          { id_cliente }
-        ]
-      }
-    });
+    const conversaciones = await findConversacionesByTelefono(telefono, { id_cliente });
 
     let actualizadas = 0;
 
@@ -62,40 +68,57 @@ const updateConversacionesWithCliente = async (telefono, id_cliente, id_pedido =
       await conversacion.update(updateData);
       actualizadas += 1;
 
-      const vinculoCliente = Boolean(updateData.id_cliente);
-      const vinculoPedido = Boolean(updateData.id_pedido);
-      const motivo = vinculoCliente
-        ? 'Cliente identificado al crear pedido'
-        : 'Pedido vinculado al crear pedido';
-
-      const partesDescripcion = [];
-      if (vinculoCliente) {
-        partesDescripcion.push(`cliente ${id_cliente}`);
+      if (updateData.id_cliente) {
+        await ConversacionLog.createLog(
+          conversacion.id,
+          {
+            cliente_anterior: clienteAnterior,
+            cliente_nuevo: id_cliente,
+            updated_by: 'sistema',
+            motivo: 'Cliente identificado al crear pedido'
+          },
+          'sistema',
+          'info',
+          `Conversación asignada al cliente ${id_cliente}`
+        );
       }
-      if (vinculoPedido) {
-        partesDescripcion.push(`pedido ${id_pedido}`);
-      }
-
-      await ConversacionLog.createLog(
-        conversacion.id,
-        {
-          cliente_anterior: clienteAnterior,
-          cliente_nuevo: vinculoCliente ? id_cliente : clienteAnterior,
-          pedido_id: vinculoPedido ? id_pedido : (conversacion.id_pedido ?? null),
-          updated_by: 'sistema',
-          motivo
-        },
-        'sistema',
-        'info',
-        `Conversación actualizada con ${partesDescripcion.join(' y ')}`
-      );
     }
 
     return actualizadas;
   } catch (error) {
-    // No fallar el proceso si hay error al actualizar conversaciones
-    // Solo loguear el error para debugging
     console.error('Error al actualizar conversaciones con cliente:', error);
+    return 0;
+  }
+};
+
+const logPedidoCreadoEnConversaciones = async (telefono, clienteId, pedido) => {
+  if (!telefono || !pedido?.id) return 0;
+
+  try {
+    const conversaciones = await findConversacionesByTelefono(telefono);
+    let registradas = 0;
+
+    for (const conversacion of conversaciones) {
+      await ConversacionLog.createLog(
+        conversacion.id,
+        {
+          pedido_id: pedido.id,
+          numero_pedido: pedido.numero_pedido ?? null,
+          cliente_id: clienteId ?? conversacion.id_cliente ?? null,
+          total: pedido.total ?? null,
+          estado: pedido.estado ?? null,
+          fuente: 'api_pedidos',
+        },
+        'sistema',
+        'info',
+        `Pedido ${pedido.numero_pedido ?? pedido.id} creado`
+      );
+      registradas += 1;
+    }
+
+    return registradas;
+  } catch (error) {
+    console.error('Error al registrar log de pedido en conversaciones:', error);
     return 0;
   }
 };
@@ -994,6 +1017,7 @@ class PedidoController {
       const telefonoParaBuscarPedido = telefono_referencia || cliente?.telefono;
       if (telefonoParaBuscarPedido && clienteId && pedido.id) {
         await updateConversacionesWithCliente(telefonoParaBuscarPedido, clienteId, pedido.id);
+        await logPedidoCreadoEnConversaciones(telefonoParaBuscarPedido, clienteId, pedido);
       }
 
       // Obtener el pedido creado con sus relaciones

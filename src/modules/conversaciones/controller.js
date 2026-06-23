@@ -248,6 +248,15 @@ class ConversacionController {
           model: ConversacionLog,
           as: 'logs',
           attributes: ['id', 'fecha', 'hora', 'tipo_log', 'nivel', 'descripcion', 'created_at'],
+          where: {
+            baja_logica: false,
+            [Op.or]: [
+              { nivel: 'error' },
+              { tipo_log: 'error' },
+              { tipo_log: 'escalacion' },
+            ],
+          },
+          required: false,
           limit: 1,
           separate: true,
           order: [['created_at', 'DESC']]
