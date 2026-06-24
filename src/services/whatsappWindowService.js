@@ -80,7 +80,7 @@ async function findLastInboundClientMessageAt(conversacionId) {
     attributes: ['created_at'],
   });
 
-  return lastMessage?.created_at || null;
+  return lastMessage?.getDataValue('created_at') ?? null;
 }
 
 async function isWhatsAppWindowOpen(conversacionId) {
