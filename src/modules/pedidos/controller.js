@@ -430,6 +430,7 @@ class PedidoController {
             required: false
           }
         ],
+        distinct: true,
         order: [['fecha_pedido', 'DESC']],
         limit: parseInt(limit),
         offset: parseInt(offset)
