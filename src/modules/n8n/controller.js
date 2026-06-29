@@ -12,6 +12,12 @@ const {
 } = require('./pedidoActivo');
 const { sendPushForNotificacion } = require('../../services/pushService');
 const { createConversationChatMessage } = require('../../services/conversacionChatService');
+const {
+  resolveCityForConversation,
+  isOutsideBusinessHours,
+  buildOutsideHoursMessage,
+} = require('../../services/cityBusinessHoursService');
+const { sendBotTextMessage } = require('../../services/botWhatsAppService');
 const { downloadAndSaveConversationImage } = require('../../utils/whatsapp');
 const { deleteConversationImage } = require('../../utils/uploadImages');
 
@@ -95,6 +101,13 @@ class N8nController {
           id: fkid_conversacion,
           baja_logica: false,
         },
+        include: [
+          {
+            association: 'cliente',
+            required: false,
+            include: [{ association: 'ciudad', required: false }],
+          },
+        ],
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
@@ -201,9 +214,28 @@ class N8nController {
         console.warn('[push] alerta-modificacion-pedido', pushError.message);
       }
 
+      let fueraDeHorario = false;
+      let mensajeClienteEnviado = false;
+
+      try {
+        const city = await resolveCityForConversation({ conversacion, pedido });
+        if (city && isOutsideBusinessHours(city)) {
+          fueraDeHorario = true;
+          const mensaje = buildOutsideHoursMessage(city);
+          const sendResult = await sendBotTextMessage(fkid_conversacion, mensaje, {
+            fuente: 'fuera_de_horario',
+          });
+          mensajeClienteEnviado = Boolean(sendResult.sent);
+        }
+      } catch (hoursError) {
+        console.warn('[n8n] fuera-de-horario', hoursError.message);
+      }
+
       res.status(201).json({
         success: true,
         creada: true,
+        fuera_de_horario: fueraDeHorario,
+        mensaje_cliente_enviado: mensajeClienteEnviado,
         conversacion_pausada: true,
         conversacion: {
           id: conversacion.id,

@@ -108,6 +108,35 @@ Si no hay pedido activo:
 3. Crea notificación en `/api/notificaciones` (inbox del asesor) con acción por defecto para ir a la conversación.
 4. Pone la conversación en `status: 'pausada'` (el bot deja de procesar a ese usuario).
 5. Anti-spam: si ya está pausada y hay notificación no leída reciente (2 h), no duplica.
+6. **Fuera de horario:** si la hora actual (timezone de la ciudad) está fuera del horario configurado, envía un mensaje de WhatsApp al cliente indicando que será atendido en el siguiente turno y muestra el horario de atención. El flujo de notificación y pausa **no cambia**.
+
+### Evaluación de horario por ciudad
+
+El horario se configura por ciudad en el panel admin (`dias_trabajo` + `horario_por_dia`).
+
+Resolución de ciudad (en este orden):
+
+1. Ciudad del cliente asociado a la conversación (`cliente.fkid_ciudad`)
+2. Ciudad del pedido activo (`pedido.fkid_ciudad`)
+3. Ciudad **5 (Durango)** por defecto
+
+Se considera **fuera de horario** si:
+
+- El día actual no está en `dias_trabajo`, o
+- La hora local (según `city.timezone`) está antes de `inicio` o en/ después de `fin` del slot del día.
+
+El mensaje al cliente solo se envía cuando `creada: true` (no en la rama anti-spam).
+
+Ejemplo de mensaje al cliente:
+
+```
+Actualmente estamos fuera de horario de atención. Te atenderemos en el siguiente turno disponible.
+
+Horario de atención:
+Lunes: 09:00 - 18:00
+Martes: 09:00 - 18:00
+...
+```
 
 ### Respuesta exitosa (201)
 
@@ -115,6 +144,8 @@ Si no hay pedido activo:
 {
   "success": true,
   "creada": true,
+  "fuera_de_horario": true,
+  "mensaje_cliente_enviado": true,
   "conversacion_pausada": true,
   "conversacion": {
     "id": 42,
@@ -127,6 +158,13 @@ Si no hay pedido activo:
   }
 }
 ```
+
+| Campo | Descripción |
+|-------|-------------|
+| `fuera_de_horario` | `true` si la solicitud ocurrió fuera del horario de la ciudad |
+| `mensaje_cliente_enviado` | `true` si se envió (o encoló) el WhatsApp de aviso al cliente |
+
+Dentro de horario, `fuera_de_horario` y `mensaje_cliente_enviado` son `false`.
 
 ### Anti-spam (200, sin duplicar)
 
