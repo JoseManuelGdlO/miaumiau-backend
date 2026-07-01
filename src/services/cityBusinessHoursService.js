@@ -14,10 +14,42 @@ const DAY_LABELS = {
   6: 'Sábado',
 };
 
-function formatHour(hour) {
-  const h = Math.floor(hour);
-  const m = Math.round((hour - h) * 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+const DAY_PLURALS = {
+  0: 'Domingos',
+  1: 'Lunes',
+  2: 'Martes',
+  3: 'Miércoles',
+  4: 'Jueves',
+  5: 'Viernes',
+  6: 'Sábados',
+};
+
+function formatTime12(hour24, { compact = true } = {}) {
+  let h = hour24 > 12 ? hour24 - 12 : hour24;
+  if (h === 0) h = 12;
+  const ampm = hour24 >= 12 ? 'pm' : 'am';
+  if (compact) {
+    return `${h}${ampm}`;
+  }
+  return `${h}:00 ${ampm}`;
+}
+
+function formatDaysArray(days) {
+  const joined = days.join(',');
+
+  if (joined === '1,2,3,4,5') return 'Lunes a viernes';
+  if (joined === '1,2,3,4,5,6') return 'Lunes a sábado';
+
+  const isConsecutive = days.length > 1 && days.every((val, i, arr) => i === 0 || val === arr[i - 1] + 1);
+  if (isConsecutive) {
+    return `${DAY_LABELS[days[0]]} a ${DAY_LABELS[days[days.length - 1]].toLowerCase()}`;
+  }
+
+  if (days.length === 1) return DAY_PLURALS[days[0]];
+
+  const mappedNames = days.map((d) => DAY_LABELS[d]);
+  const last = mappedNames.pop();
+  return `${mappedNames.join(', ')} y ${last.toLowerCase()}`;
 }
 
 function getCityTimezone(city) {
@@ -94,16 +126,26 @@ function buildScheduleLines(city) {
     ? city.getDiasTrabajo()
     : (city.dias_trabajo || [0, 1, 2, 3, 4, 5, 6]);
 
+  if (!diasTrabajo || diasTrabajo.length === 0) {
+    return 'Horario no disponible en este momento.';
+  }
+
+  const scheduleGroups = {};
   const sortedDays = [...diasTrabajo].sort((a, b) => a - b);
 
-  return sortedDays
-    .map((day) => {
-      const { inicio, fin } = typeof city.getHorasEntregaParaDia === 'function'
-        ? city.getHorasEntregaParaDia(day)
-        : { inicio: 9, fin: 18 };
-      const label = DAY_LABELS[day] || `Día ${day}`;
-      return `${label}: ${formatHour(inicio)} - ${formatHour(fin)}`;
-    })
+  sortedDays.forEach((dayNum) => {
+    const { inicio, fin } = typeof city.getHorasEntregaParaDia === 'function'
+      ? city.getHorasEntregaParaDia(dayNum)
+      : { inicio: 9, fin: 18 };
+    const timeStr = `${formatTime12(inicio)} a ${formatTime12(fin)}`;
+    if (!scheduleGroups[timeStr]) {
+      scheduleGroups[timeStr] = [];
+    }
+    scheduleGroups[timeStr].push(dayNum);
+  });
+
+  return Object.entries(scheduleGroups)
+    .map(([timeStr, days]) => `- ${formatDaysArray(days)} de ${timeStr}`)
     .join('\n');
 }
 
@@ -128,6 +170,7 @@ module.exports = {
   isOutsideBusinessHours,
   buildOutsideHoursMessage,
   buildScheduleLines,
-  formatHour,
+  formatTime12,
+  formatDaysArray,
   getCityTimezone,
 };

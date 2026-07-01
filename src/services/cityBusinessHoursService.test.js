@@ -124,14 +124,32 @@ describe('cityBusinessHoursService', () => {
   });
 
   describe('buildOutsideHoursMessage', () => {
-    it('incluye horario por día laboral', () => {
+    it('incluye horario por día laboral agrupado en formato 12h', () => {
       const city = createMockCity();
       const message = buildOutsideHoursMessage(city);
 
       expect(message).toContain('fuera de horario de atención');
       expect(message).toContain('siguiente turno disponible');
-      expect(message).toContain('Lunes: 09:00 - 18:00');
-      expect(buildScheduleLines(city)).toContain('Viernes: 09:00 - 18:00');
+      expect(message).toContain('Lunes a viernes de 9am a 6pm');
+      expect(buildScheduleLines(city)).toBe('- Lunes a viernes de 9am a 6pm');
+    });
+
+    it('agrupa días con horarios distintos por separado', () => {
+      const city = createMockCity({
+        dias_trabajo: [1, 2, 3, 4, 5, 6],
+        horario_por_dia: {
+          '1': { inicio: 9, fin: 18 },
+          '2': { inicio: 9, fin: 18 },
+          '3': { inicio: 9, fin: 18 },
+          '4': { inicio: 9, fin: 18 },
+          '5': { inicio: 9, fin: 18 },
+          '6': { inicio: 9, fin: 14 },
+        },
+      });
+      const lines = buildScheduleLines(city);
+
+      expect(lines).toContain('Lunes a viernes de 9am a 6pm');
+      expect(lines).toContain('Sábados de 9am a 2pm');
     });
   });
 });
