@@ -58,6 +58,10 @@ module.exports = (sequelize, DataTypes) => {
         notEmpty: true
       }
     },
+    codigo_entrega: {
+      type: DataTypes.STRING(6),
+      allowNull: true
+    },
     estado: {
       type: DataTypes.ENUM('pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado','no_entregado'),
       allowNull: false,

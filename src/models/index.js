@@ -37,6 +37,11 @@ const CityPointOfSale = require('./CityPointOfSale');
 const SiteSetting = require('./SiteSetting');
 const ClientePuntosMovimiento = require('./ClientePuntosMovimiento');
 const PushSubscription = require('./PushSubscription');
+const JornadaRepartidor = require('./JornadaRepartidor');
+const JornadaCarga = require('./JornadaCarga');
+const CobroEntrega = require('./CobroEntrega');
+const RepartidorPuntosMovimiento = require('./RepartidorPuntosMovimiento');
+const RepartidorLogro = require('./RepartidorLogro');
 
 // Inicializar modelos
 const models = {
@@ -74,7 +79,12 @@ const models = {
   CityPointOfSale: CityPointOfSale(sequelize, DataTypes),
   SiteSetting: SiteSetting(sequelize, DataTypes),
   ClientePuntosMovimiento: ClientePuntosMovimiento(sequelize, DataTypes),
-  PushSubscription: PushSubscription(sequelize, DataTypes)
+  PushSubscription: PushSubscription(sequelize, DataTypes),
+  JornadaRepartidor: JornadaRepartidor(sequelize, DataTypes),
+  JornadaCarga: JornadaCarga(sequelize, DataTypes),
+  CobroEntrega: CobroEntrega(sequelize, DataTypes),
+  RepartidorPuntosMovimiento: RepartidorPuntosMovimiento(sequelize, DataTypes),
+  RepartidorLogro: RepartidorLogro(sequelize, DataTypes)
 };
 
 // Definir asociaciones
@@ -540,6 +550,16 @@ models.Paquete.hasMany(models.PaquetePedido, {
   foreignKey: 'fkid_paquete',
   as: 'pedidos'
 });
+
+models.Repartidor.hasMany(models.JornadaRepartidor, { foreignKey: 'fkid_repartidor', as: 'jornadas' });
+models.JornadaRepartidor.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.JornadaRepartidor.belongsTo(models.Notificacion, { foreignKey: 'fkid_notificacion', as: 'notificacion_check_in' });
+models.JornadaRepartidor.hasMany(models.JornadaCarga, { foreignKey: 'fkid_jornada', as: 'cargas' });
+models.JornadaCarga.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
+models.Pedido.hasOne(models.CobroEntrega, { foreignKey: 'fkid_pedido', as: 'cobro_entrega' });
+models.CobroEntrega.belongsTo(models.Pedido, { foreignKey: 'fkid_pedido', as: 'pedido' });
+models.Repartidor.hasMany(models.RepartidorPuntosMovimiento, { foreignKey: 'fkid_repartidor', as: 'puntos_movimientos' });
+models.Repartidor.hasMany(models.RepartidorLogro, { foreignKey: 'fkid_repartidor', as: 'logros' });
 
 models.sequelize = sequelize;
 models.Sequelize = require('sequelize');

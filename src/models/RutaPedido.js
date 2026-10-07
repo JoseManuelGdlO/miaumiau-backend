@@ -87,6 +87,14 @@ module.exports = (sequelize, DataTypes) => {
     fecha_entrega_real: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    llego_en: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    codigo_validado_en: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'rutas_pedidos',
