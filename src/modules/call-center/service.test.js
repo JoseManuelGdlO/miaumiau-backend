@@ -55,6 +55,29 @@ test('soporte sin pedido guarda la nota en la notificación', async () => {
   expect(n.datos.nota).toBe('Se revisó la carga');
 });
 
+test('atender pasa la misma transacción a pedido y notificación', async () => {
+  const tx = { id: 'tx' };
+  const n = notificacion({ datos: { tipo: 'llamada_cliente', estado_solicitud: 'abierta', pedido_id: 5, repartidor_id: 1 } });
+  const pedido = { id: 5, notas: 'Portón azul', update: jest.fn(async (patch) => Object.assign(pedido, patch)) };
+  n.update = jest.fn(n.update);
+  await atender({
+    notificacion: n,
+    pedido,
+    nota: 'Nota tx',
+    now: new Date('2026-10-07T18:45:00Z'),
+    timezone: 'America/Mexico_City',
+    transaction: async (fn) => fn(tx),
+  });
+  expect(pedido.update).toHaveBeenCalledWith(
+    expect.objectContaining({ notas: expect.stringContaining('Nota tx') }),
+    { transaction: tx },
+  );
+  expect(n.update).toHaveBeenCalledWith(
+    expect.objectContaining({ leida: true }),
+    { transaction: tx },
+  );
+});
+
 test('una nota larga no marca leída', async () => {
   const n = notificacion({ datos: { tipo: 'soporte', estado_solicitud: 'abierta', pedido_id: 5 } });
   const pedido = { id: 5, notas: 'x'.repeat(1000), update: async () => { throw new Error('no guardar'); } };

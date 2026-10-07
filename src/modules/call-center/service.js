@@ -8,6 +8,10 @@ function getModels(deps = {}) {
   return deps.models || require('../../models');
 }
 
+function txOpts(t) {
+  return t ? { transaction: t } : {};
+}
+
 async function withTx(deps, fn) {
   if (deps.transaction) return deps.transaction(fn);
   const db = getModels(deps);
@@ -48,19 +52,19 @@ async function atender(deps = {}) {
   const note = String(deps.nota || '').trim();
   const pedidoId = datos.pedido_id ? Number(datos.pedido_id) : null;
 
-  return withTx(deps, async () => {
+  return withTx(deps, async (t) => {
     if (note && pedidoId) {
-      const pedido = deps.pedido || await db.Pedido.findByPk(pedidoId);
+      const pedido = deps.pedido || await db.Pedido.findByPk(pedidoId, txOpts(t));
       if (!pedido) fail(404, 'Pedido no encontrado');
       const zone = deps.timezone || 'America/Mexico_City';
       const written = appendNota(pedido.notas, note, stamp(deps.now || new Date(), zone));
       if (!written.ok) fail(written.statusCode, written.message);
-      if (written.changed) await pedido.update({ notas: written.notas });
+      if (written.changed) await pedido.update({ notas: written.notas }, txOpts(t));
     } else if (note) {
       if (note.length > NOTE_LIMIT) fail(422, 'La nota supera 1000 caracteres');
       datos.nota = note;
     }
-    await notificacion.update({ leida: true, datos });
+    await notificacion.update({ leida: true, datos }, txOpts(t));
     return { atendida: true };
   });
 }
