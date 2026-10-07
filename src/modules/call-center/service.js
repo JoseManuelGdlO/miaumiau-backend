@@ -1,4 +1,4 @@
-const { approveCheck, attendCheck, appendNota, stamp, NOTE_LIMIT, transition } = require('./domain');
+const { approveCheck, attendCheck, appendNota, stamp, NOTE_LIMIT, transition, reassignCheck } = require('./domain');
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
@@ -89,4 +89,66 @@ async function cambiarEstado(deps = {}) {
   return { id: pedido.id, estado: deps.estado };
 }
 
-module.exports = { aprobar, atender, cambiarEstado };
+async function reasignar(deps = {}) {
+  const db = getModels(deps);
+  const rutaPedido = deps.rutaPedido;
+  const pedido = rutaPedido?.pedido;
+  const ruta = rutaPedido?.ruta;
+  if (!rutaPedido || !pedido || !ruta) fail(404, 'Pedido no encontrado');
+  if (String(ruta.fecha_ruta) !== String(deps.fechaHoy)) {
+    fail(409, 'Ese pedido no está en una ruta de hoy');
+  }
+  const driver = deps.repartidor;
+  const check = reassignCheck({
+    pedidoEstado: pedido.estado,
+    sameDriver: driver ? Number(ruta.fkid_repartidor) === Number(driver.id) : false,
+    driverFound: Boolean(driver),
+    sameCity: Boolean(driver) && Number(driver.fkid_ciudad) === Number(ruta.fkid_ciudad),
+    driverEstado: driver?.estado,
+  });
+  if (!check.ok) fail(check.statusCode, check.message);
+
+  let destino = deps.rutaDestino || null;
+  let creada = false;
+  if (!destino) {
+    const rows = await db.Ruta.findAll({
+      where: {
+        fkid_repartidor: driver.id,
+        fkid_ciudad: ruta.fkid_ciudad,
+        fecha_ruta: ruta.fecha_ruta,
+        baja_logica: false,
+      },
+      order: [['id', 'ASC']],
+    });
+    destino = rows.find((row) => row.estado !== 'cancelada') || null;
+  }
+  if (!destino) {
+    const nombre = `Call Center ${ruta.fecha_ruta} ${driver.nombre_completo}`.slice(0, 100);
+    destino = await db.Ruta.create({
+      nombre_ruta: nombre,
+      fecha_ruta: ruta.fecha_ruta,
+      fkid_ciudad: ruta.fkid_ciudad,
+      fkid_repartidor: driver.id,
+      estado: 'planificada',
+      total_pedidos: 0,
+      total_entregados: 0,
+      distancia_estimada: 0,
+      tiempo_estimado: 0,
+    });
+    creada = true;
+  }
+  const siblings = deps.destPedidos || await db.RutaPedido.findAll({ where: { fkid_ruta: destino.id } });
+  const maxOrden = siblings.reduce((max, row) => Math.max(max, Number(row.orden_entrega) || 0), 0);
+  await rutaPedido.update({
+    fkid_ruta: destino.id,
+    orden_entrega: maxOrden + 1,
+    estado_entrega: 'pendiente',
+    llego_en: null,
+    codigo_validado_en: null,
+  });
+  await ruta.update({ total_pedidos: Math.max(0, Number(ruta.total_pedidos) - 1) });
+  await destino.update({ total_pedidos: Number(destino.total_pedidos) + 1 });
+  return { ruta_id: destino.id, creada, orden_entrega: maxOrden + 1 };
+}
+
+module.exports = { aprobar, atender, cambiarEstado, reasignar };

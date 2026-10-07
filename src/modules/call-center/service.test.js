@@ -1,4 +1,4 @@
-const { aprobar, atender, cambiarEstado } = require('./service');
+const { aprobar, atender, cambiarEstado, reasignar } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -113,4 +113,82 @@ test('cancelado deja la ruta en fallido sin fecha', async () => {
 test('un par fuera de la tabla responde 422', async () => {
   const pedido = { id: 4, estado: 'en_preparacion' };
   await expect(cambiarEstado({ pedido, estado: 'no_entregado' })).rejects.toMatchObject({ status: 422 });
+});
+
+test('reasignar crea la ruta, conserva el código y limpia la llegada', async () => {
+  const created = [];
+  const rutaPedido = {
+    fkid_ruta: 1,
+    orden_entrega: 2,
+    estado_entrega: 'en_camino',
+    llego_en: new Date(),
+    codigo_validado_en: new Date(),
+    lat: 1,
+    lng: 2,
+    update: async (patch) => Object.assign(rutaPedido, patch),
+    pedido: { id: 4, estado: 'en_camino', codigo_entrega: '123456' },
+    ruta: { id: 1, fkid_ciudad: 7, fkid_repartidor: 3, fecha_ruta: '2026-10-07', total_pedidos: 2, estado: 'en_progreso', update: async (patch) => Object.assign(rutaPedido.ruta, patch) },
+  };
+  const destino = { id: 20, total_pedidos: 0, update: async (patch) => Object.assign(destino, patch) };
+  const models = {
+    Ruta: {
+      findAll: async () => [],
+      create: async (row) => { created.push(row); return destino; },
+    },
+    RutaPedido: { findAll: async () => [] },
+  };
+  const result = await reasignar({
+    models,
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+  });
+  expect(result).toEqual({ ruta_id: 20, creada: true, orden_entrega: 1 });
+  expect(created[0].nombre_ruta).toBe('Call Center 2026-10-07 Marta López');
+  expect(created[0].estado).toBe('planificada');
+  expect(rutaPedido.fkid_ruta).toBe(20);
+  expect(rutaPedido.estado_entrega).toBe('pendiente');
+  expect(rutaPedido.llego_en).toBeNull();
+  expect(rutaPedido.codigo_validado_en).toBeNull();
+  expect(rutaPedido.lat).toBe(1);
+  expect(rutaPedido.pedido.codigo_entrega).toBe('123456');
+  expect(rutaPedido.pedido.estado).toBe('en_camino');
+  expect(rutaPedido.ruta.total_pedidos).toBe(1);
+  expect(destino.total_pedidos).toBe(1);
+});
+
+test('reasignar un pedido cerrado responde 409', async () => {
+  const rutaPedido = {
+    pedido: { estado: 'entregado' },
+    ruta: { fkid_ciudad: 7, fkid_repartidor: 3, fecha_ruta: '2026-10-07' },
+  };
+  await expect(reasignar({
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    repartidor: { id: 8, fkid_ciudad: 7, estado: 'activo', nombre_completo: 'Marta' },
+  })).rejects.toMatchObject({ status: 409 });
+});
+
+test('el mismo repartidor responde 422', async () => {
+  const rutaPedido = {
+    pedido: { estado: 'en_camino' },
+    ruta: { fkid_ciudad: 7, fkid_repartidor: 8, fecha_ruta: '2026-10-07' },
+  };
+  await expect(reasignar({
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    repartidor: { id: 8, fkid_ciudad: 7, estado: 'activo', nombre_completo: 'Marta' },
+  })).rejects.toMatchObject({ status: 422 });
+});
+
+test('otra ciudad responde 403', async () => {
+  const rutaPedido = {
+    pedido: { estado: 'en_camino' },
+    ruta: { fkid_ciudad: 7, fkid_repartidor: 3, fecha_ruta: '2026-10-07' },
+  };
+  await expect(reasignar({
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    repartidor: { id: 8, fkid_ciudad: 9, estado: 'inactivo', nombre_completo: 'Marta' },
+  })).rejects.toMatchObject({ status: 403 });
 });
