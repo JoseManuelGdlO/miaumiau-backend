@@ -43,6 +43,13 @@ function lockOpts(t) {
   return opts;
 }
 
+async function lockRow(model, current, injected, t) {
+  if (!current) return current;
+  if (injected && !(t && t.LOCK && t.LOCK.UPDATE)) return current;
+  if (!model || typeof model.findByPk !== 'function' || current.id == null) return current;
+  return model.findByPk(current.id, lockOpts(t));
+}
+
 function fechaKey(value) {
   if (value == null || value === '') return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -241,14 +248,25 @@ async function cambiarEstado(deps = {}) {
   }
 
   return withTx(deps, async (t) => {
-    if (deps.estado === 'cancelado') await restaurarStockCancelacion(deps, pedido, t);
-    await runSaveInTx(pedido, t, () => pedido[decision.method]());
-    if (decision.route) {
-      const patch = { estado_entrega: decision.route.estado_entrega };
-      if (decision.route.fecha_entrega_real) patch.fecha_entrega_real = deps.now || new Date();
-      await rutaPedido.update(patch, txOpts(t));
+    const lockedPedido = await lockRow(db.Pedido, pedido, Boolean(deps.pedido), t);
+    if (!lockedPedido || lockedPedido.baja_logica) fail(404, 'Pedido no encontrado');
+    const fresh = transition(lockedPedido.estado, deps.estado);
+    if (!fresh.ok) fail(fresh.statusCode, fresh.message);
+
+    let lockedStop = rutaPedido;
+    if (fresh.route) {
+      lockedStop = await lockRow(db.RutaPedido, rutaPedido, Boolean(deps.rutaPedido), t);
+      if (!lockedStop) fail(409, 'Ese pedido no está en una ruta de hoy');
     }
-    return { id: pedido.id, estado: deps.estado };
+
+    if (deps.estado === 'cancelado') await restaurarStockCancelacion(deps, lockedPedido, t);
+    await runSaveInTx(lockedPedido, t, () => lockedPedido[fresh.method]());
+    if (fresh.route) {
+      const patch = { estado_entrega: fresh.route.estado_entrega };
+      if (fresh.route.fecha_entrega_real) patch.fecha_entrega_real = deps.now || new Date();
+      await lockedStop.update(patch, txOpts(t));
+    }
+    return { id: lockedPedido.id, estado: deps.estado };
   });
 }
 
@@ -274,27 +292,50 @@ async function reasignar(deps = {}) {
   if (!check.ok) fail(check.statusCode, check.message);
 
   return withTx(deps, async (t) => {
+    const lockedPedido = await lockRow(db.Pedido, pedido, Boolean(deps.rutaPedido), t);
+    const lockedStop = await lockRow(db.RutaPedido, rutaPedido, Boolean(deps.rutaPedido), t);
+    const lockedRuta = await lockRow(db.Ruta, ruta, Boolean(deps.rutaPedido), t);
+    if (!lockedPedido || lockedPedido.baja_logica) fail(404, 'Pedido no encontrado');
+    if (!lockedStop || !lockedRuta || lockedRuta.baja_logica) {
+      fail(409, 'Ese pedido no está en una ruta de hoy');
+    }
+    if (deps.fechaHoy != null && fechaKey(lockedRuta.fecha_ruta) !== String(deps.fechaHoy)) {
+      fail(409, 'Ese pedido no está en una ruta de hoy');
+    }
+    const fresh = reassignCheck({
+      pedidoEstado: lockedPedido.estado,
+      sameDriver: driver ? Number(lockedRuta.fkid_repartidor) === Number(driver.id) : false,
+      driverFound: Boolean(driver),
+      sameCity: Boolean(driver) && Number(driver.fkid_ciudad) === Number(lockedRuta.fkid_ciudad),
+      driverEstado: driver?.estado,
+      bajaLogica: Boolean(driver?.baja_logica),
+    });
+    if (!fresh.ok) fail(fresh.statusCode, fresh.message);
+
     let destino = deps.rutaDestino || null;
     let creada = false;
     if (!destino) {
       const rows = await db.Ruta.findAll({
         where: {
           fkid_repartidor: driver.id,
-          fkid_ciudad: ruta.fkid_ciudad,
-          fecha_ruta: ruta.fecha_ruta,
+          fkid_ciudad: lockedRuta.fkid_ciudad,
+          fecha_ruta: lockedRuta.fecha_ruta,
           baja_logica: false,
         },
         order: [['id', 'ASC']],
-        ...txOpts(t),
+        ...lockOpts(t),
       });
       destino = rows.find((row) => row.estado !== 'cancelada') || null;
+      if (destino) destino = await lockRow(db.Ruta, destino, Boolean(deps.rutaDestino), t);
+    } else {
+      destino = await lockRow(db.Ruta, destino, true, t);
     }
     if (!destino) {
-      const nombre = `Call Center ${ruta.fecha_ruta} ${driver.nombre_completo}`.slice(0, 100);
+      const nombre = `Call Center ${lockedRuta.fecha_ruta} ${driver.nombre_completo}`.slice(0, 100);
       destino = await db.Ruta.create({
         nombre_ruta: nombre,
-        fecha_ruta: ruta.fecha_ruta,
-        fkid_ciudad: ruta.fkid_ciudad,
+        fecha_ruta: lockedRuta.fecha_ruta,
+        fkid_ciudad: lockedRuta.fkid_ciudad,
         fkid_repartidor: driver.id,
         estado: 'planificada',
         total_pedidos: 0,
@@ -306,18 +347,18 @@ async function reasignar(deps = {}) {
     }
     const siblings = deps.destPedidos || await db.RutaPedido.findAll({
       where: { fkid_ruta: destino.id },
-      ...txOpts(t),
+      ...lockOpts(t),
     });
     const maxOrden = siblings.reduce((max, row) => Math.max(max, Number(row.orden_entrega) || 0), 0);
     const orden = maxOrden + 1;
-    await rutaPedido.update({
+    await lockedStop.update({
       fkid_ruta: destino.id,
       orden_entrega: orden,
       estado_entrega: 'pendiente',
       llego_en: null,
       codigo_validado_en: null,
     }, txOpts(t));
-    await ruta.update({ total_pedidos: Math.max(0, Number(ruta.total_pedidos) - 1) }, txOpts(t));
+    await lockedRuta.update({ total_pedidos: Math.max(0, Number(lockedRuta.total_pedidos) - 1) }, txOpts(t));
     await destino.update({ total_pedidos: Number(destino.total_pedidos) + 1 }, txOpts(t));
     return { ruta_id: destino.id, creada, orden_entrega: orden };
   });

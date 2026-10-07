@@ -499,6 +499,109 @@ test('cancelar en preparación o en camino no restaura stock', async () => {
   }
 });
 
+test.each(['pendiente', 'confirmado'])('el pedido se relee con LOCK.UPDATE y el segundo cancelado desde %s no restaura', async (origen) => {
+  const tx = { LOCK: { UPDATE: 'UPDATE' } };
+  const lock = { transaction: tx, lock: 'UPDATE' };
+  const restaurar = jest.fn(async () => {});
+  let estado = origen;
+  const pedido = { id: 4, estado: origen, baja_logica: false };
+  const rutaPedido = { id: 9, update: async (patch) => Object.assign(rutaPedido, patch) };
+  const models = {
+    Pedido: {
+      findByPk: jest.fn(async (id, opts) => {
+        expect(id).toBe(4);
+        expect(opts).toEqual(lock);
+        return {
+          id: 4,
+          estado,
+          baja_logica: false,
+          cancelar() { estado = 'cancelado'; },
+        };
+      }),
+    },
+    RutaPedido: {
+      findByPk: jest.fn(async (id, opts) => {
+        expect(id).toBe(9);
+        expect(opts).toEqual(lock);
+        return rutaPedido;
+      }),
+    },
+    ProductoPedido: {
+      findAll: jest.fn(async () => [{ fkid_producto: 1, cantidad: 2, producto: { id: 1, restaurarStock: restaurar } }]),
+    },
+    PaquetePedido: { findAll: async () => [] },
+  };
+  const deps = {
+    models,
+    pedido,
+    rutaPedido,
+    estado: 'cancelado',
+    transaction: async (fn) => fn(tx),
+  };
+  await cambiarEstado(deps);
+  expect(restaurar).toHaveBeenCalledTimes(1);
+  expect(models.Pedido.findByPk).toHaveBeenCalledWith(4, lock);
+  await expect(cambiarEstado(deps)).rejects.toMatchObject({ status: 422 });
+  expect(restaurar).toHaveBeenCalledTimes(1);
+  expect(models.ProductoPedido.findAll).toHaveBeenCalledTimes(1);
+});
+
+test('reasignar bloquea el pedido, la parada y las rutas', async () => {
+  const tx = { LOCK: { UPDATE: 'UPDATE' } };
+  const lock = { transaction: tx, lock: 'UPDATE' };
+  const pedido = { id: 4, estado: 'en_camino' };
+  const ruta = {
+    id: 1,
+    fkid_ciudad: 7,
+    fkid_repartidor: 3,
+    fecha_ruta: '2026-10-07',
+    total_pedidos: 2,
+    update: jest.fn(async (patch) => Object.assign(ruta, patch)),
+  };
+  const rutaPedido = {
+    id: 11,
+    pedido,
+    ruta,
+    update: jest.fn(async (patch) => Object.assign(rutaPedido, patch)),
+  };
+  const destino = {
+    id: 20,
+    total_pedidos: 4,
+    estado: 'planificada',
+    update: jest.fn(async (patch) => Object.assign(destino, patch)),
+  };
+  const models = {
+    Pedido: { findByPk: jest.fn(async () => pedido) },
+    RutaPedido: {
+      findByPk: jest.fn(async () => rutaPedido),
+      findAll: async () => [{ orden_entrega: 3 }],
+    },
+    Ruta: {
+      findByPk: jest.fn(async (id) => (id === 20 ? destino : ruta)),
+      findAll: async (query) => {
+        expect(query.lock).toBe('UPDATE');
+        expect(query.transaction).toBe(tx);
+        return [destino];
+      },
+    },
+  };
+  const result = await reasignar({
+    models,
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+    transaction: async (fn) => fn(tx),
+  });
+  expect(result).toEqual({ ruta_id: 20, creada: false, orden_entrega: 4 });
+  expect(models.Pedido.findByPk).toHaveBeenCalledWith(4, lock);
+  expect(models.RutaPedido.findByPk).toHaveBeenCalledWith(11, lock);
+  expect(models.Ruta.findByPk).toHaveBeenCalledWith(1, lock);
+  expect(models.Ruta.findByPk).toHaveBeenCalledWith(20, lock);
+  expect(rutaPedido.update).toHaveBeenCalledWith(expect.objectContaining({ fkid_ruta: 20 }), { transaction: tx });
+  expect(ruta.update).toHaveBeenCalledWith({ total_pedidos: 1 }, { transaction: tx });
+  expect(destino.update).toHaveBeenCalledWith({ total_pedidos: 5 }, { transaction: tx });
+});
+
 test('un repartidor dado de baja responde 403', async () => {
   const rutaPedido = {
     update: jest.fn(),
