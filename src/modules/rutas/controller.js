@@ -2,6 +2,7 @@ const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, Categor
 const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
+const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 
 class RutaController {
   // Crear nueva ruta
@@ -750,6 +751,8 @@ class RutaController {
           });
           console.log(`[RUTAS] ✅ Pedido ${pedido.fkid_pedido} asignado exitosamente (orden ${pedido.orden_entrega}), ID: ${rutaPedido.id}`);
           rutaPedidos.push(rutaPedido);
+          const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido);
+          await ensureDeliveryCode(pedidoAsignado);
           } catch (error) {
             console.error(`[RUTAS] ❌ Error asignando pedido ${pedido.fkid_pedido}:`, error);
             console.error(`[RUTAS] Error details:`, {
