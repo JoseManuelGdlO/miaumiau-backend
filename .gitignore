@@ -73,3 +73,6 @@ build/
 # Temporary files
 tmp/
 temp/
+
+# Linked worktrees
+.worktrees/
