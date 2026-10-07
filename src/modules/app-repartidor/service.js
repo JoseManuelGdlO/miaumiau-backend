@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, Sequelize } = require('sequelize');
 const {
   applyLoadChange,
   checkInOpens,
@@ -259,7 +259,7 @@ function pedidoInclude(db, { withCode = false } = {}) {
   };
 }
 
-async function assertRutaDelRepartidor(deps = {}) {
+async function assertRutaDelRepartidor(deps = {}, { withCode = false } = {}) {
   if (deps.rutaPedido) {
     const owner = deps.rutaPedido.ruta?.fkid_repartidor;
     if (owner != null && owner !== deps.repartidorId) {
@@ -277,7 +277,7 @@ async function assertRutaDelRepartidor(deps = {}) {
         required: true,
         where: { fkid_repartidor: deps.repartidorId },
       },
-      pedidoInclude(db, { withCode: true }),
+      pedidoInclude(db, { withCode }),
     ],
   });
   if (!rutaPedido) fail(403, 'Pedido no encontrado en tu ruta');
@@ -338,7 +338,7 @@ async function llegada(deps = {}) {
 
 async function validarCodigo(deps = {}) {
   await requireJornadaAbierta(deps);
-  const rutaPedido = await assertRutaDelRepartidor(deps);
+  const rutaPedido = await assertRutaDelRepartidor(deps, { withCode: true });
   if (!rutaPedido.llego_en) fail(422, 'Registra la llegada antes de validar el código');
   const pedido = rutaPedido.pedido;
   if (!codesMatch(pedido?.codigo_entrega, deps.codigo)) {
@@ -600,23 +600,44 @@ async function entregar(deps = {}) {
   return toPedidoDto(fresh, rutaPedido);
 }
 
+function esLlamadaClienteAtendida(n, pedidoId) {
+  const d = n.datos || {};
+  return (
+    d.tipo === 'llamada_cliente'
+    && Number(d.pedido_id) === Number(pedidoId)
+    && d.estado_solicitud === 'abierta'
+    && n.leida === true
+  );
+}
+
+async function findLlamadaClienteAtendida(deps) {
+  if (deps.notificaciones) {
+    return deps.notificaciones.find((n) => esLlamadaClienteAtendida(n, deps.pedidoId));
+  }
+  const db = getModels(deps);
+  const pedidoId = Number(deps.pedidoId);
+  const row = await db.Notificacion.findOne({
+    where: {
+      leida: true,
+      [Op.and]: [
+        Sequelize.where(Sequelize.json('datos.tipo'), 'llamada_cliente'),
+        Sequelize.where(Sequelize.json('datos.estado_solicitud'), 'abierta'),
+        {
+          [Op.or]: [
+            Sequelize.where(Sequelize.json('datos.pedido_id'), pedidoId),
+            Sequelize.where(Sequelize.json('datos.pedido_id'), String(pedidoId)),
+          ],
+        },
+      ],
+    },
+    order: [['id', 'DESC']],
+  });
+  return row;
+}
+
 async function noEntregar(deps = {}) {
   await requireJornadaAbierta(deps);
-  const db = getModels(deps);
-  const rows = deps.notificaciones || await db.Notificacion.findAll({
-    where: { leida: true },
-    order: [['id', 'DESC']],
-    limit: 200,
-  });
-  const llamada = rows.find((n) => {
-    const d = n.datos || {};
-    return (
-      d.tipo === 'llamada_cliente'
-      && Number(d.pedido_id) === Number(deps.pedidoId)
-      && d.estado_solicitud === 'abierta'
-      && n.leida === true
-    );
-  });
+  const llamada = await findLlamadaClienteAtendida(deps);
   if (!llamada) fail(403, 'Falta la atención de la llamada al cliente');
 
   const rutaPedido = await assertRutaDelRepartidor(deps);

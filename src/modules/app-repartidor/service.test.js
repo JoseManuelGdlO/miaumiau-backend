@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, toPedidoDto } = require('./service');
+const { replaceCarga, leerSolicitud, toPedidoDto, noEntregar, detallePedido } = require('./service');
 
 test('replaceCarga en espera cancela la notificación y responde 409', async () => {
   const updates = [];
@@ -43,4 +43,54 @@ test('toPedidoDto no incluye telefono ni codigo_entrega', () => {
   expect(dto).not.toHaveProperty('telefono');
   expect(dto).not.toHaveProperty('codigo_entrega');
   expect(dto.cliente).not.toHaveProperty('telefono');
+});
+
+test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
+  const queries = [];
+  const record = (query) => {
+    queries.push(query);
+    return {
+      leida: true,
+      datos: { tipo: 'llamada_cliente', pedido_id: 5, estado_solicitud: 'abierta' },
+    };
+  };
+  const pedido = { id: 5, estado: 'en_camino', update: async (data) => Object.assign(pedido, data) };
+  const rutaPedido = { pedido, update: async (data) => Object.assign(rutaPedido, data) };
+  await noEntregar({
+    jornada: { estado: 'validada' },
+    pedidoId: 5,
+    rutaPedido,
+    models: {
+      Notificacion: {
+        findAll: async (query) => [record(query)],
+        findOne: async (query) => record(query),
+      },
+    },
+  });
+  expect(queries).toHaveLength(1);
+  expect(queries[0].limit).toBeUndefined();
+  expect(queries[0].where.leida).toBe(true);
+  expect(pedido.estado).toBe('no_entregado');
+});
+
+test('detallePedido no selecciona codigo_entrega', async () => {
+  let pedidoInclude;
+  const dto = await detallePedido({
+    jornada: { estado: 'validada' },
+    pedidoId: 7,
+    repartidorId: 1,
+    models: {
+      RutaPedido: {
+        findOne: async (query) => {
+          pedidoInclude = query.include.find((item) => item.as === 'pedido');
+          return {
+            pedido: { id: 7, cliente: { id: 1, nombre_completo: 'Ana' } },
+            ruta: { fkid_repartidor: 1 },
+          };
+        },
+      },
+    },
+  });
+  expect(pedidoInclude.attributes).toEqual({ exclude: ['codigo_entrega'] });
+  expect(dto).not.toHaveProperty('codigo_entrega');
 });
