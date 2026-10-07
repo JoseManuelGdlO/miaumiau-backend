@@ -26,10 +26,28 @@ test('leerSolicitud valida la jornada solo si la notificación vigente está le�
   const jornada = { id: 3, estado: 'esperando_call_center', fkid_notificacion: 9, update: async (data) => Object.assign(jornada, data) };
   const opened = await leerSolicitud({
     jornada,
-    notificacion: { id: 9, leida: true, datos: { tipo: 'check_in', estado_solicitud: 'abierta', jornada_id: 3 } },
+    repartidorId: 1,
+    notificacion: {
+      id: 9,
+      leida: true,
+      datos: { tipo: 'check_in', estado_solicitud: 'abierta', jornada_id: 3, repartidor_id: 1 },
+    },
   });
   expect(opened.atendida).toBe(true);
   expect(jornada.estado).toBe('validada');
+});
+
+test('leerSolicitud 403 si la notificación es de otro repartidor', async () => {
+  await expect(
+    leerSolicitud({
+      repartidorId: 1,
+      notificacion: {
+        id: 9,
+        leida: true,
+        datos: { tipo: 'check_in', estado_solicitud: 'abierta', jornada_id: 3, repartidor_id: 2 },
+      },
+    })
+  ).rejects.toMatchObject({ status: 403 });
 });
 
 test('toPedidoDto no incluye telefono ni codigo_entrega', () => {
@@ -59,6 +77,7 @@ test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
   await noEntregar({
     jornada: { estado: 'validada' },
     pedidoId: 5,
+    repartidorId: 1,
     rutaPedido,
     models: {
       Notificacion: {

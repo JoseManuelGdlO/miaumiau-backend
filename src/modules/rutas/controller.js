@@ -751,16 +751,20 @@ class RutaController {
           });
           console.log(`[RUTAS] ✅ Pedido ${pedido.fkid_pedido} asignado exitosamente (orden ${pedido.orden_entrega}), ID: ${rutaPedido.id}`);
           rutaPedidos.push(rutaPedido);
-          const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido);
-          await ensureDeliveryCode(pedidoAsignado);
-          } catch (error) {
-            console.error(`[RUTAS] ❌ Error asignando pedido ${pedido.fkid_pedido}:`, error);
-            console.error(`[RUTAS] Error details:`, {
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-              parent: error.parent ? error.parent.message : undefined
-            });
+          try {
+            const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido);
+            await ensureDeliveryCode(pedidoAsignado);
+          } catch (codeError) {
+            console.error(`[RUTAS] Error generando código de entrega para pedido ${pedido.fkid_pedido}:`, codeError);
+          }
+        } catch (error) {
+          console.error(`[RUTAS] ❌ Error asignando pedido ${pedido.fkid_pedido}:`, error);
+          console.error(`[RUTAS] Error details:`, {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+            parent: error.parent ? error.parent.message : undefined
+          });
           errores.push({
             pedido_id: pedido.fkid_pedido,
             error: error.message

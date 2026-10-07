@@ -188,6 +188,12 @@ async function leerSolicitud(deps = {}) {
   if (!notificacion) fail(404, 'Solicitud no encontrada');
 
   const datos = notificacion.datos || {};
+  if (deps.repartidorId != null) {
+    const ownerId = datos.repartidor_id;
+    if (ownerId == null || Number(ownerId) !== Number(deps.repartidorId)) {
+      fail(403, 'Solicitud no encontrada');
+    }
+  }
   let jornada = deps.jornada;
   if (!jornada) {
     const db = getModels(deps);
@@ -425,19 +431,25 @@ async function ajustarProductos(deps = {}) {
 
   const pedido = rutaPedido.pedido;
   for (const item of items) {
-    const existing = await db.ProductoPedido.findOne({
-      where: {
-        fkid_pedido: pedido.id,
-        fkid_producto: item.fkid_producto,
-        baja_logica: false,
-      },
-    });
+    if (item.cantidad < 1) fail(422, 'La cantidad debe ser al menos 1');
+  }
+
+  const lineasPedido = await db.ProductoPedido.findAll({
+    where: { fkid_pedido: pedido.id },
+  });
+  const listedIds = new Set(items.map((item) => Number(item.fkid_producto)));
+
+  for (const item of items) {
+    const existing = lineasPedido.find(
+      (row) => Number(row.fkid_producto) === Number(item.fkid_producto)
+    );
     const precio_total = item.cantidad * item.precio_unidad;
     if (existing) {
       await existing.update({
         cantidad: item.cantidad,
         precio_unidad: item.precio_unidad,
         precio_total,
+        baja_logica: false,
       });
     } else {
       await db.ProductoPedido.create({
@@ -446,7 +458,14 @@ async function ajustarProductos(deps = {}) {
         cantidad: item.cantidad,
         precio_unidad: item.precio_unidad,
         precio_total,
+        baja_logica: false,
       });
+    }
+  }
+
+  for (const row of lineasPedido) {
+    if (!listedIds.has(Number(row.fkid_producto)) && !row.baja_logica) {
+      await row.update({ baja_logica: true });
     }
   }
 
@@ -523,6 +542,32 @@ function comprobantePath(file) {
   return `comprobantes/${file.filename}`;
 }
 
+function isUniqueConstraint(err) {
+  return err?.name === 'SequelizeUniqueConstraintError'
+    || err?.original?.code === 'ER_DUP_ENTRY'
+    || err?.parent?.code === 'ER_DUP_ENTRY';
+}
+
+async function loadPedidoDto(db, pedido, rutaPedido) {
+  if (rutaPedido && typeof rutaPedido.reload === 'function') {
+    await rutaPedido.reload();
+  }
+  const fresh = await db.Pedido.findByPk(pedido.id, {
+    attributes: { exclude: ['codigo_entrega'] },
+    include: [
+      { model: db.Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] },
+      {
+        model: db.ProductoPedido,
+        as: 'productos',
+        required: false,
+        where: { baja_logica: false },
+        include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'] }],
+      },
+    ],
+  });
+  return toPedidoDto(fresh, rutaPedido);
+}
+
 async function entregar(deps = {}) {
   await requireJornadaAbierta(deps);
   const rutaPedido = await assertRutaDelRepartidor(deps);
@@ -546,33 +591,50 @@ async function entregar(deps = {}) {
   if (!payment.ok) fail(422, payment.message);
 
   const db = getModels(deps);
-  await db.CobroEntrega.create({
-    fkid_pedido: pedido.id,
-    fkid_repartidor: deps.repartidorId,
-    metodo,
-    monto_efectivo: efectivo,
-    monto_transferencia: transferencia,
-    comprobante_path: comprobantePath(deps.file),
-  });
-
+  const sequelize = db.sequelize;
   const now = new Date();
-  await rutaPedido.update({
-    estado_entrega: 'entregado',
-    fecha_entrega_real: now,
-  });
-  await pedido.update({ estado: 'entregado', fecha_entrega_real: now });
+  let alreadyRecorded = false;
+  let saldo;
 
-  const last = await db.RepartidorPuntosMovimiento.findOne({
-    where: { fkid_repartidor: deps.repartidorId },
-    order: [['created_at', 'DESC'], ['id', 'DESC']],
-  });
-  const { puntos, saldo } = nextPoints(last ? last.saldo_posterior : 0);
-  await db.RepartidorPuntosMovimiento.create({
-    fkid_repartidor: deps.repartidorId,
-    puntos,
-    saldo_posterior: saldo,
-    fkid_pedido: pedido.id,
-  });
+  try {
+    await sequelize.transaction(async (t) => {
+      await db.CobroEntrega.create({
+        fkid_pedido: pedido.id,
+        fkid_repartidor: deps.repartidorId,
+        metodo,
+        monto_efectivo: efectivo,
+        monto_transferencia: transferencia,
+        comprobante_path: comprobantePath(deps.file),
+      }, { transaction: t });
+
+      await rutaPedido.update({
+        estado_entrega: 'entregado',
+        fecha_entrega_real: now,
+      }, { transaction: t });
+      await pedido.update({ estado: 'entregado', fecha_entrega_real: now }, { transaction: t });
+
+      const last = await db.RepartidorPuntosMovimiento.findOne({
+        where: { fkid_repartidor: deps.repartidorId },
+        order: [['created_at', 'DESC'], ['id', 'DESC']],
+        transaction: t,
+      });
+      const next = nextPoints(last ? last.saldo_posterior : 0);
+      saldo = next.saldo;
+      await db.RepartidorPuntosMovimiento.create({
+        fkid_repartidor: deps.repartidorId,
+        puntos: next.puntos,
+        saldo_posterior: next.saldo,
+        fkid_pedido: pedido.id,
+      }, { transaction: t });
+    });
+  } catch (err) {
+    if (!isUniqueConstraint(err)) throw err;
+    alreadyRecorded = true;
+  }
+
+  if (alreadyRecorded) {
+    return loadPedidoDto(db, pedido, rutaPedido);
+  }
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -584,20 +646,7 @@ async function entregar(deps = {}) {
     });
   }
 
-  const fresh = await db.Pedido.findByPk(pedido.id, {
-    attributes: { exclude: ['codigo_entrega'] },
-    include: [
-      { model: db.Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] },
-      {
-        model: db.ProductoPedido,
-        as: 'productos',
-        required: false,
-        where: { baja_logica: false },
-        include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'] }],
-      },
-    ],
-  });
-  return toPedidoDto(fresh, rutaPedido);
+  return loadPedidoDto(db, pedido, rutaPedido);
 }
 
 function esLlamadaClienteAtendida(n, pedidoId) {
@@ -610,29 +659,33 @@ function esLlamadaClienteAtendida(n, pedidoId) {
   );
 }
 
+function whereDatosRepartidor(repartidorId) {
+  if (repartidorId == null) return {};
+  const id = Number(repartidorId);
+  if (!Number.isFinite(id)) return { id: null };
+  return {
+    [Op.and]: [
+      Sequelize.where(
+        Sequelize.literal("JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.repartidor_id'))"),
+        String(id)
+      ),
+    ],
+  };
+}
+
 async function findLlamadaClienteAtendida(deps) {
   if (deps.notificaciones) {
     return deps.notificaciones.find((n) => esLlamadaClienteAtendida(n, deps.pedidoId));
   }
   const db = getModels(deps);
-  const pedidoId = Number(deps.pedidoId);
-  const row = await db.Notificacion.findOne({
+  const rows = await db.Notificacion.findAll({
     where: {
       leida: true,
-      [Op.and]: [
-        Sequelize.where(Sequelize.json('datos.tipo'), 'llamada_cliente'),
-        Sequelize.where(Sequelize.json('datos.estado_solicitud'), 'abierta'),
-        {
-          [Op.or]: [
-            Sequelize.where(Sequelize.json('datos.pedido_id'), pedidoId),
-            Sequelize.where(Sequelize.json('datos.pedido_id'), String(pedidoId)),
-          ],
-        },
-      ],
+      ...whereDatosRepartidor(deps.repartidorId),
     },
     order: [['id', 'DESC']],
   });
-  return row;
+  return rows.find((n) => esLlamadaClienteAtendida(n, deps.pedidoId));
 }
 
 async function noEntregar(deps = {}) {

@@ -34,10 +34,14 @@ function canListOrders(estadoJornada) {
   return estadoJornada === 'validada' || estadoJornada === 'cerrada';
 }
 
+function moneyCents(value) {
+  return Math.round(Number(value) * 100) || 0;
+}
+
 function validatePayment({ metodo, total, efectivo, transferencia, hasPhoto }) {
-  const cash = Number(efectivo) || 0;
-  const wire = Number(transferencia) || 0;
-  const due = Number(total) || 0;
+  const cash = moneyCents(efectivo);
+  const wire = moneyCents(transferencia);
+  const due = moneyCents(total);
   if (metodo === 'efectivo') {
     return { ok: cash === due, message: 'El efectivo debe cubrir el total' };
   }

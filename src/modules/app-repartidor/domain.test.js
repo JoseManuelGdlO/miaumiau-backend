@@ -54,6 +54,16 @@ describe('domain app-repartidor', () => {
     expect(validatePayment({ metodo: 'mixto', total: 100, efectivo: 40, transferencia: 60, hasPhoto: true }).ok).toBe(true);
   });
 
+  test('el pago mixto compara en centavos enteros', () => {
+    expect(validatePayment({
+      metodo: 'mixto',
+      total: 30.3,
+      efectivo: 10.1,
+      transferencia: 20.2,
+      hasPhoto: true,
+    }).ok).toBe(true);
+  });
+
   test('el stock no pasa de la carga validada', () => {
     const result = validateStock({
       carga: [{ nombre: 'Arena 20 kg', cantidad: 2 }],
