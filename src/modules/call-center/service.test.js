@@ -1,4 +1,4 @@
-const { aprobar, atender } = require('./service');
+const { aprobar, atender, cambiarEstado } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -90,4 +90,27 @@ test('una nota larga no marca leída', async () => {
     transaction: async (fn) => fn(),
   })).rejects.toMatchObject({ status: 422 });
   expect(n.leida).toBe(false);
+});
+
+test('entregado mueve la ruta y no suma puntos', async () => {
+  const pedido = { id: 4, estado: 'en_camino', entregar: async () => { pedido.estado = 'entregado'; } };
+  const rutaPedido = { estado_entrega: 'pendiente', update: async (patch) => Object.assign(rutaPedido, patch) };
+  const now = new Date('2026-10-07T18:00:00Z');
+  const result = await cambiarEstado({ pedido, rutaPedido, estado: 'entregado', now });
+  expect(result).toEqual({ id: 4, estado: 'entregado' });
+  expect(rutaPedido.estado_entrega).toBe('entregado');
+  expect(rutaPedido.fecha_entrega_real).toBe(now);
+});
+
+test('cancelado deja la ruta en fallido sin fecha', async () => {
+  const pedido = { id: 4, estado: 'pendiente', cancelar: async () => { pedido.estado = 'cancelado'; } };
+  const rutaPedido = { estado_entrega: 'pendiente', update: async (patch) => Object.assign(rutaPedido, patch) };
+  await cambiarEstado({ pedido, rutaPedido, estado: 'cancelado' });
+  expect(rutaPedido.estado_entrega).toBe('fallido');
+  expect(rutaPedido.fecha_entrega_real).toBeUndefined();
+});
+
+test('un par fuera de la tabla responde 422', async () => {
+  const pedido = { id: 4, estado: 'en_preparacion' };
+  await expect(cambiarEstado({ pedido, estado: 'no_entregado' })).rejects.toMatchObject({ status: 422 });
 });

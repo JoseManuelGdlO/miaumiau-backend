@@ -1,4 +1,4 @@
-const { approveCheck, attendCheck, appendNota, stamp, NOTE_LIMIT } = require('./domain');
+const { approveCheck, attendCheck, appendNota, stamp, NOTE_LIMIT, transition } = require('./domain');
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
@@ -69,4 +69,24 @@ async function atender(deps = {}) {
   });
 }
 
-module.exports = { aprobar, atender };
+async function cambiarEstado(deps = {}) {
+  const db = getModels(deps);
+  const pedido = deps.pedido || await db.Pedido.findByPk(deps.pedidoId);
+  if (!pedido || pedido.baja_logica) fail(404, 'Pedido no encontrado');
+  const decision = transition(pedido.estado, deps.estado);
+  if (!decision.ok) fail(decision.statusCode, decision.message);
+  await pedido[decision.method]();
+  if (decision.route) {
+    const rutaPedido = deps.rutaPedido || await db.RutaPedido.findOne({
+      where: { fkid_pedido: pedido.id },
+    });
+    if (rutaPedido) {
+      const patch = { estado_entrega: decision.route.estado_entrega };
+      if (decision.route.fecha_entrega_real) patch.fecha_entrega_real = deps.now || new Date();
+      await rutaPedido.update(patch);
+    }
+  }
+  return { id: pedido.id, estado: deps.estado };
+}
+
+module.exports = { aprobar, atender, cambiarEstado };
