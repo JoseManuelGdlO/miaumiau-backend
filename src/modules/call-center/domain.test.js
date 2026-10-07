@@ -63,6 +63,7 @@ test('reasignar rechaza cerrado, otra ciudad, inactivo y el mismo repartidor', (
   expect(reassignCheck({ ...base, sameCity: false }).statusCode).toBe(403);
   expect(reassignCheck({ ...base, driverFound: false }).statusCode).toBe(403);
   expect(reassignCheck({ ...base, driverEstado: 'inactivo' }).statusCode).toBe(403);
+  expect(reassignCheck({ ...base, bajaLogica: true }).statusCode).toBe(403);
   expect(reassignCheck({ ...base, sameDriver: true }).statusCode).toBe(422);
 });
 

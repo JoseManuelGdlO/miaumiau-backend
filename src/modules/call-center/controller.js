@@ -25,18 +25,10 @@ function aprobar(req, res) {
 }
 
 function atender(req, res) {
-  return handle(res, async () => {
-    const db = require('../../models');
-    const notificacion = await db.Notificacion.findByPk(req.params.id);
-    let timezone = 'America/Mexico_City';
-    const pedidoId = notificacion?.datos?.pedido_id;
-    if (pedidoId) {
-      const pedido = await db.Pedido.findByPk(pedidoId, { include: [{ association: 'ciudad' }] });
-      timezone = pedido?.ciudad?.timezone || timezone;
-      return service.atender({ notificacion, pedido, nota: req.body?.nota, timezone });
-    }
-    return service.atender({ notificacion, nota: req.body?.nota, timezone });
-  });
+  return handle(res, () => service.atender({
+    notificacionId: req.params.id,
+    nota: req.body?.nota,
+  }));
 }
 
 function pedidos(req, res) {
@@ -58,24 +50,10 @@ function repartidores(req, res) {
 }
 
 function reasignar(req, res) {
-  return handle(res, async () => {
-    const db = require('../../models');
-    const { dayKey } = require('../app-repartidor/domain');
-    const rutaPedido = await db.RutaPedido.findOne({
-      where: { fkid_pedido: req.params.id },
-      include: [
-        { association: 'pedido' },
-        { association: 'ruta', include: [{ association: 'ciudad' }] },
-      ],
-    });
-    const repartidor = await db.Repartidor.findByPk(req.body?.fkid_repartidor);
-    const zone = rutaPedido?.ruta?.ciudad?.timezone || 'America/Mexico_City';
-    return service.reasignar({
-      rutaPedido,
-      repartidor,
-      fechaHoy: dayKey(new Date(), zone),
-    });
-  });
+  return handle(res, () => service.reasignar({
+    pedidoId: req.params.id,
+    repartidorId: req.body?.fkid_repartidor,
+  }));
 }
 
 module.exports = { solicitudes, solicitud, aprobar, atender, pedidos, estado, repartidores, reasignar };

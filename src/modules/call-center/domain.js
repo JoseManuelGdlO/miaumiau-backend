@@ -72,11 +72,11 @@ function transition(from, to) {
   return { ok: true, method: METHODS[to], route };
 }
 
-function reassignCheck({ pedidoEstado, sameDriver, driverFound, sameCity, driverEstado }) {
+function reassignCheck({ pedidoEstado, sameDriver, driverFound, sameCity, driverEstado, bajaLogica }) {
   if (CLOSED.includes(pedidoEstado)) {
     return { ok: false, statusCode: 409, message: 'Ese pedido ya no se puede reasignar' };
   }
-  if (!driverFound || !sameCity || !ACTIVE.includes(driverEstado)) {
+  if (!driverFound || !sameCity || !ACTIVE.includes(driverEstado) || bajaLogica) {
     return { ok: false, statusCode: 403, message: 'Ese repartidor no puede recibir el pedido' };
   }
   if (sameDriver) {
