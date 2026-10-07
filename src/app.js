@@ -230,6 +230,8 @@ app.use('/api/agentes', agenteRoutes);
 app.use('/api/repartidores', repartidorRoutes);
 const appRepartidorRoutes = require('./modules/app-repartidor/routes');
 app.use('/api/app-repartidor', appRepartidorRoutes);
+const callCenterRoutes = require('./modules/call-center/routes');
+app.use('/api/call-center', callCenterRoutes);
 app.use('/api/rutas', rutaRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
 app.use('/api/paquetes', paqueteRoutes);
