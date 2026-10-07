@@ -72,6 +72,8 @@ function getAllowedCorsOriginsSet() {
   [
     'http://localhost:3000',
     'http://localhost:8080',
+    'capacitor://localhost',
+    'http://localhost',
     'http://127.0.0.1:8080',
     'http://127.0.0.1:3000',
     'http://localhost:5173',
@@ -226,6 +228,8 @@ app.use('/api/productos-pedido', productoPedidoRoutes);
 app.use('/api/mascotas', mascotaRoutes);
 app.use('/api/agentes', agenteRoutes);
 app.use('/api/repartidores', repartidorRoutes);
+const appRepartidorRoutes = require('./modules/app-repartidor/routes');
+app.use('/api/app-repartidor', appRepartidorRoutes);
 app.use('/api/rutas', rutaRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
 app.use('/api/paquetes', paqueteRoutes);
