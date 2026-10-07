@@ -1,4 +1,19 @@
-const { approveCheck, attendCheck, appendNota, stamp, NOTE_LIMIT, transition, reassignCheck } = require('./domain');
+const { dayKey } = require('../app-repartidor/domain');
+const {
+  approveCheck,
+  attendCheck,
+  appendNota,
+  stamp,
+  NOTE_LIMIT,
+  transition,
+  reassignCheck,
+  isOpenSolicitud,
+  toSolicitudResumen,
+  toSolicitudDetalle,
+  toPedidoDia,
+  toRepartidorOpcion,
+  ACTIVE,
+} = require('./domain');
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
@@ -151,4 +166,97 @@ async function reasignar(deps = {}) {
   return { ruta_id: destino.id, creada, orden_entrega: maxOrden + 1 };
 }
 
-module.exports = { aprobar, atender, cambiarEstado, reasignar };
+async function fechaDeHoy(deps) {
+  let zone = 'America/Mexico_City';
+  if (deps.ciudadId) {
+    const db = getModels(deps);
+    const city = deps.city || await db.City.findByPk(deps.ciudadId);
+    zone = city?.timezone || zone;
+  }
+  return dayKey(deps.now || new Date(), zone);
+}
+
+async function listarSolicitudes(deps = {}) {
+  const db = getModels(deps);
+  const rows = deps.rows || await db.Notificacion.findAll({
+    where: { leida: false },
+    order: [['id', 'DESC']],
+  });
+  const open = rows.filter(isOpenSolicitud);
+  const result = [];
+  for (const row of open) {
+    const datos = row.datos || {};
+    const repartidor = datos.repartidor_id
+      ? await db.Repartidor.findByPk(datos.repartidor_id, { attributes: ['id', 'nombre_completo'] })
+      : null;
+    let numero = null;
+    if (datos.pedido_id) {
+      const pedido = await db.Pedido.findByPk(datos.pedido_id, { attributes: ['numero_pedido'] });
+      numero = pedido?.numero_pedido || null;
+    }
+    result.push(toSolicitudResumen(row, repartidor, numero));
+  }
+  return result;
+}
+
+async function detalleSolicitud(deps = {}) {
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion || !isOpenSolicitud(notificacion)) fail(404, 'Solicitud no encontrada');
+  const datos = notificacion.datos || {};
+  const repartidor = datos.repartidor_id
+    ? await db.Repartidor.findByPk(datos.repartidor_id, { attributes: ['id', 'nombre_completo'] })
+    : null;
+  let cargas = [];
+  let pedido = null;
+  if (datos.tipo === 'check_in' && datos.jornada_id) {
+    const jornada = await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] });
+    cargas = jornada?.cargas || [];
+  }
+  if (datos.pedido_id) {
+    pedido = await db.Pedido.findByPk(datos.pedido_id, {
+      attributes: { exclude: ['codigo_entrega'] },
+      include: [{ association: 'cliente', attributes: ['id', 'nombre_completo', 'telefono'] }],
+    });
+  }
+  return toSolicitudDetalle({ notificacion, repartidor, cargas, pedido });
+}
+
+async function listarPedidos(deps = {}) {
+  const db = getModels(deps);
+  const fecha = deps.fecha || await fechaDeHoy(deps);
+  const rutaWhere = { fecha_ruta: fecha, baja_logica: false };
+  if (deps.ciudadId) rutaWhere.fkid_ciudad = deps.ciudadId;
+  if (deps.repartidorId) rutaWhere.fkid_repartidor = deps.repartidorId;
+  const rows = await db.RutaPedido.findAll({
+    include: [
+      { association: 'pedido', required: true, where: { baja_logica: false }, include: [{ association: 'cliente' }] },
+      { association: 'ruta', required: true, where: rutaWhere, include: [{ association: 'repartidor' }] },
+    ],
+    order: [['orden_entrega', 'ASC']],
+  });
+  return rows.map((row) => toPedidoDia({ pedido: row.pedido, rutaPedido: row, ruta: row.ruta }));
+}
+
+async function listarRepartidores(deps = {}) {
+  const db = getModels(deps);
+  const { Op } = require('sequelize');
+  const rows = await db.Repartidor.findAll({
+    where: { fkid_ciudad: deps.ciudadId, estado: { [Op.in]: ACTIVE }, baja_logica: false },
+    attributes: ['id', 'nombre_completo', 'estado'],
+    order: [['nombre_completo', 'ASC']],
+  });
+  return rows.map(toRepartidorOpcion);
+}
+
+module.exports = {
+  aprobar,
+  atender,
+  cambiarEstado,
+  reasignar,
+  listarSolicitudes,
+  detalleSolicitud,
+  listarPedidos,
+  listarRepartidores,
+  fechaDeHoy,
+};

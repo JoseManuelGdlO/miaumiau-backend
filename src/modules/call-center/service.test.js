@@ -1,4 +1,4 @@
-const { aprobar, atender, cambiarEstado, reasignar } = require('./service');
+const { aprobar, atender, cambiarEstado, reasignar, listarSolicitudes, detalleSolicitud, listarPedidos, listarRepartidores } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -191,4 +191,66 @@ test('otra ciudad responde 403', async () => {
     fechaHoy: '2026-10-07',
     repartidor: { id: 8, fkid_ciudad: 9, estado: 'inactivo', nombre_completo: 'Marta' },
   })).rejects.toMatchObject({ status: 403 });
+});
+
+test('la lista deja fuera lo leído y arma el detalle sin código', async () => {
+  const abierta = {
+    id: 1,
+    leida: false,
+    prioridad: 'alta',
+    fecha_creacion: '2026-10-07',
+    hora_creacion: '09:00:00',
+    datos: { tipo: 'check_in', estado_solicitud: 'abierta', repartidor_id: 3, jornada_id: 5 },
+  };
+  const models = {
+    Notificacion: { findAll: async () => [abierta, { ...abierta, id: 2, leida: true }] },
+    Repartidor: { findByPk: async () => ({ id: 3, nombre_completo: 'Luis' }) },
+    JornadaRepartidor: { findByPk: async () => ({ id: 5, cargas: [{ nombre: 'Arena', cantidad: 1, precio_unitario: 10, es_extra: false }] }) },
+    Pedido: { findByPk: async () => null },
+  };
+  const list = await listarSolicitudes({ models });
+  expect(list.map((row) => row.id)).toEqual([1]);
+  const detail = await detalleSolicitud({ models, notificacionId: 1, notificacion: abierta });
+  expect(detail.cargas[0].nombre).toBe('Arena');
+  expect(detail.codigo_entrega).toBeUndefined();
+});
+
+test('los pedidos del día salen con teléfono y sin código', async () => {
+  const models = {
+    City: { findByPk: async () => ({ timezone: 'America/Mexico_City' }) },
+    RutaPedido: {
+      findAll: async () => [{
+        id: 9,
+        estado_entrega: 'pendiente',
+        pedido: {
+          id: 4,
+          numero_pedido: 'P-4',
+          estado: 'confirmado',
+          codigo_entrega: '999999',
+          telefono_referencia: '',
+          direccion_entrega: 'Calle 1',
+          cliente: { nombre_completo: 'Ana', telefono: '618222' },
+        },
+        ruta: { fkid_ciudad: 2, fkid_repartidor: 3, repartidor: { id: 3, nombre_completo: 'Luis' } },
+      }],
+    },
+  };
+  const rows = await listarPedidos({ models, now: new Date('2026-10-07T18:00:00Z') });
+  expect(rows[0].telefono).toBe('618222');
+  expect(rows[0].codigo_entrega).toBeUndefined();
+});
+
+test('repartidores excluye inactivos', async () => {
+  const { Op } = require('sequelize');
+  const models = {
+    Repartidor: {
+      findAll: async (query) => {
+        expect(query.where.fkid_ciudad).toBe(2);
+        expect(query.where.estado[Op.in]).toEqual(['activo', 'disponible', 'ocupado', 'en_ruta']);
+        return [{ id: 3, nombre_completo: 'Luis', estado: 'activo' }];
+      },
+    },
+  };
+  const rows = await listarRepartidores({ models, ciudadId: 2 });
+  expect(rows).toEqual([{ id: 3, nombre_completo: 'Luis', estado: 'activo' }]);
 });
