@@ -9,6 +9,129 @@ const KEY_SOCIAL_INSTAGRAM = 'social_instagram_url';
 const KEY_SOCIAL_FACEBOOK = 'social_facebook_url';
 const KEY_SOCIAL_TIKTOK = 'social_tiktok_url';
 const KEY_MERCADOLIBRE = 'mercadolibre_url';
+const KEY_QR_ACTIONS = 'qr_actions';
+
+const QR_ACTION_IDS = ['whatsapp', 'catalog', 'packages', 'promotions', 'mercadolibre', 'social', 'customLink'];
+
+function defaultQrActions() {
+  return {
+    whatsapp: true,
+    catalog: true,
+    packages: true,
+    promotions: true,
+    mercadolibre: true,
+    social: true,
+    customLink: false,
+    customLinkUrl: '',
+    customLinkLabel: '',
+    links: [],
+    linksHtml: '',
+    linksPanelColor: '#fff7ed',
+    linksBubbleColor: '#16a34a',
+    linksTextColor: '#1c1917',
+  };
+}
+
+function parseHexColor(raw, fallback) {
+  if (typeof raw !== 'string') return fallback;
+  const value = raw.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) return value.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(value)) {
+    const [r, g, b] = value.slice(1).split('');
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return fallback;
+}
+
+const ALLOWED_FONT_FACES = new Set([
+  'Fredoka',
+  'Nunito',
+  'Arial',
+  'Georgia',
+  'Times New Roman',
+  'Verdana',
+  'Trebuchet MS',
+  'Courier New',
+]);
+
+function sanitizeFontTag(attrs) {
+  const faceMatch = String(attrs).match(/\bface\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const face = faceMatch ? (faceMatch[2] || faceMatch[3] || faceMatch[4] || '') : '';
+  const sizeMatch = String(attrs).match(/\bsize\s*=\s*"?([1-7])"?/i);
+  let tag = '<font';
+  if (ALLOWED_FONT_FACES.has(face)) tag += ` face="${face}"`;
+  if (sizeMatch) tag += ` size="${sizeMatch[1]}"`;
+  return `${tag}>`;
+}
+
+function sanitizeLinksHtml(raw) {
+  if (typeof raw !== 'string') return '';
+  let html = raw.slice(0, 8000);
+  html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+  html = html.replace(/<\/?(?!p\b|br\b|strong\b|b\b|em\b|i\b|u\b|ul\b|ol\b|li\b|a\b|h2\b|h3\b|span\b|div\b|font\b)[a-z0-9]+[^>]*>/gi, '');
+  html = html.replace(/<font\b([^>]*)>/gi, (_, attrs) => sanitizeFontTag(attrs));
+  html = html.replace(/\son\w+\s*=\s*(['"])[\s\S]*?\1/gi, '');
+  html = html.replace(/\son\w+\s*=\s*[^\s>]+/gi, '');
+  html = html.replace(/href\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, 'href="#"');
+  return html.trim();
+}
+
+function parseQrLinks(raw) {
+  if (!Array.isArray(raw)) return [];
+  const links = [];
+  for (const item of raw.slice(0, 20)) {
+    if (!item || typeof item !== 'object') continue;
+    const name = typeof item.name === 'string' ? item.name.trim().slice(0, 80) : '';
+    const url = parseHttpUrlOrEmpty(item.url);
+    if (!name || !url) continue;
+    const id = typeof item.id === 'string' && item.id.trim()
+      ? item.id.trim().slice(0, 40)
+      : `link-${links.length + 1}`;
+    links.push({ id, name, url });
+  }
+  return links;
+}
+
+function parseQrActions(raw) {
+  const result = defaultQrActions();
+  if (raw == null || raw === '') return result;
+
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return result;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return result;
+
+  for (const id of QR_ACTION_IDS) {
+    if (typeof parsed[id] === 'boolean') {
+      result[id] = parsed[id];
+    }
+  }
+
+  const customLinkUrl = parseHttpUrlOrEmpty(parsed.customLinkUrl);
+  result.customLinkUrl = customLinkUrl || '';
+  result.customLinkLabel = typeof parsed.customLinkLabel === 'string'
+    ? parsed.customLinkLabel.trim().slice(0, 80)
+    : '';
+  result.links = parseQrLinks(parsed.links);
+  if (result.links.length === 0 && result.customLink && result.customLinkUrl) {
+    result.links = [{
+      id: 'legacy',
+      name: result.customLinkLabel || 'Enlace',
+      url: result.customLinkUrl,
+    }];
+  }
+  result.linksHtml = sanitizeLinksHtml(parsed.linksHtml);
+  const defaults = defaultQrActions();
+  result.linksPanelColor = parseHexColor(parsed.linksPanelColor, defaults.linksPanelColor);
+  result.linksBubbleColor = parseHexColor(parsed.linksBubbleColor, defaults.linksBubbleColor);
+  result.linksTextColor = parseHexColor(parsed.linksTextColor, defaults.linksTextColor);
+  return result;
+}
 
 const PUBLIC_LINK_KEYS = [
   KEY_SOCIAL_INSTAGRAM,
@@ -32,7 +155,7 @@ function parseHttpUrlOrEmpty(raw) {
 }
 
 async function buildPublicData() {
-  const allKeys = [KEY_HERO_YOUTUBE, ...PUBLIC_LINK_KEYS];
+  const allKeys = [KEY_HERO_YOUTUBE, KEY_QR_ACTIONS, ...PUBLIC_LINK_KEYS];
   const rows = await SiteSetting.findAll({
     where: { clave: { [Op.in]: allKeys } },
   });
@@ -47,6 +170,7 @@ async function buildPublicData() {
   const socialFacebookUrl = byClave[KEY_SOCIAL_FACEBOOK] ? String(byClave[KEY_SOCIAL_FACEBOOK]).trim() : '';
   const socialTiktokUrl = byClave[KEY_SOCIAL_TIKTOK] ? String(byClave[KEY_SOCIAL_TIKTOK]).trim() : '';
   const mercadolibreUrl = byClave[KEY_MERCADOLIBRE] ? String(byClave[KEY_MERCADOLIBRE]).trim() : '';
+  const qrActions = parseQrActions(byClave[KEY_QR_ACTIONS]);
 
   return {
     heroYoutubeVideoId,
@@ -54,6 +178,7 @@ async function buildPublicData() {
     socialFacebookUrl,
     socialTiktokUrl,
     mercadolibreUrl,
+    qrActions,
   };
 }
 
@@ -150,10 +275,95 @@ const updatePublicLinks = async (req, res, next) => {
   }
 };
 
+const updateQrActions = async (req, res, next) => {
+  try {
+    const incoming = req.body && req.body.qrActions;
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Indica qrActions con las acciones que se muestran al entrar al QR.',
+      });
+    }
+
+    for (const id of QR_ACTION_IDS) {
+      if (typeof incoming[id] !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: `La acción ${id} debe ser verdadero o falso.`,
+        });
+      }
+    }
+
+    const customLinkUrl = parseHttpUrlOrEmpty(incoming.customLinkUrl);
+    if (customLinkUrl === null || (incoming.customLink && customLinkUrl === '')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Escribe un enlace http:// o https:// para la opción de otro link.',
+      });
+    }
+    if (incoming.customLinkLabel != null && typeof incoming.customLinkLabel !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'El texto del botón debe ser una cadena.',
+      });
+    }
+
+    if (incoming.linksHtml != null && typeof incoming.linksHtml !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'El texto de la sección de enlaces no es válido.',
+      });
+    }
+
+    if (incoming.links != null && !Array.isArray(incoming.links)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Los enlaces del QR deben enviarse como una lista.',
+      });
+    }
+    const incomingLinks = Array.isArray(incoming.links) ? incoming.links : [];
+    if (incomingLinks.length > 20) {
+      return res.status(400).json({
+        success: false,
+        message: 'Puedes agregar hasta 20 enlaces.',
+      });
+    }
+    for (const item of incomingLinks) {
+      const name = item && typeof item.name === 'string' ? item.name.trim() : '';
+      const url = item ? parseHttpUrlOrEmpty(item.url) : null;
+      if (!name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cada enlace necesita un nombre.',
+        });
+      }
+      if (!url) {
+        return res.status(400).json({
+          success: false,
+          message: `El enlace "${name}" debe ser una URL http:// o https://`,
+        });
+      }
+    }
+
+    const qrActions = parseQrActions(incoming);
+    await upsertValor(KEY_QR_ACTIONS, JSON.stringify(qrActions));
+
+    const data = await buildPublicData();
+    res.json({
+      success: true,
+      data,
+      message: 'Acciones del QR actualizadas correctamente',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPublic,
   updateHeroYoutubeVideoId,
   updatePublicLinks,
+  updateQrActions,
   KEY_HERO_YOUTUBE,
   DEFAULT_HERO_VIDEO_ID,
 };

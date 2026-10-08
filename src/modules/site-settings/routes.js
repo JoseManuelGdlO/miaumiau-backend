@@ -22,6 +22,13 @@ protectedRouter.put(
   siteSettingsController.updatePublicLinks
 );
 
+protectedRouter.put(
+  '/qr-actions',
+  authenticateToken,
+  requireSuperAdminOrPermission('configurar_sistema'),
+  siteSettingsController.updateQrActions
+);
+
 module.exports = {
   publicSiteSettingsRoutes: publicRouter,
   siteSettingsRoutes: protectedRouter,
