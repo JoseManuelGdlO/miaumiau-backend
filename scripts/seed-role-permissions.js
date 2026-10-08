@@ -54,7 +54,7 @@ try {
       // Conversaciones Logs
       'ver_conversaciones_logs', 'crear_conversaciones_logs', 'editar_conversaciones_logs', 'eliminar_conversaciones_logs',
       // Sistema
-      'ver_logs', 'configurar_sistema',
+      'ver_logs', 'configurar_sistema', 'configurar_qr',
       // Reportes
       'ver_reportes', 'generar_reportes', 'exportar_reportes'
     ],

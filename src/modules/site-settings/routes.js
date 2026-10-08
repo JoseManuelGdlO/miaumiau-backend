@@ -25,7 +25,7 @@ protectedRouter.put(
 protectedRouter.put(
   '/qr-actions',
   authenticateToken,
-  requireSuperAdminOrPermission('configurar_sistema'),
+  requireSuperAdminOrPermission('configurar_qr'),
   siteSettingsController.updateQrActions
 );
 

@@ -742,6 +742,15 @@ module.exports = {
         updated_at: new Date()
       },
       {
+        nombre: 'configurar_qr',
+        categoria: 'configuracion_qr',
+        descripcion: 'Permite usar la configuración del código QR',
+        tipo: 'administracion',
+        baja_logica: false,
+        created_at: new Date(),
+        updated_at: new Date()
+      },
+      {
         nombre: 'backup_sistema',
         categoria: 'sistema',
         descripcion: 'Permite realizar backups del sistema',
