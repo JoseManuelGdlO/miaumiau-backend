@@ -59,7 +59,7 @@ module.exports = {
       const adminPermissions = [
         'ver_usuarios', 'crear_usuarios', 'editar_usuarios', 'eliminar_usuarios', 'administrar_usuarios',
         'ver_permisos', 'crear_permisos', 'editar_permisos', 'eliminar_permisos',
-        'ver_logs', 'configurar_sistema',
+        'ver_logs', 'configurar_sistema', 'configurar_qr',
         'ver_reportes', 'generar_reportes', 'exportar_reportes'
       ];
 
