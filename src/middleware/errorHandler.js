@@ -1,9 +1,34 @@
+const UNIQUE_FIELD_MESSAGES = {
+  codigo_repartidor: 'El código de repartidor ya está en uso',
+  email: 'El correo electrónico ya está registrado',
+  documento_identidad: 'El documento de identidad ya está registrado',
+  telefono: 'El teléfono ya está registrado'
+};
+
+const uniqueConstraintMessage = (err) => {
+  const field = err.errors?.[0]?.path || Object.keys(err.fields || {})[0];
+  if (field && UNIQUE_FIELD_MESSAGES[field]) {
+    return UNIQUE_FIELD_MESSAGES[field];
+  }
+  return 'Ya existe un registro con esos datos';
+};
+
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
 
-  // Log del error
-  console.error(err);
+  const isExpectedClientError = err.name === 'SequelizeValidationError'
+    || err.name === 'SequelizeUniqueConstraintError';
+
+  // Los conflictos de validación no incluyen el SQL en el log
+  if (isExpectedClientError) {
+    const detail = err.name === 'SequelizeUniqueConstraintError'
+      ? uniqueConstraintMessage(err)
+      : err.errors?.map(item => item.message).join(', ');
+    console.warn(detail || err.message);
+  } else {
+    console.error(err);
+  }
 
   // Error de validación de Sequelize
   if (err.name === 'SequelizeValidationError') {
@@ -16,10 +41,9 @@ const errorHandler = (err, req, res, next) => {
 
   // Error de duplicado de Sequelize
   if (err.name === 'SequelizeUniqueConstraintError') {
-    const message = 'Recurso duplicado';
     error = {
-      message,
-      statusCode: 400
+      message: uniqueConstraintMessage(err),
+      statusCode: 409
     };
   }
 
