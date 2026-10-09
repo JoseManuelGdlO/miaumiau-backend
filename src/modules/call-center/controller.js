@@ -1,8 +1,16 @@
 const service = require('./service');
+const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
 const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar']);
+
+function live(extra) {
+  return {
+    ...extra,
+    notify: (repartidorId, event) => getHub().notify(repartidorId, event),
+  };
+}
 
 async function handle(res, run, action) {
   try {
@@ -33,17 +41,17 @@ function solicitud(req, res) {
 }
 
 function aprobar(req, res) {
-  return handle(res, () => service.aprobar({
+  return handle(res, () => service.aprobar(live({
     notificacionId: req.params.id,
     usuario: req.user,
-  }), 'aprobar');
+  })), 'aprobar');
 }
 
 function extras(req, res) {
-  return handle(res, () => service.guardarExtras({
+  return handle(res, () => service.guardarExtras(live({
     notificacionId: req.params.id,
     lineas: req.body?.lineas || [],
-  }), 'extras');
+  })), 'extras');
 }
 
 function inventario(req, res) {
@@ -65,10 +73,10 @@ function pedidos(req, res) {
 }
 
 function estado(req, res) {
-  return handle(res, () => service.cambiarEstado({
+  return handle(res, () => service.cambiarEstado(live({
     pedidoId: req.params.id,
     estado: req.body?.estado,
-  }), 'estado');
+  })), 'estado');
 }
 
 function repartidores(req, res) {
@@ -76,10 +84,10 @@ function repartidores(req, res) {
 }
 
 function reasignar(req, res) {
-  return handle(res, () => service.reasignar({
+  return handle(res, () => service.reasignar(live({
     pedidoId: req.params.id,
     repartidorId: req.body?.fkid_repartidor,
-  }), 'reasignar');
+  })), 'reasignar');
 }
 
 module.exports = {

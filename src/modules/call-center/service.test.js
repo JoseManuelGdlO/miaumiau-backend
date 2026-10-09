@@ -819,3 +819,123 @@ test('atender no anota si la relectura ya está leída', async () => {
   })).rejects.toMatchObject({ status: 409 });
   expect(n.leida).toBe(true);
 });
+
+test('aprobar avisa al repartidor de la jornada', async () => {
+  const notify = jest.fn();
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 8,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await aprobar({
+    notificacion: notificacion(),
+    jornada,
+    usuario: { id: 12, nombre_completo: 'Mariana G.' },
+    notify,
+  });
+  expect(notify).toHaveBeenCalledWith(8, { type: 'solicitud.atendida' });
+});
+
+test('guardar extras avisa y un notify roto no falla el guardado', async () => {
+  const notify = jest.fn(() => {
+    throw new Error('socket caído');
+  });
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 8,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+  };
+  const result = await guardarExtras({
+    notificacion: notificacion(),
+    jornada,
+    lineas: [{ fkid_producto: 4, cantidad: 2, precio_unitario: 10 }],
+    notify,
+    models: {
+      Inventario: { findByPk: async () => ({ id: 4, nombre: 'Arena', precio_venta: 10, baja_logica: false }) },
+      JornadaCarga: { destroy: async () => {}, bulkCreate: async () => {} },
+    },
+  });
+  expect(result.cargas[0].es_extra).toBe(true);
+  expect(notify).toHaveBeenCalledWith(8, { type: 'jornada.actualizada' });
+});
+
+test('cancelar avisa al repartidor de la ruta de hoy', async () => {
+  const notify = jest.fn();
+  const pedido = { id: 4, estado: 'en_camino', baja_logica: false, cancelar: async () => { pedido.estado = 'cancelado'; } };
+  const rutaPedido = {
+    id: 11,
+    estado_entrega: 'en_camino',
+    update: async (patch) => Object.assign(rutaPedido, patch),
+    ruta: { fkid_repartidor: 8 },
+  };
+  await cambiarEstado({
+    pedido,
+    rutaPedido,
+    estado: 'cancelado',
+    pedidoId: 4,
+    notify,
+    transaction: async (fn) => fn({}),
+  });
+  expect(notify).toHaveBeenCalledWith(8, { type: 'ruta.actualizada', pedidoId: 4 });
+});
+
+test('confirmar no avisa porque no toca la ruta', async () => {
+  const notify = jest.fn();
+  const pedido = { id: 4, estado: 'pendiente', baja_logica: false, confirmar: async () => { pedido.estado = 'confirmado'; } };
+  await cambiarEstado({
+    pedido,
+    estado: 'confirmado',
+    pedidoId: 4,
+    notify,
+    transaction: async (fn) => fn({}),
+  });
+  expect(notify).not.toHaveBeenCalled();
+});
+
+test('reasignar avisa al repartidor que suelta y al que recibe', async () => {
+  const notify = jest.fn();
+  const created = [];
+  const rutaPedido = {
+    fkid_ruta: 1,
+    orden_entrega: 2,
+    estado_entrega: 'en_camino',
+    llego_en: new Date(),
+    codigo_validado_en: new Date(),
+    lat: 1,
+    lng: 2,
+    update: async (patch) => Object.assign(rutaPedido, patch),
+    pedido: { id: 4, estado: 'en_camino', codigo_entrega: '123456', baja_logica: false },
+    ruta: {
+      id: 1,
+      fkid_ciudad: 7,
+      fkid_repartidor: 3,
+      fecha_ruta: '2026-10-07',
+      total_pedidos: 2,
+      estado: 'en_progreso',
+      baja_logica: false,
+      update: async (patch) => Object.assign(rutaPedido.ruta, patch),
+    },
+  };
+  const destino = { id: 20, total_pedidos: 0, update: async (patch) => Object.assign(destino, patch) };
+  const models = {
+    Ruta: {
+      findAll: async () => [],
+      create: async (row) => { created.push(row); return destino; },
+    },
+    RutaPedido: { findAll: async () => [] },
+  };
+  await reasignar({
+    models,
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    pedidoId: 4,
+    repartidor: { id: 9, nombre_completo: 'Ana', fkid_ciudad: 7, estado: 'activo', baja_logica: false },
+    notify,
+    transaction: async (fn) => fn(),
+  });
+  expect(notify).toHaveBeenCalledWith(3, { type: 'ruta.actualizada', pedidoId: 4 });
+  expect(notify).toHaveBeenCalledWith(9, { type: 'ruta.actualizada', pedidoId: 4 });
+});
