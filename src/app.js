@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -16,6 +17,9 @@ const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const requestLogger = require('./middleware/requestLogger');
 const { Logger } = require('./utils/logger');
+const { attachRealtime } = require('./modules/realtime/attach');
+const { verifyRepartidorToken } = require('./modules/realtime/auth');
+const { getHub } = require('./modules/realtime');
 
 const log = new Logger('App');
 const autoEntregarPedidos = require('./jobs/autoEntregarPedidos');
@@ -279,7 +283,12 @@ const startServer = async () => {
     }
     
     // Iniciar servidor
-    app.listen(PORT, () => {
+    const server = http.createServer(app);
+    attachRealtime(server, {
+      hub: getHub(),
+      verifyToken: (token) => verifyRepartidorToken(token),
+    });
+    server.listen(PORT, () => {
       log.info(`Servidor Miaumiau v${BACKEND_VERSION} corriendo en puerto ${PORT}`);
       log.info(`Health check: http://localhost:${PORT}/health`);
     });

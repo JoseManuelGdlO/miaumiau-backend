@@ -28,6 +28,15 @@ function fail(status, message) {
   throw Object.assign(new Error(message), { status });
 }
 
+async function safeNotify(deps, repartidorId, event) {
+  if (typeof deps.notify !== 'function' || repartidorId == null || repartidorId === '') return;
+  try {
+    await deps.notify(Number(repartidorId), event);
+  } catch (error) {
+    log.warn('No se pudo avisar al repartidor', { message: error.message });
+  }
+}
+
 function getModels(deps = {}) {
   return deps.models || require('../../models');
 }
@@ -201,6 +210,7 @@ async function aprobar(deps = {}) {
       validado_por_nombre: aprobador.nombre,
     });
   }
+  await safeNotify(deps, jornada?.fkid_repartidor, { type: 'solicitud.atendida' });
   return { atendida: true };
 }
 
@@ -252,6 +262,7 @@ async function guardarExtras(deps = {}) {
 
   await db.JornadaCarga.destroy({ where: { fkid_jornada: jornada.id, es_extra: true } });
   if (resolved.length) await db.JornadaCarga.bulkCreate(resolved);
+  await safeNotify(deps, jornada?.fkid_repartidor, { type: 'jornada.actualizada' });
   return {
     cargas: resolved.map((c) => ({
       nombre: c.nombre,
@@ -336,7 +347,8 @@ async function cambiarEstado(deps = {}) {
     if (!rutaPedido) fail(409, 'Ese pedido no está en una ruta de hoy');
   }
 
-  return withTx(deps, async (t) => {
+  const repartidorDeRuta = rutaPedido?.ruta?.fkid_repartidor;
+  const result = await withTx(deps, async (t) => {
     const lockedPedido = await lockRow(db.Pedido, pedido, Boolean(deps.pedido), t);
     if (!lockedPedido || lockedPedido.baja_logica) fail(404, 'Pedido no encontrado');
     const fresh = transition(lockedPedido.estado, deps.estado);
@@ -355,8 +367,15 @@ async function cambiarEstado(deps = {}) {
       if (fresh.route.fecha_entrega_real) patch.fecha_entrega_real = deps.now || new Date();
       await lockedStop.update(patch, txOpts(t));
     }
-    return { id: lockedPedido.id, estado: deps.estado };
+    return { id: lockedPedido.id, estado: deps.estado, avisar: Boolean(fresh.route) };
   });
+  if (result.avisar) {
+    await safeNotify(deps, repartidorDeRuta, {
+      type: 'ruta.actualizada',
+      pedidoId: Number(deps.pedidoId),
+    });
+  }
+  return { id: result.id, estado: result.estado };
 }
 
 async function reasignar(deps = {}) {
@@ -380,7 +399,9 @@ async function reasignar(deps = {}) {
   });
   if (!check.ok) fail(check.statusCode, check.message);
 
-  return withTx(deps, async (t) => {
+  const anterior = ruta?.fkid_repartidor;
+  const nuevo = driver?.id;
+  const result = await withTx(deps, async (t) => {
     const lockedPedido = await lockRow(db.Pedido, pedido, Boolean(deps.rutaPedido), t);
     const lockedStop = await lockRow(db.RutaPedido, rutaPedido, Boolean(deps.rutaPedido), t);
     const lockedRuta = await lockRow(db.Ruta, ruta, Boolean(deps.rutaPedido), t);
@@ -451,6 +472,12 @@ async function reasignar(deps = {}) {
     await destino.update({ total_pedidos: Number(destino.total_pedidos) + 1 }, txOpts(t));
     return { ruta_id: destino.id, creada, orden_entrega: orden };
   });
+  const pedidoId = Number(deps.pedidoId);
+  await safeNotify(deps, anterior, { type: 'ruta.actualizada', pedidoId });
+  if (Number(nuevo) !== Number(anterior)) {
+    await safeNotify(deps, nuevo, { type: 'ruta.actualizada', pedidoId });
+  }
+  return result;
 }
 
 async function fechaDeHoy(deps) {
