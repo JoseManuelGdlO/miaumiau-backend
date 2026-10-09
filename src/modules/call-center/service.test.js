@@ -1,4 +1,4 @@
-const { aprobar, atender, cambiarEstado, reasignar, listarSolicitudes, detalleSolicitud, listarPedidos, listarRepartidores } = require('./service');
+const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, detalleSolicitud, listarPedidos, listarRepartidores } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -11,13 +11,24 @@ function notificacion(data) {
   return row;
 }
 
-test('aprobar marca leída y no valida la jornada', async () => {
-  const jornada = { id: 3, estado: 'esperando_call_center', fkid_notificacion: 9, update: async () => { throw new Error('no tocar'); } };
+test('aprobar marca leída, guarda quién aprobó y no valida la jornada', async () => {
+  const jornada = {
+    id: 3,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+    update: async (data) => Object.assign(jornada, data),
+  };
   const n = notificacion();
-  const result = await aprobar({ notificacion: n, jornada });
+  const result = await aprobar({
+    notificacion: n,
+    jornada,
+    usuario: { id: 12, nombre_completo: 'Mariana G.' },
+  });
   expect(result).toEqual({ atendida: true });
   expect(n.leida).toBe(true);
   expect(jornada.estado).toBe('esperando_call_center');
+  expect(jornada.validado_por_usuario_id).toBe(12);
+  expect(jornada.validado_por_nombre).toBe('Mariana G.');
 });
 
 test('aprobar un check-in cancelado responde 409', async () => {
@@ -209,6 +220,71 @@ test('otra ciudad responde 403', async () => {
   })).rejects.toMatchObject({ status: 403 });
 });
 
+test('guardarExtras reemplaza solo las líneas extra y no marca leída', async () => {
+  const destroyed = [];
+  const created = [];
+  const n = notificacion();
+  const jornada = {
+    id: 3,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+    cargas: [
+      { id: 1, nombre: 'Arena', fkid_producto: 4, cantidad: 5, precio_unitario: 10, es_extra: false },
+    ],
+  };
+  const result = await guardarExtras({
+    notificacion: n,
+    jornada,
+    lineas: [{ fkid_producto: 8, cantidad: 2, precio_unitario: 15 }],
+    models: {
+      Inventario: { findByPk: async (id) => (id === 8 ? { id: 8, nombre: 'Snack' } : null) },
+      JornadaCarga: {
+        destroy: async (query) => { destroyed.push(query); },
+        bulkCreate: async (rows) => { created.push(...rows); },
+      },
+    },
+  });
+  expect(n.leida).toBe(false);
+  expect(destroyed[0].where).toEqual({ fkid_jornada: 3, es_extra: true });
+  expect(created).toEqual([
+    expect.objectContaining({
+      fkid_jornada: 3,
+      nombre: 'Snack',
+      fkid_producto: 8,
+      cantidad: 2,
+      precio_unitario: 15,
+      es_extra: true,
+    }),
+  ]);
+  expect(result.cargas[0].es_extra).toBe(true);
+  expect(jornada.cargas[0].es_extra).toBe(false);
+});
+
+test('guardarExtras responde 422 si el producto no existe', async () => {
+  const n = notificacion();
+  await expect(guardarExtras({
+    notificacion: n,
+    jornada: { id: 3, estado: 'esperando_call_center', fkid_notificacion: 9 },
+    lineas: [{ fkid_producto: 99, cantidad: 1, precio_unitario: 10 }],
+    models: { Inventario: { findByPk: async () => null } },
+  })).rejects.toMatchObject({ status: 422, message: 'Producto extra sin inventario' });
+});
+
+test('buscarInventario devuelve id, nombre y precio', async () => {
+  const rows = await buscarInventario({
+    q: 'Are',
+    models: {
+      Inventario: {
+        findAll: async (query) => {
+          expect(query.limit).toBe(20);
+          return [{ id: 4, nombre: 'Arena', precio_venta: '10.50' }];
+        },
+      },
+    },
+  });
+  expect(rows).toEqual([{ id: 4, nombre: 'Arena', precio_venta: 10.5 }]);
+});
+
 test('la lista deja fuera lo leído y arma el detalle sin código', async () => {
   const abierta = {
     id: 1,
@@ -221,13 +297,14 @@ test('la lista deja fuera lo leído y arma el detalle sin código', async () => 
   const models = {
     Notificacion: { findAll: async () => [abierta, { ...abierta, id: 2, leida: true }] },
     Repartidor: { findByPk: async () => ({ id: 3, nombre_completo: 'Luis' }) },
-    JornadaRepartidor: { findByPk: async () => ({ id: 5, cargas: [{ nombre: 'Arena', cantidad: 1, precio_unitario: 10, es_extra: false }] }) },
+    JornadaRepartidor: { findByPk: async () => ({ id: 5, dinero_esperado: 40, cargas: [{ id: 2, fkid_producto: 4, nombre: 'Arena', cantidad: 1, precio_unitario: 10, es_extra: false }] }) },
     Pedido: { findByPk: async () => null },
   };
   const list = await listarSolicitudes({ models });
   expect(list.map((row) => row.id)).toEqual([1]);
   const detail = await detalleSolicitud({ models, notificacionId: 1, notificacion: abierta });
-  expect(detail.cargas[0].nombre).toBe('Arena');
+  expect(detail.cargas[0]).toMatchObject({ id: 2, fkid_producto: 4, nombre: 'Arena', es_extra: false });
+  expect(detail.dinero_esperado).toBe(40);
   expect(detail.codigo_entrega).toBeUndefined();
 });
 

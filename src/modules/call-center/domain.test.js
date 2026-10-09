@@ -89,10 +89,19 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   const detalle = toSolicitudDetalle({
     notificacion: { id: 8, datos: { tipo: 'check_in' }, fecha_creacion: '2026-10-07', hora_creacion: '09:00:00' },
     repartidor: { id: 3, nombre_completo: 'Luis' },
-    cargas: [{ nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false, secreto: 1 }],
+    cargas: [{ id: 4, fkid_producto: 8, nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false, secreto: 1 }],
+    dineroEsperado: 80,
     pedido: { codigo_entrega: '123456', telefono_referencia: '618' },
   });
-  expect(detalle.cargas).toEqual([{ nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false }]);
+  expect(detalle.dinero_esperado).toBe(80);
+  expect(detalle.cargas).toEqual([{
+    id: 4,
+    fkid_producto: 8,
+    nombre: 'Arena',
+    cantidad: 2,
+    precio_unitario: 10,
+    es_extra: false,
+  }]);
   expect(detalle.codigo_entrega).toBeUndefined();
   expect(JSON.stringify(detalle)).not.toContain('123456');
 });

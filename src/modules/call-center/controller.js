@@ -2,7 +2,7 @@ const service = require('./service');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'atender', 'estado', 'reasignar']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar']);
 
 async function handle(res, run, action) {
   try {
@@ -29,7 +29,21 @@ function solicitud(req, res) {
 }
 
 function aprobar(req, res) {
-  return handle(res, () => service.aprobar({ notificacionId: req.params.id }), 'aprobar');
+  return handle(res, () => service.aprobar({
+    notificacionId: req.params.id,
+    usuario: req.user,
+  }), 'aprobar');
+}
+
+function extras(req, res) {
+  return handle(res, () => service.guardarExtras({
+    notificacionId: req.params.id,
+    lineas: req.body?.lineas || [],
+  }), 'extras');
+}
+
+function inventario(req, res) {
+  return handle(res, () => service.buscarInventario({ q: req.query.q }), 'inventario');
 }
 
 function atender(req, res) {
@@ -64,4 +78,4 @@ function reasignar(req, res) {
   }), 'reasignar');
 }
 
-module.exports = { solicitudes, solicitud, aprobar, atender, pedidos, estado, repartidores, reasignar };
+module.exports = { solicitudes, solicitud, aprobar, extras, inventario, atender, pedidos, estado, repartidores, reasignar };

@@ -192,7 +192,92 @@ async function aprobar(deps = {}) {
   });
   if (!check.ok) fail(check.statusCode, check.message);
   await notificacion.update({ leida: true });
+  if (jornada?.update) {
+    const aprobador = await nombreAprobador(deps);
+    await jornada.update({
+      validado_por_usuario_id: aprobador.id,
+      validado_por_nombre: aprobador.nombre,
+    });
+  }
   return { atendida: true };
+}
+
+async function nombreAprobador(deps) {
+  const id = deps.usuario?.id ?? null;
+  if (deps.usuario?.nombre_completo) return { id, nombre: deps.usuario.nombre_completo };
+  if (!id) return { id: null, nombre: null };
+  const db = getModels(deps);
+  if (!db.User?.findByPk) return { id, nombre: null };
+  const user = await db.User.findByPk(id, { attributes: ['id', 'nombre_completo'] });
+  return { id, nombre: user?.nombre_completo || null };
+}
+
+async function guardarExtras(deps = {}) {
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion) fail(404, 'Solicitud no encontrada');
+  const datos = notificacion.datos || {};
+  const jornada = deps.jornada || await db.JornadaRepartidor.findOne({
+    where: { fkid_notificacion: notificacion.id },
+  });
+  const vigente = Boolean(jornada && Number(jornada.fkid_notificacion) === Number(notificacion.id));
+  const abierta = datos.tipo === 'check_in'
+    && !notificacion.leida
+    && datos.estado_solicitud !== 'cancelada'
+    && jornada?.estado === 'esperando_call_center'
+    && vigente;
+  if (!abierta) fail(409, 'Ese check-in ya no admite carga extra');
+
+  const resolved = [];
+  for (const line of deps.lineas || []) {
+    const cantidad = Number(line.cantidad);
+    const precio = Number(line.precio_unitario);
+    if (!Number.isInteger(cantidad) || cantidad < 1 || !Number.isFinite(precio) || precio < 0) {
+      fail(422, 'La cantidad y el precio del extra no son válidos');
+    }
+    const producto = await db.Inventario.findByPk(line.fkid_producto);
+    if (!producto || producto.baja_logica) fail(422, 'Producto extra sin inventario');
+    resolved.push({
+      fkid_jornada: jornada.id,
+      nombre: producto.nombre,
+      fkid_producto: producto.id,
+      cantidad,
+      precio_unitario: precio,
+      es_extra: true,
+    });
+  }
+
+  await db.JornadaCarga.destroy({ where: { fkid_jornada: jornada.id, es_extra: true } });
+  if (resolved.length) await db.JornadaCarga.bulkCreate(resolved);
+  return {
+    cargas: resolved.map((c) => ({
+      nombre: c.nombre,
+      fkid_producto: c.fkid_producto,
+      cantidad: c.cantidad,
+      precio_unitario: c.precio_unitario,
+      es_extra: true,
+    })),
+  };
+}
+
+async function buscarInventario(deps = {}) {
+  const q = String(deps.q || '').trim();
+  if (!q) return [];
+  const db = getModels(deps);
+  const rows = await db.Inventario.findAll({
+    where: {
+      baja_logica: false,
+      nombre: { [Op.like]: `%${q.replace(/[\\%_]/g, '\\$&')}%` },
+    },
+    attributes: ['id', 'nombre', 'precio_venta'],
+    limit: 20,
+    order: [['nombre', 'ASC']],
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    nombre: row.nombre,
+    precio_venta: Number(row.precio_venta),
+  }));
 }
 
 async function zonaDelPedido(deps, db, pedido, t) {
@@ -410,9 +495,11 @@ async function detalleSolicitud(deps = {}) {
     : null;
   let cargas = [];
   let pedido = null;
+  let dineroEsperado = null;
   if (datos.tipo === 'check_in' && datos.jornada_id) {
     const jornada = await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] });
     cargas = jornada?.cargas || [];
+    dineroEsperado = jornada?.dinero_esperado;
   }
   if (datos.pedido_id) {
     pedido = await db.Pedido.findByPk(datos.pedido_id, {
@@ -420,7 +507,7 @@ async function detalleSolicitud(deps = {}) {
       include: [{ association: 'cliente', attributes: ['id', 'nombre_completo', 'telefono'] }],
     });
   }
-  return toSolicitudDetalle({ notificacion, repartidor, cargas, pedido });
+  return toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, dineroEsperado });
 }
 
 async function listarPedidos(deps = {}) {
@@ -452,6 +539,8 @@ async function listarRepartidores(deps = {}) {
 
 module.exports = {
   aprobar,
+  guardarExtras,
+  buscarInventario,
   atender,
   cambiarEstado,
   reasignar,

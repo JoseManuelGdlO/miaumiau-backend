@@ -42,6 +42,22 @@ module.exports = (sequelize, DataTypes) => {
       cerrada_en: {
         type: DataTypes.DATE,
         allowNull: true
+      },
+      dinero_esperado: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0
+      },
+      validado_por_usuario_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'users', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      validado_por_nombre: {
+        type: DataTypes.STRING(150),
+        allowNull: true
       }
     },
     {

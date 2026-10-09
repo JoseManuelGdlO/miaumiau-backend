@@ -116,13 +116,16 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
   };
 }
 
-function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido }) {
+function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado }) {
   const base = toSolicitudResumen(notificacion, repartidor, numeroPedido || pedido?.numero_pedido);
   const datos = notificacion.datos || {};
   if (datos.tipo === 'check_in') {
     return {
       ...base,
+      dinero_esperado: dineroEsperado == null || dineroEsperado === '' ? 0 : Number(dineroEsperado),
       cargas: (cargas || []).map((c) => ({
+        id: c.id ?? null,
+        fkid_producto: c.fkid_producto ?? null,
         nombre: c.nombre,
         cantidad: c.cantidad,
         precio_unitario: c.precio_unitario,
