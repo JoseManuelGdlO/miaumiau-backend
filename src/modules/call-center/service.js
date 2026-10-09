@@ -9,6 +9,8 @@ const {
   transition,
   reassignCheck,
   isOpenSolicitud,
+  isValidatedCheckIn,
+  toCargaValidada,
   toSolicitudResumen,
   toSolicitudDetalle,
   toPedidoDia,
@@ -485,6 +487,35 @@ async function listarSolicitudes(deps = {}) {
   return result;
 }
 
+async function listarCargasValidadas(deps = {}) {
+  const db = getModels(deps);
+  const rows = deps.rows || await db.Notificacion.findAll({
+    where: {
+      leida: true,
+      [Op.and]: [
+        literal("JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.tipo')) = 'check_in'"),
+        literal(
+          "(JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) <> 'cancelada')"
+        ),
+      ],
+    },
+    order: [['id', 'DESC']],
+    limit: 50,
+  });
+  const result = [];
+  for (const row of rows.filter(isValidatedCheckIn)) {
+    const datos = row.datos || {};
+    const repartidor = datos.repartidor_id
+      ? await db.Repartidor.findByPk(datos.repartidor_id, { attributes: ['id', 'nombre_completo'] })
+      : null;
+    const jornada = datos.jornada_id
+      ? await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] })
+      : null;
+    result.push(toCargaValidada({ notificacion: row, repartidor, jornada }));
+  }
+  return result;
+}
+
 async function detalleSolicitud(deps = {}) {
   const db = getModels(deps);
   const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
@@ -545,6 +576,7 @@ module.exports = {
   cambiarEstado,
   reasignar,
   listarSolicitudes,
+  listarCargasValidadas,
   detalleSolicitud,
   listarPedidos,
   listarRepartidores,

@@ -24,6 +24,10 @@ function solicitudes(req, res) {
   return handle(res, () => service.listarSolicitudes({}), 'solicitudes');
 }
 
+function cargasValidadas(req, res) {
+  return handle(res, () => service.listarCargasValidadas({}), 'cargasValidadas');
+}
+
 function solicitud(req, res) {
   return handle(res, () => service.detalleSolicitud({ notificacionId: req.params.id }), 'solicitud');
 }
@@ -78,4 +82,16 @@ function reasignar(req, res) {
   }), 'reasignar');
 }
 
-module.exports = { solicitudes, solicitud, aprobar, extras, inventario, atender, pedidos, estado, repartidores, reasignar };
+module.exports = {
+  solicitudes,
+  cargasValidadas,
+  solicitud,
+  aprobar,
+  extras,
+  inventario,
+  atender,
+  pedidos,
+  estado,
+  repartidores,
+  reasignar,
+};

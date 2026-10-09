@@ -6,6 +6,7 @@ test('expone la API de call center', () => {
     .map((layer) => `${Object.keys(layer.route.methods)[0].toUpperCase()} ${layer.route.path}`);
   expect(paths).toEqual(expect.arrayContaining([
     'GET /solicitudes',
+    'GET /cargas-validadas',
     'GET /solicitudes/:id',
     'POST /solicitudes/:id/aprobar',
     'PUT /solicitudes/:id/extras',
