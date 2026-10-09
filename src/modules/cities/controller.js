@@ -634,10 +634,16 @@ class CityController {
     }
   }
 
-  // Obtener ciudades activas
+  // Ciudades que pueden recibir pedidos por WhatsApp
   async getActiveCities(req, res, next) {
     try {
-      const cities = await City.findActive();
+      const cities = await City.findAll({
+        where: {
+          baja_logica: false,
+          estado_inicial: { [Op.in]: ['activa', 'en_construccion', 'mantenimiento'] }
+        },
+        order: [['nombre', 'ASC']]
+      });
 
       res.json({
         success: true,

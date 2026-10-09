@@ -189,7 +189,7 @@ const validateQuery = [
 router.get('/departments', cityController.getDepartments);
 router.get('/statuses', cityController.getStatuses);
 router.get('/stats', cityController.getCityStats);
-router.get('/active', cityController.getActiveCities);
+router.get('/active', cityController.getActiveCities); // activa, en construcción y mantenimiento
 
 // Rutas protegidas - Solo administradores y moderadores pueden gestionar ciudades
 router.get('/', 

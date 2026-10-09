@@ -13,6 +13,7 @@ const KEY_SOCIAL_FACEBOOK = 'social_facebook_url';
 const KEY_SOCIAL_TIKTOK = 'social_tiktok_url';
 const KEY_MERCADOLIBRE = 'mercadolibre_url';
 const KEY_QR_ACTIONS = 'qr_actions';
+const KEY_MAINTENANCE_PLACEHOLDER = 'maintenance_placeholder';
 
 const QR_ACTION_IDS = ['whatsapp', 'catalog', 'packages', 'promotions', 'mercadolibre', 'social', 'customLink'];
 
@@ -31,6 +32,7 @@ function defaultQrActions() {
     linksHtml: '',
     linksPanelColor: '#fff7ed',
     linksBubbleColor: '#16a34a',
+    linksBubbleTextColor: '#1c1917',
     linksTextColor: '#1c1917',
   };
 }
@@ -57,22 +59,95 @@ const ALLOWED_FONT_FACES = new Set([
   'Courier New',
 ]);
 
+function safeCssColor(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    const [r, g, b] = trimmed.slice(1).split('');
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  const rgb = trimmed.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (!rgb) return '';
+  const parts = [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  if (parts.some((part) => part > 255)) return '';
+  return `#${parts.map((part) => part.toString(16).padStart(2, '0')).join('')}`;
+}
+
 function sanitizeFontTag(attrs) {
   const faceMatch = String(attrs).match(/\bface\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
   const face = faceMatch ? (faceMatch[2] || faceMatch[3] || faceMatch[4] || '') : '';
   const sizeMatch = String(attrs).match(/\bsize\s*=\s*"?([1-7])"?/i);
+  const colorMatch = String(attrs).match(/\bcolor\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const color = safeCssColor(colorMatch ? (colorMatch[2] || colorMatch[3] || colorMatch[4] || '') : '');
   let tag = '<font';
   if (ALLOWED_FONT_FACES.has(face)) tag += ` face="${face}"`;
   if (sizeMatch) tag += ` size="${sizeMatch[1]}"`;
+  if (color) tag += ` color="${color}"`;
   return `${tag}>`;
+}
+
+function sanitizeBlockTag(tagName, attrs) {
+  const alignMatch = String(attrs).match(/\balign\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const alignRaw = (alignMatch ? (alignMatch[2] || alignMatch[3] || alignMatch[4] || '') : '').toLowerCase();
+  const styleMatch = String(attrs).match(/\bstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+  const style = styleMatch ? (styleMatch[2] || styleMatch[3] || '') : '';
+  const styleAlign = style.match(/text-align\s*:\s*(left|center|right)/i);
+  const align = ['left', 'center', 'right'].includes(alignRaw)
+    ? alignRaw
+    : (styleAlign ? styleAlign[1].toLowerCase() : '');
+  if (!align) return `<${tagName}>`;
+  return `<${tagName} style="text-align: ${align}">`;
+}
+
+function isAllowedQrImageSrc(src) {
+  if (typeof src !== 'string') return false;
+  const value = src.trim();
+  const pathOnly = (() => {
+    if (value.startsWith('/uploads/qr/')) return value;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+      return url.pathname;
+    } catch {
+      return '';
+    }
+  })();
+  return /^\/uploads\/qr\/[a-zA-Z0-9._-]+$/.test(pathOnly);
+}
+
+function sanitizeImgTag(attrs) {
+  const srcMatch = String(attrs).match(/\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const src = srcMatch ? (srcMatch[2] || srcMatch[3] || srcMatch[4] || '').trim() : '';
+  if (!isAllowedQrImageSrc(src)) return '';
+  const altMatch = String(attrs).match(/\balt\s*=\s*("([^"]*)"|'([^']*)')/i);
+  const alt = (altMatch ? (altMatch[2] || altMatch[3] || '') : '')
+    .replace(/[<>"']/g, '')
+    .slice(0, 120);
+  return `<img src="${src}" alt="${alt}">`;
+}
+
+function sanitizeSpanTag(attrs) {
+  const styleMatch = String(attrs).match(/\bstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
+  const style = styleMatch ? (styleMatch[2] || styleMatch[3] || '') : '';
+  const colorMatch = style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
+  const color = safeCssColor(colorMatch ? colorMatch[1] : '');
+  if (!color) return '<span>';
+  return `<span style="color: ${color}">`;
 }
 
 function sanitizeLinksHtml(raw) {
   if (typeof raw !== 'string') return '';
-  let html = raw.slice(0, 8000);
+  let html = raw.slice(0, 20000);
   html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
-  html = html.replace(/<\/?(?!p\b|br\b|strong\b|b\b|em\b|i\b|u\b|ul\b|ol\b|li\b|a\b|h2\b|h3\b|span\b|div\b|font\b)[a-z0-9]+[^>]*>/gi, '');
+  html = html.replace(/<\/?(?!p\b|br\b|strong\b|b\b|em\b|i\b|u\b|s\b|strike\b|ul\b|ol\b|li\b|a\b|h2\b|h3\b|span\b|div\b|font\b|img\b)[a-z0-9]+[^>]*>/gi, '');
+  html = html.replace(/<img\b([^>]*)>/gi, (_, attrs) => sanitizeImgTag(attrs));
   html = html.replace(/<font\b([^>]*)>/gi, (_, attrs) => sanitizeFontTag(attrs));
+  html = html.replace(/<span\b([^>]*)>/gi, (_, attrs) => sanitizeSpanTag(attrs));
+  html = html.replace(/<(div|p|h2|h3)\b([^>]*)>/gi, (_, tagName, attrs) => sanitizeBlockTag(tagName, attrs));
+  html = html.replace(/<(a|b|strong|em|i|u|s|strike|li|ul|ol)\b([^>]*)>/gi, (full) =>
+    full.replace(/\sstyle\s*=\s*(['"])[\s\S]*?\1/i, '')
+  );
   html = html.replace(/\son\w+\s*=\s*(['"])[\s\S]*?\1/gi, '');
   html = html.replace(/\son\w+\s*=\s*[^\s>]+/gi, '');
   html = html.replace(/href\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, 'href="#"');
@@ -132,6 +207,7 @@ function parseQrActions(raw) {
   const defaults = defaultQrActions();
   result.linksPanelColor = parseHexColor(parsed.linksPanelColor, defaults.linksPanelColor);
   result.linksBubbleColor = parseHexColor(parsed.linksBubbleColor, defaults.linksBubbleColor);
+  result.linksBubbleTextColor = parseHexColor(parsed.linksBubbleTextColor, defaults.linksBubbleTextColor);
   result.linksTextColor = parseHexColor(parsed.linksTextColor, defaults.linksTextColor);
   return result;
 }
@@ -158,7 +234,7 @@ function parseHttpUrlOrEmpty(raw) {
 }
 
 async function buildPublicData() {
-  const allKeys = [KEY_HERO_YOUTUBE, KEY_QR_ACTIONS, ...PUBLIC_LINK_KEYS];
+  const allKeys = [KEY_HERO_YOUTUBE, KEY_QR_ACTIONS, KEY_MAINTENANCE_PLACEHOLDER, ...PUBLIC_LINK_KEYS];
   const rows = await SiteSetting.findAll({
     where: { clave: { [Op.in]: allKeys } },
   });
@@ -174,6 +250,10 @@ async function buildPublicData() {
   const socialTiktokUrl = byClave[KEY_SOCIAL_TIKTOK] ? String(byClave[KEY_SOCIAL_TIKTOK]).trim() : '';
   const mercadolibreUrl = byClave[KEY_MERCADOLIBRE] ? String(byClave[KEY_MERCADOLIBRE]).trim() : '';
   const qrActions = parseQrActions(byClave[KEY_QR_ACTIONS]);
+  const maintenanceRaw = byClave[KEY_MAINTENANCE_PLACEHOLDER];
+  const maintenancePlaceholder = maintenanceRaw == null || maintenanceRaw === ''
+    ? true
+    : !['false', '0'].includes(String(maintenanceRaw).trim().toLowerCase());
 
   return {
     heroYoutubeVideoId,
@@ -182,6 +262,7 @@ async function buildPublicData() {
     socialTiktokUrl,
     mercadolibreUrl,
     qrActions,
+    maintenancePlaceholder,
   };
 }
 
@@ -287,6 +368,29 @@ const updatePublicLinks = async (req, res, next) => {
   }
 };
 
+const updateMaintenancePlaceholder = async (req, res, next) => {
+  try {
+    const enabled = req.body && req.body.maintenancePlaceholder;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'Indica si el aviso de «estamos trabajando» está activo.',
+      });
+    }
+    await upsertValor(KEY_MAINTENANCE_PLACEHOLDER, enabled ? 'true' : 'false');
+    const data = await buildPublicData();
+    res.json({
+      success: true,
+      data,
+      message: enabled
+        ? 'La página principal muestra el aviso de estamos trabajando'
+        : 'La página principal muestra el sitio normal',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updateQrActions = async (req, res, next) => {
   try {
     const incoming = req.body && req.body.qrActions;
@@ -382,11 +486,34 @@ const updateQrActions = async (req, res, next) => {
   }
 };
 
+const uploadQrImage = async (req, res, next) => {
+  try {
+    if (!req.file || !req.file.filename) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se recibió ninguna imagen. Envía el archivo en el campo "imagen".',
+      });
+    }
+    const configured = (process.env.IMAGE_BASE_URL || process.env.BASE_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '');
+    const baseUrl = configured || `${req.protocol}://${req.get('host')}`;
+    const url = `${baseUrl}/uploads/qr/${req.file.filename}`;
+    res.json({
+      success: true,
+      data: { url },
+      message: 'Imagen subida correctamente',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPublic,
   updateHeroYoutubeVideoId,
   updatePublicLinks,
   updateQrActions,
+  updateMaintenancePlaceholder,
+  uploadQrImage,
   KEY_HERO_YOUTUBE,
   DEFAULT_HERO_VIDEO_ID,
 };
