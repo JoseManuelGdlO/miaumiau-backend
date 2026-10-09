@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
-const morgan = require('morgan');
 const cron = require('node-cron');
 require('dotenv').config();
 
@@ -15,6 +14,10 @@ const { ensureUploadsDirs } = require('./utils/uploadImages');
 const { sequelize } = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
+const requestLogger = require('./middleware/requestLogger');
+const { Logger } = require('./utils/logger');
+
+const log = new Logger('App');
 const autoEntregarPedidos = require('./jobs/autoEntregarPedidos');
 
 // Importar rutas
@@ -125,7 +128,7 @@ app.use(cors({
     if (norm && allowed.has(norm)) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      log.warn('CORS blocked origin', { origin });
       callback(new Error('No permitido por CORS'));
     }
   },
@@ -153,8 +156,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Logging
-app.use(morgan('combined'));
+app.use(requestLogger);
 
 // Body parsing: POST /api/conversaciones-chat puede enviar JSON con saltos de línea literales
 // en "mensaje"; los normalizamos antes de parsear para aceptar esos payloads.
@@ -268,37 +270,37 @@ const startServer = async () => {
   try {
     // Conectar a la base de datos
     await sequelize.authenticate();
-    console.log('✅ Conexión a la base de datos establecida correctamente.');
+    log.info('Conexión a la base de datos establecida correctamente.');
     
     // Sincronizar modelos (solo en desarrollo)
     if (process.env.NODE_ENV === 'development') {
       // await sequelize.sync({ alter: true });
-      console.log('✅ Modelos sincronizados con la base de datos.');
+      log.info('Modelos sincronizados con la base de datos.');
     }
     
     // Iniciar servidor
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor Miaumiau v${BACKEND_VERSION} corriendo en puerto ${PORT}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      log.info(`Servidor Miaumiau v${BACKEND_VERSION} corriendo en puerto ${PORT}`);
+      log.info(`Health check: http://localhost:${PORT}/health`);
     });
 
     // Iniciar jobs programados
     // Job para auto-entregar pedidos: se ejecuta cada hora (al minuto 0 de cada hora)
     cron.schedule('0 * * * *', async () => {
-      console.log(`[${new Date().toISOString()}] Ejecutando job: Auto-entregar pedidos...`);
+      log.info('Ejecutando job: Auto-entregar pedidos');
       try {
         await autoEntregarPedidos();
       } catch (error) {
-        console.error(`[${new Date().toISOString()}] Error ejecutando job auto-entregar pedidos:`, error);
+        log.error('Error ejecutando job auto-entregar pedidos', { message: error.message, stack: error.stack });
       }
     }, {
       scheduled: true,
       timezone: "America/Mexico_City" // Ajusta según tu zona horaria
     });
     
-    console.log('✅ Jobs programados iniciados: Auto-entregar pedidos (cada hora)');
+    log.info('Jobs programados iniciados: Auto-entregar pedidos (cada hora)');
   } catch (error) {
-    console.error('❌ Error al iniciar el servidor:', error);
+    log.error('Error al iniciar el servidor', { message: error.message, stack: error.stack });
     process.exit(1);
   }
 };

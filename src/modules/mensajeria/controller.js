@@ -15,6 +15,9 @@ const { Sequelize } = require('sequelize');
 const { Op } = Sequelize;
 const moment = require('moment-timezone');
 const { getTimezoneForConversationId } = require('../../utils/conversationTimezone');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Mensajeria');
 
 /**
  * Busca un mensaje por whatsapp_message_id usando consulta SQL directa
@@ -80,7 +83,7 @@ class MensajeriaController {
 
       const telefono = extractPhoneFromConversation(conversacion);
       if (!telefono) {
-        console.error('[WhatsApp] Error: No se encontró teléfono válido', {
+        log.error('No se encontró teléfono válido', {
           conversacionId: conversacion.id,
           clienteTelefono: conversacion?.cliente?.telefono,
           from: conversacion?.from
@@ -93,7 +96,7 @@ class MensajeriaController {
 
       const phoneNumberId = conversacion.whatsapp_phone_number_id;
       if (!phoneNumberId) {
-        console.error('[WhatsApp] Error: No se encontró phone_number_id', {
+        log.error('No se encontró phone_number_id', {
           conversacionId: conversacion.id,
           telefono
         });
@@ -103,7 +106,7 @@ class MensajeriaController {
         });
       }
 
-      console.log('[WhatsApp] Enviando mensaje:', {
+      log.info('Enviando mensaje', {
         conversacionId: conversacion.id,
         telefono,
         phoneNumberId,
@@ -119,7 +122,7 @@ class MensajeriaController {
         sendResult = await sendWhatsAppMessage(telefono, mensaje, phoneNumberId);
         operatorWhatsappTextSent = true;
 
-        console.log('[WhatsApp] Resultado del envío:', {
+        log.info('Resultado del envío', {
           conversacionId: conversacion.id,
           telefono,
           success: sendResult.success,
@@ -134,7 +137,7 @@ class MensajeriaController {
 
         if (sendResult.errors && Array.isArray(sendResult.errors) && sendResult.errors.length > 0) {
           const errorMessages = sendResult.errors.map(e => `${e.code}: ${e.title} - ${e.message}`).join('; ');
-          console.error('[WhatsApp] Errores en respuesta de WhatsApp:', {
+          log.error('Errores en respuesta de WhatsApp', {
             conversacionId: conversacion.id,
             telefono,
             errors: sendResult.errors,
@@ -162,7 +165,7 @@ class MensajeriaController {
         const wa_id = sendResult.parsedData?.contacts?.[0]?.wa_id;
         const input = sendResult.parsedData?.contacts?.[0]?.input;
         if (wa_id && input && wa_id !== input) {
-          console.warn('[WhatsApp] ADVERTENCIA: WhatsApp normalizó el número:', {
+          log.warn('WhatsApp normalizó el número', {
             conversacionId: conversacion.id,
             telefonoEnviado: telefono,
             input: input,
@@ -172,7 +175,7 @@ class MensajeriaController {
         }
       } else {
         templateUsed = true;
-        console.log('[WhatsApp] Ventana cerrada, enviando plantilla de apertura:', {
+        log.info('Ventana cerrada, enviando plantilla de apertura', {
           conversacionId: conversacion.id,
           telefono,
           template: WHATSAPP_REOPEN_TEMPLATE_NAME,
@@ -446,7 +449,7 @@ class MensajeriaController {
         const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
         if (mode === 'subscribe' && token === verifyToken) {
-          console.log('Webhook verificado');
+          log.info('Webhook verificado');
           return res.status(200).send(challenge);
         } else {
           // La verificación del webhook falló: no es un error de autenticación de usuario
@@ -549,7 +552,7 @@ class MensajeriaController {
         message: `Webhook procesado. ${updatedCount} mensaje(s) actualizado(s).`
       });
     } catch (error) {
-      console.error('Error procesando webhook de WhatsApp:', error);
+      log.error('Error procesando webhook de WhatsApp', { message: error.message, stack: error.stack });
       // Responder 200 para que WhatsApp no reintente
       res.status(200).json({
         success: false,
@@ -649,7 +652,7 @@ class MensajeriaController {
         }
       });
     } catch (error) {
-      console.error('Error actualizando estado de mensaje:', error);
+      log.error('Error actualizando estado de mensaje', { message: error.message, stack: error.stack });
       next(error);
     }
   }
@@ -762,7 +765,7 @@ class MensajeriaController {
         data: results
       });
     } catch (error) {
-      console.error('Error actualizando estados de mensajes:', error);
+      log.error('Error actualizando estados de mensajes', { message: error.message, stack: error.stack });
       next(error);
     }
   }

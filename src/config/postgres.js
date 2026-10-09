@@ -1,5 +1,8 @@
 const { Pool } = require('pg');
+const { Logger } = require('../utils/logger');
 require('dotenv').config();
+
+const log = new Logger('Postgres');
 
 // Configuración de conexión a PostgreSQL (BD de n8n)
 const pgPool = new Pool({
@@ -15,7 +18,7 @@ const pgPool = new Pool({
 
 // Manejo de errores del pool
 pgPool.on('error', (err, client) => {
-  console.error('Error inesperado en el pool de PostgreSQL:', err);
+  log.error('Error inesperado en el pool de PostgreSQL', { message: err.message, stack: err.stack });
   process.exit(-1);
 });
 
@@ -25,12 +28,10 @@ const query = async (text, params) => {
   try {
     const res = await pgPool.query(text, params);
     const duration = Date.now() - start;
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Query ejecutada', { text, duration, rows: res.rowCount });
-    }
+    log.debug('Query ejecutada', { text, duration, rows: res.rowCount });
     return res;
   } catch (error) {
-    console.error('Error ejecutando query PostgreSQL:', error);
+    log.error('Error ejecutando query PostgreSQL', { message: error.message, stack: error.stack });
     throw error;
   }
 };

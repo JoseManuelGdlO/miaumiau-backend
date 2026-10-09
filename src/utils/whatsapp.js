@@ -9,6 +9,9 @@ const {
   CONVERSACIONES_MIMES,
   ensureUploadsDirs,
 } = require('./uploadImages');
+const { Logger } = require('./logger');
+
+const log = new Logger('WhatsApp');
 
 const { WHATSAPP_API_URL, WHATSAPP_API_TOKEN } = process.env;
 
@@ -47,7 +50,7 @@ const parseWhatsAppSendResponse = (phone, res, data) => {
         messageId = parsedData.messages[0].id;
       }
     } catch (error) {
-      console.warn('[WhatsApp API] No se pudo parsear la respuesta:', error.message);
+      log.warn('No se pudo parsear la respuesta', { message: error.message });
     }
   }
 
@@ -58,10 +61,10 @@ const parseWhatsAppSendResponse = (phone, res, data) => {
     const input = parsedData?.contacts?.[0]?.input;
     const wa_id = parsedData?.contacts?.[0]?.wa_id;
     if (input && wa_id && input !== wa_id) {
-      console.warn('[WhatsApp API] ADVERTENCIA: wa_id no coincide con input:', { phone, input, wa_id });
+      log.warn('wa_id no coincide con input', { phone, input, wa_id });
     }
   } else if (!success || hasErrors) {
-    console.error('[WhatsApp API] Error al enviar:', {
+    log.error('Error al enviar', {
       phone,
       statusCode: res.statusCode,
       response: data,
@@ -144,7 +147,7 @@ const ensureWhatsAppCredentials = () => {
 const sendWhatsAppPayload = (phone, phoneNumberId, payload, logLabel) => {
   const creds = ensureWhatsAppCredentials();
   if (!creds.ok) {
-    console.error('[WhatsApp API] Error: Faltan variables de entorno');
+    log.error('Faltan variables de entorno');
     return Promise.resolve({ success: false, status: creds.status, error: creds.error });
   }
 
@@ -155,7 +158,7 @@ const sendWhatsAppPayload = (phone, phoneNumberId, payload, logLabel) => {
     }
 
     const body = JSON.stringify(payload);
-    console.log(`[WhatsApp API] ${logLabel}:`, { phone, phoneNumberId });
+    log.info(logLabel, { phone, phoneNumberId });
 
     const options = buildRequestOptions(WHATSAPP_API_URL, phoneNumberId);
     const req = https.request(options, (res) => {
@@ -167,7 +170,7 @@ const sendWhatsAppPayload = (phone, phoneNumberId, payload, logLabel) => {
     });
 
     req.on('error', (error) => {
-      console.error('[WhatsApp API] Error de red:', { phone, error: error.message });
+      log.error('Error de red', { phone, error: error.message });
       resolve({ success: false, status: 500, error: error.message });
     });
 
@@ -285,7 +288,7 @@ const uploadWhatsAppMedia = (phoneNumberId, filePath, mimeType) => {
             parsedData = JSON.parse(data);
             mediaId = parsedData?.id || null;
           } catch (error) {
-            console.warn('[WhatsApp API] No se pudo parsear respuesta de upload media:', error.message);
+            log.warn('No se pudo parsear respuesta de upload media', { message: error.message });
           }
         }
 
@@ -293,7 +296,7 @@ const uploadWhatsAppMedia = (phoneNumberId, filePath, mimeType) => {
         const actualSuccess = success && mediaId && !hasErrors;
 
         if (!actualSuccess) {
-          console.error('[WhatsApp API] Error al subir media:', {
+          log.error('Error al subir media', {
             statusCode: res.statusCode,
             response: data,
           });
@@ -312,7 +315,7 @@ const uploadWhatsAppMedia = (phoneNumberId, filePath, mimeType) => {
     });
 
     req.on('error', (error) => {
-      console.error('[WhatsApp API] Error de red al subir media:', error.message);
+      log.error('Error de red al subir media', { message: error.message });
       resolve({ success: false, status: 500, error: error.message });
     });
 

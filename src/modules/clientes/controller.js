@@ -6,6 +6,9 @@ const { registrarCambioPuntosDesdeImport } = require('../../services/clientePunt
 const multer = require('multer');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Clientes');
 
 class ClienteController {
   // Obtener todos los clientes
@@ -774,7 +777,7 @@ class ClienteController {
         return String(h).trim();
       });
       
-      console.log('Headers encontrados:', headers);
+      log.debug('Headers encontrados', { headers });
       
       // Mapear índices de columnas (campos requeridos y opcionales)
       const plazaIndex = headers.findIndex(h => 
@@ -814,7 +817,7 @@ class ClienteController {
         h.toLowerCase().includes('notasespeciales'))
       );
 
-      console.log('Índices encontrados:', { 
+      log.debug('Índices encontrados', { 
         plazaIndex, 
         nombreCompletoIndex, 
         telefonoIndex, 
@@ -843,7 +846,7 @@ class ClienteController {
       };
 
       // Precargar todas las ciudades para optimizar búsquedas
-      console.log('Precargando ciudades...');
+      log.debug('Precargando ciudades');
       const todasLasCiudades = await City.findAll({
         where: { baja_logica: false },
         attributes: ['id', 'nombre']
@@ -868,13 +871,13 @@ class ClienteController {
         }
       });
 
-      console.log(`Cache de ciudades precargado: ${ciudadesCache.size} entradas (${todasLasCiudades.length} ciudades)`);
+      log.debug(`Cache de ciudades precargado: ${ciudadesCache.size} entradas (${todasLasCiudades.length} ciudades)`);
 
       // Límite de filas para procesar (prevenir loops infinitos)
       const MAX_ROWS = 10000;
       const totalRows = Math.min(data.length - 1, MAX_ROWS);
 
-      console.log(`Iniciando procesamiento de ${totalRows} filas...`);
+      log.debug(`Iniciando procesamiento de ${totalRows} filas`);
 
       // Procesar cada fila (empezando desde la fila 2, índice 1)
       for (let i = 1; i <= totalRows; i++) {
@@ -1204,7 +1207,7 @@ class ClienteController {
             });
           }
         } catch (error) {
-          console.error(`Error procesando fila ${rowNumber}:`, error);
+          log.error(`Error procesando fila ${rowNumber}`, { message: error.message, stack: error.stack });
           
           // Extraer mensaje de error más detallado
           let errorMessage = 'Error al procesar la fila';
@@ -1228,11 +1231,11 @@ class ClienteController {
 
         // Log de progreso cada 100 filas
         if (i % 100 === 0) {
-          console.log(`Procesadas ${i} de ${totalRows} filas...`);
+          log.debug(`Procesadas ${i} de ${totalRows} filas`);
         }
       }
 
-      console.log(`Procesamiento completado. Creados: ${results.created}, Actualizados: ${results.updated}, Errores: ${results.errors.length}`);
+      log.info(`Procesamiento completado. Creados: ${results.created}, Actualizados: ${results.updated}, Errores: ${results.errors.length}`);
 
       res.json({
         success: true,
@@ -1240,7 +1243,7 @@ class ClienteController {
         data: results
       });
     } catch (error) {
-      console.error('Error en bulkUploadClientes:', error);
+      log.error('Error en bulkUploadClientes', { message: error.message, stack: error.stack });
       next(error);
     }
   }

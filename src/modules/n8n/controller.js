@@ -20,6 +20,9 @@ const {
 const { sendBotTextMessage } = require('../../services/botWhatsAppService');
 const { downloadAndSaveConversationImage } = require('../../utils/whatsapp');
 const { deleteConversationImage } = require('../../utils/uploadImages');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('N8n');
 
 const NOTIFICACION_TIPO = 'modificacion_pedido_activo';
 const ANTI_SPAM_HORAS = 2;
@@ -211,7 +214,7 @@ class N8nController {
       try {
         await sendPushForNotificacion(notificacion);
       } catch (pushError) {
-        console.warn('[push] alerta-modificacion-pedido', pushError.message);
+        log.warn('alerta-modificacion-pedido', { message: pushError.message });
       }
 
       let fueraDeHorario = false;
@@ -228,7 +231,7 @@ class N8nController {
           mensajeClienteEnviado = Boolean(sendResult.sent);
         }
       } catch (hoursError) {
-        console.warn('[n8n] fuera-de-horario', hoursError.message);
+        log.warn('fuera-de-horario', { message: hoursError.message });
       }
 
       res.status(201).json({

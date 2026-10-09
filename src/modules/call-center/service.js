@@ -15,6 +15,9 @@ const {
   toRepartidorOpcion,
   ACTIVE,
 } = require('./domain');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('CallCenter');
 
 const STOCK_ON_CANCEL = ['pendiente', 'confirmado'];
 const DEFAULT_ZONE = 'America/Mexico_City';
@@ -155,7 +158,7 @@ async function restaurarStockCancelacion(deps, pedido, t) {
       try {
         await runSaveInTx(producto, t, () => producto.restaurarStock(cantidadARestaurar));
       } catch (error) {
-        console.error(`Error al restaurar stock del producto ${producto.id}:`, error.message);
+        log.error(`Error al restaurar stock del producto ${producto.id}`, { message: error.message });
       }
     }
   }
@@ -166,7 +169,7 @@ async function restaurarStockCancelacion(deps, pedido, t) {
       try {
         await runSaveInTx(producto, t, () => producto.restaurarStock(cantidadTotal));
       } catch (error) {
-        console.error(`Error al restaurar stock del producto ${producto.id} desde paquetes:`, error.message);
+        log.error(`Error al restaurar stock del producto ${producto.id} desde paquetes`, { message: error.message });
       }
     }
   }

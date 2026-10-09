@@ -1,5 +1,8 @@
 const { Pedido, City } = require('../models');
 const { Op } = require('sequelize');
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('Job');
 
 /**
  * Obtiene los componentes de fecha/hora en una zona horaria específica
@@ -77,7 +80,7 @@ async function autoEntregarPedidos() {
     });
 
     if (pedidosAProcesar.length === 0) {
-      console.log(`[${new Date().toISOString()}] Auto-entregar pedidos: No hay pedidos a procesar.`);
+      log.info('Auto-entregar pedidos: no hay pedidos a procesar.');
       return { actualizados: 0, pedidos: [] };
     }
 
@@ -88,18 +91,18 @@ async function autoEntregarPedidos() {
         const ciudad = pedido.ciudad;
 
         if (!ciudad) {
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) no tiene ciudad asociada, saltando.`);
+          log.debug(`Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) no tiene ciudad asociada, saltando.`);
           continue;
         }
 
         if (pedido.estado === 'confirmado') {
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) en estado confirmado, no se modifica.`);
+          log.debug(`Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) en estado confirmado, no se modifica.`);
           continue;
         }
 
         const timezone = ciudad?.timezone || 'America/Mexico_City';
 
-        console.log(`[${new Date().toISOString()}] Procesando pedido #${pedido.numero_pedido} (ID: ${pedido.id}): estado=${pedido.estado}, ciudad=${ciudad.nombre} (${timezone}), fecha_entrega_estimada=${pedido.fecha_entrega_estimada}`);
+        log.debug(`Procesando pedido #${pedido.numero_pedido} (ID: ${pedido.id}): estado=${pedido.estado}, ciudad=${ciudad.nombre} (${timezone}), fecha_entrega_estimada=${pedido.fecha_entrega_estimada}`);
 
         const resultadoFecha = compararFechaEntregaSoloDia(pedido.fecha_entrega_estimada, timezone);
 
@@ -113,7 +116,7 @@ async function autoEntregarPedidos() {
             timezone,
             nuevo_estado: 'entregado'
           });
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como entregado (fecha de entrega ya pasó).`);
+          log.debug(`Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como entregado (fecha de entrega ya pasó).`);
         } else if (resultadoFecha === 'today' && pedido.estado === 'pendiente') {
           await pedido.enviar();
           pedidosActualizados.push({
@@ -124,26 +127,25 @@ async function autoEntregarPedidos() {
             timezone,
             nuevo_estado: 'en_camino'
           });
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como en_camino (fecha de entrega es hoy).`);
+          log.debug(`Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) de ${ciudad.nombre} (${timezone}) marcado como en_camino (fecha de entrega es hoy).`);
         } else if (resultadoFecha === 'today' && pedido.estado === 'en_camino') {
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) ya está en_camino y la fecha es hoy, sin cambios.`);
+          log.debug(`Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) ya está en_camino y la fecha es hoy, sin cambios.`);
         } else {
-          console.log(`[${new Date().toISOString()}] Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) fecha de entrega futura, sin cambios.`);
+          log.debug(`Pedido #${pedido.numero_pedido} (ID: ${pedido.id}) fecha de entrega futura, sin cambios.`);
         }
       } catch (error) {
-        console.error(`[${new Date().toISOString()}] Error al procesar pedido #${pedido.numero_pedido} (ID: ${pedido.id}):`, error.message);
-        console.error(error.stack);
+        log.error(`Error al procesar pedido #${pedido.numero_pedido} (ID: ${pedido.id})`, { message: error.message, stack: error.stack });
       }
     }
 
-    console.log(`[${new Date().toISOString()}] Auto-entregar pedidos: ${pedidosActualizados.length} pedido(s) actualizado(s).`);
+    log.info(`Auto-entregar pedidos: ${pedidosActualizados.length} pedido(s) actualizado(s).`);
 
     return {
       actualizados: pedidosActualizados.length,
       pedidos: pedidosActualizados
     };
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error en job auto-entregar pedidos:`, error);
+    log.error('Error en job auto-entregar pedidos', { message: error.message, stack: error.stack });
     throw error;
   }
 }

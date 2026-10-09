@@ -1,4 +1,7 @@
 const axios = require('axios');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Maps');
 
 // Helper: llamar a la API de geocoding de Google
 async function callGeocodeApi(address, apiKey) {
@@ -52,11 +55,11 @@ class MapsController {
       if (ciudad && !address.includes(ciudad)) fullAddress += `, ${ciudad}`;
       if (codigo_postal) fullAddress += `, ${codigo_postal}`;
 
-      console.log(`[MAPS] Geocodificando dirección: ${fullAddress}`);
+      log.debug(`Geocodificando dirección: ${fullAddress}`);
 
       let data = await callGeocodeApi(fullAddress, apiKey);
 
-      console.log('[MAPS] Geocode respuesta cruda de Google:', {
+      log.debug('Geocode respuesta cruda de Google', {
         status: data?.status,
         resultsLength: Array.isArray(data?.results) ? data.results.length : null,
         error_message: data?.error_message
@@ -71,7 +74,7 @@ class MapsController {
 
         if (!streetFound && (colonia || codigo_postal)) {
           const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
-          console.log(`[MAPS] Calle no encontrada, intentando fallback: ${fallbackAddress}`);
+          log.debug(`Calle no encontrada, intentando fallback: ${fallbackAddress}`);
           const fallbackData = await callGeocodeApi(fallbackAddress, apiKey);
           if (fallbackData.status === 'OK' && fallbackData.results.length > 0) {
             const fb = fallbackData.results[0];
@@ -101,7 +104,7 @@ class MapsController {
         message: 'No se pudo geocodificar la dirección'
       });
     } catch (error) {
-      console.error('Error geocodificando dirección:', error);
+      log.error('Error geocodificando dirección', { message: error.message, stack: error.stack });
       next(error);
     }
   }
@@ -208,7 +211,7 @@ class MapsController {
         }
       });
     } catch (error) {
-      console.error('Error calculando matriz de distancias:', error);
+      log.error('Error calculando matriz de distancias', { message: error.message, stack: error.stack });
       next(error);
     }
   }
@@ -301,7 +304,7 @@ class MapsController {
         data: results
       });
     } catch (error) {
-      console.error('Error geocodificando direcciones múltiples:', error);
+      log.error('Error geocodificando direcciones múltiples', { message: error.message, stack: error.stack });
       next(error);
     }
   }

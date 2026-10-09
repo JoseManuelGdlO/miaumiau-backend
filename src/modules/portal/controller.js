@@ -23,11 +23,16 @@ async function findClienteByTelefono(telefonoRaw) {
   return hit || null;
 }
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Portal');
+
 class PortalController {
   async login(req, res, next) {
     try {
       const { telefono, password } = req.body;
       if (!telefono) {
+        log.warn('login rechazado', { status: 400, reason: "Teléfono requerido" });
         return res.status(400).json({
           success: false,
           message: 'Teléfono requerido'
@@ -36,6 +41,7 @@ class PortalController {
 
       const cliente = await findClienteByTelefono(telefono);
       if (!cliente) {
+        log.warn('login rechazado', { status: 401, reason: "Teléfono o contraseña incorrectos" });
         return res.status(401).json({
           success: false,
           message: 'Teléfono o contraseña incorrectos'
@@ -48,6 +54,7 @@ class PortalController {
         const { numero_pedido: numeroPedidoRaw } = req.body;
         const numeroPedido = numeroPedidoRaw != null ? String(numeroPedidoRaw).trim() : '';
         if (!numeroPedido) {
+          log.warn('login rechazado', { status: 400, reason: "Indica el número de pedido que te enviamos por WhatsApp (por ejemplo PED-…)." });
           return res.status(400).json({
             success: false,
             code: 'PEDIDO_REQUERIDO',
@@ -81,6 +88,7 @@ class PortalController {
             pedidosCount === 0
               ? 'No encontramos pedidos activos asociados a tu cuenta. Si compraste por WhatsApp, contacta soporte.'
               : 'El número de pedido no coincide con ninguna de tus compras. Revísalo en el mensaje de WhatsApp.';
+          log.warn('login rechazado', { status: 403, reason: "rechazado" });
           return res.status(403).json({
             success: false,
             code: 'PEDIDO_NO_COINCIDE',
@@ -92,6 +100,7 @@ class PortalController {
         await cliente.save();
       } else {
         if (!password || !String(password).trim()) {
+          log.warn('login rechazado', { status: 400, reason: "Contraseña requerida" });
           return res.status(400).json({
             success: false,
             message: 'Contraseña requerida'
@@ -106,6 +115,7 @@ class PortalController {
         }
 
         if (!valid) {
+          log.warn('login rechazado', { status: 401, reason: "Teléfono o contraseña incorrectos" });
           return res.status(401).json({
             success: false,
             message: 'Teléfono o contraseña incorrectos'
@@ -119,6 +129,7 @@ class PortalController {
         mustChangePassword
       });
 
+      log.info('login', { id: cliente.id });
       res.json({
         success: true,
         data: {
@@ -132,6 +143,7 @@ class PortalController {
         }
       });
     } catch (e) {
+      log.error('login falló', { message: e.message });
       next(e);
     }
   }
@@ -142,6 +154,7 @@ class PortalController {
       const { currentPassword, newPassword } = req.body;
 
       if (!newPassword || String(newPassword).length < 6) {
+        log.warn('changePassword rechazado', { status: 400, reason: "La nueva contraseña debe tener al menos 6 caracteres" });
         return res.status(400).json({
           success: false,
           message: 'La nueva contraseña debe tener al menos 6 caracteres'
@@ -150,6 +163,7 @@ class PortalController {
 
       const cliente = await Cliente.unscoped().findByPk(clienteId);
       if (!cliente || !cliente.isActive) {
+        log.warn('changePassword rechazado', { status: 404, reason: "Cliente no encontrado" });
         return res.status(404).json({ success: false, message: 'Cliente no encontrado' });
       }
 
@@ -163,6 +177,7 @@ class PortalController {
       }
 
       if (!currentOk) {
+        log.warn('changePassword rechazado', { status: 400, reason: "La contraseña actual no es correcta" });
         return res.status(400).json({
           success: false,
           message: 'La contraseña actual no es correcta'
@@ -179,6 +194,7 @@ class PortalController {
         mustChangePassword: false
       });
 
+      log.info('changePassword', { id: cliente.id });
       res.json({
         success: true,
         message: 'Contraseña actualizada',
@@ -193,6 +209,7 @@ class PortalController {
         }
       });
     } catch (e) {
+      log.error('changePassword falló', { message: e.message });
       next(e);
     }
   }
@@ -233,6 +250,7 @@ class PortalController {
         }
       });
     } catch (e) {
+      log.error('me falló', { message: e.message });
       next(e);
     }
   }
@@ -278,6 +296,7 @@ class PortalController {
         }
       });
     } catch (e) {
+      log.error('listPedidos falló', { message: e.message });
       next(e);
     }
   }
@@ -309,6 +328,7 @@ class PortalController {
         }
       });
     } catch (e) {
+      log.error('listMovimientosPuntos falló', { message: e.message });
       next(e);
     }
   }
@@ -318,10 +338,12 @@ class PortalController {
       const clienteId = req.clientePortal.clienteId;
       const resumen = await resumenDesdeLedger(clienteId);
       if (!resumen) {
+        log.warn('resumenPuntos rechazado', { status: 404, reason: "Cliente no encontrado" });
         return res.status(404).json({ success: false, message: 'Cliente no encontrado' });
       }
       res.json({ success: true, data: resumen });
     } catch (e) {
+      log.error('resumenPuntos falló', { message: e.message });
       next(e);
     }
   }

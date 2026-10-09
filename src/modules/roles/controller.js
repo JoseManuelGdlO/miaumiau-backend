@@ -1,6 +1,10 @@
 const { Role, Permission, RolePermission } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Roles');
+
 class RoleController {
   // Obtener todos los roles
   async getAllRoles(req, res, next) {
@@ -48,6 +52,7 @@ class RoleController {
         }
       });
     } catch (error) {
+      log.error('getAllRoles falló', { message: error.message });
       next(error);
     }
   }
@@ -85,6 +90,7 @@ class RoleController {
         data: { role }
       });
     } catch (error) {
+      log.error('getRoleById falló', { message: error.message });
       next(error);
     }
   }
@@ -100,6 +106,7 @@ class RoleController {
       });
 
       if (existingRole) {
+        log.warn('createRole rechazado', { status: 400, reason: "Ya existe un rol con ese nombre" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un rol con ese nombre'
@@ -123,6 +130,7 @@ class RoleController {
         });
 
         if (existingPermissions.length !== permissions.length) {
+          log.warn('createRole rechazado', { status: 400, reason: "Algunos permisos no existen o están inactivos" });
           return res.status(400).json({
             success: false,
             message: 'Algunos permisos no existen o están inactivos'
@@ -142,12 +150,14 @@ class RoleController {
         }]
       });
 
+      log.info('createRole', { id: role.id });
       res.status(201).json({
         success: true,
         message: 'Rol creado exitosamente',
         data: { role: roleWithPermissions }
       });
     } catch (error) {
+      log.error('createRole falló', { message: error.message });
       next(error);
     }
   }
@@ -161,6 +171,7 @@ class RoleController {
       const role = await Role.findByPk(id);
       
       if (!role) {
+        log.warn('updateRole rechazado', { status: 404, reason: "Rol no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Rol no encontrado'
@@ -177,6 +188,7 @@ class RoleController {
         });
         
         if (existingRole) {
+          log.warn('updateRole rechazado', { status: 400, reason: "Ya existe un rol con ese nombre" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe un rol con ese nombre'
@@ -203,6 +215,7 @@ class RoleController {
             });
 
             if (existingPermissions.length !== permissions.length) {
+              log.warn('updateRole rechazado', { status: 400, reason: "Algunos permisos no existen o están inactivos" });
               return res.status(400).json({
                 success: false,
                 message: 'Algunos permisos no existen o están inactivos'
@@ -224,12 +237,14 @@ class RoleController {
         }]
       });
 
+      log.info('updateRole', { id: id });
       res.json({
         success: true,
         message: 'Rol actualizado exitosamente',
         data: { role: updatedRole }
       });
     } catch (error) {
+      log.error('updateRole falló', { message: error.message });
       next(error);
     }
   }
@@ -242,6 +257,7 @@ class RoleController {
       const role = await Role.findByPk(id);
       
       if (!role) {
+        log.warn('deleteRole rechazado', { status: 404, reason: "Rol no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Rol no encontrado'
@@ -250,11 +266,13 @@ class RoleController {
 
       await role.softDelete();
 
+      log.info('deleteRole', { id: id });
       res.json({
         success: true,
         message: 'Rol eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deleteRole falló', { message: error.message });
       next(error);
     }
   }
@@ -267,6 +285,7 @@ class RoleController {
       const role = await Role.findByPk(id);
       
       if (!role) {
+        log.warn('restoreRole rechazado', { status: 404, reason: "Rol no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Rol no encontrado'
@@ -275,12 +294,14 @@ class RoleController {
 
       await role.restore();
 
+      log.info('restoreRole', { id: id });
       res.json({
         success: true,
         message: 'Rol restaurado exitosamente',
         data: { role }
       });
     } catch (error) {
+      log.error('restoreRole falló', { message: error.message });
       next(error);
     }
   }
@@ -293,6 +314,7 @@ class RoleController {
 
       const role = await Role.findByPk(id);
       if (!role) {
+        log.warn('assignPermission rechazado', { status: 404, reason: "Rol no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Rol no encontrado'
@@ -301,6 +323,7 @@ class RoleController {
 
       const permission = await Permission.findByPk(permission_id);
       if (!permission || permission.baja_logica) {
+        log.warn('assignPermission rechazado', { status: 404, reason: "Permiso no encontrado o inactivo" });
         return res.status(404).json({
           success: false,
           message: 'Permiso no encontrado o inactivo'
@@ -309,12 +332,14 @@ class RoleController {
 
       const { rolePermission, created } = await RolePermission.assignPermissionToRole(id, permission_id);
 
+      log.info('assignPermission', { id: id });
       res.json({
         success: true,
         message: created ? 'Permiso asignado exitosamente' : 'El permiso ya estaba asignado',
         data: { rolePermission }
       });
     } catch (error) {
+      log.error('assignPermission falló', { message: error.message });
       next(error);
     }
   }
@@ -326,6 +351,7 @@ class RoleController {
 
       const role = await Role.findByPk(id);
       if (!role) {
+        log.warn('removePermission rechazado', { status: 404, reason: "Rol no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Rol no encontrado'
@@ -335,17 +361,20 @@ class RoleController {
       const deletedCount = await RolePermission.removePermissionFromRole(id, permission_id);
 
       if (deletedCount === 0) {
+        log.warn('removePermission rechazado', { status: 404, reason: "El permiso no estaba asignado a este rol" });
         return res.status(404).json({
           success: false,
           message: 'El permiso no estaba asignado a este rol'
         });
       }
 
+      log.info('removePermission', { id: id });
       res.json({
         success: true,
         message: 'Permiso removido exitosamente'
       });
     } catch (error) {
+      log.error('removePermission falló', { message: error.message });
       next(error);
     }
   }
@@ -373,6 +402,7 @@ class RoleController {
         }
       });
     } catch (error) {
+      log.error('getRolePermissions falló', { message: error.message });
       next(error);
     }
   }

@@ -1,6 +1,9 @@
 const { Op } = require('sequelize');
 const { SiteSetting } = require('../../models');
 const { extractYoutubeVideoId } = require('../../utils/youtubeVideoId');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('SiteSettings');
 
 const KEY_HERO_YOUTUBE = 'hero_youtube_video_id';
 const DEFAULT_HERO_VIDEO_ID = 'h3u-4RAwZSA';
@@ -201,6 +204,7 @@ const getPublic = async (req, res, next) => {
       data,
     });
   } catch (error) {
+    log.error('getPublic falló', { message: error.message });
     next(error);
   }
 };
@@ -212,6 +216,7 @@ const updateHeroYoutubeVideoId = async (req, res, next) => {
     const raw = hasVideoId ? req.body.videoId : hasHero ? req.body.heroYoutubeVideoId : undefined;
     const parsed = extractYoutubeVideoId(raw);
     if (!parsed) {
+      log.warn('updateHeroYoutubeVideoId rechazado', { status: 400, reason: 'ID o URL de YouTube no válida' });
       return res.status(400).json({
         success: false,
         message: 'ID o URL de YouTube no válida. Usa el ID de 11 caracteres o un enlace válido.',
@@ -220,6 +225,7 @@ const updateHeroYoutubeVideoId = async (req, res, next) => {
 
     await upsertValor(KEY_HERO_YOUTUBE, parsed);
 
+    log.info('updateHeroYoutubeVideoId');
     const data = await buildPublicData();
     res.json({
       success: true,
@@ -227,6 +233,7 @@ const updateHeroYoutubeVideoId = async (req, res, next) => {
       message: 'Video del hero actualizado correctamente',
     });
   } catch (error) {
+    log.error('updateHeroYoutubeVideoId falló', { message: error.message });
     next(error);
   }
 };
@@ -241,11 +248,13 @@ const LINK_BODY_KEYS = [
 const updatePublicLinks = async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object') {
+      log.warn('ajuste rechazado', { status: 400, reason: 'Cuerpo JSON inválido.' });
       return res.status(400).json({ success: false, message: 'Cuerpo JSON inválido.' });
     }
 
     for (const [camel] of LINK_BODY_KEYS) {
       if (!Object.prototype.hasOwnProperty.call(req.body, camel)) {
+        log.warn('ajuste rechazado', { status: 400, reason: `Falta el campo ${camel}.` });
         return res.status(400).json({
           success: false,
           message: `Falta el campo ${camel}.`,
@@ -256,6 +265,7 @@ const updatePublicLinks = async (req, res, next) => {
     for (const [camel, dbKey] of LINK_BODY_KEYS) {
       const parsed = parseHttpUrlOrEmpty(req.body[camel]);
       if (parsed === null) {
+        log.warn('ajuste rechazado', { status: 400, reason: `URL no válida en ${camel}. Usa http:// o https://` });
         return res.status(400).json({
           success: false,
           message: `URL no válida en ${camel}. Usa http:// o https://`,
@@ -264,6 +274,7 @@ const updatePublicLinks = async (req, res, next) => {
       await upsertValor(dbKey, parsed);
     }
 
+    log.info('updatePublicLinks');
     const data = await buildPublicData();
     res.json({
       success: true,
@@ -271,6 +282,7 @@ const updatePublicLinks = async (req, res, next) => {
       message: 'Enlaces públicos actualizados correctamente',
     });
   } catch (error) {
+    log.error('updatePublicLinks falló', { message: error.message });
     next(error);
   }
 };
@@ -279,6 +291,7 @@ const updateQrActions = async (req, res, next) => {
   try {
     const incoming = req.body && req.body.qrActions;
     if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      log.warn('ajuste rechazado', { status: 400, reason: 'Indica qrActions con las acciones que se muestran al entrar al QR.' });
       return res.status(400).json({
         success: false,
         message: 'Indica qrActions con las acciones que se muestran al entrar al QR.',
@@ -287,6 +300,7 @@ const updateQrActions = async (req, res, next) => {
 
     for (const id of QR_ACTION_IDS) {
       if (typeof incoming[id] !== 'boolean') {
+        log.warn('ajuste rechazado', { status: 400, reason: `La acción ${id} debe ser verdadero o falso.` });
         return res.status(400).json({
           success: false,
           message: `La acción ${id} debe ser verdadero o falso.`,
@@ -296,12 +310,14 @@ const updateQrActions = async (req, res, next) => {
 
     const customLinkUrl = parseHttpUrlOrEmpty(incoming.customLinkUrl);
     if (customLinkUrl === null || (incoming.customLink && customLinkUrl === '')) {
+      log.warn('ajuste rechazado', { status: 400, reason: 'Escribe un enlace http:// o https:// para la opción de otro link.' });
       return res.status(400).json({
         success: false,
         message: 'Escribe un enlace http:// o https:// para la opción de otro link.',
       });
     }
     if (incoming.customLinkLabel != null && typeof incoming.customLinkLabel !== 'string') {
+      log.warn('ajuste rechazado', { status: 400, reason: 'El texto del botón debe ser una cadena.' });
       return res.status(400).json({
         success: false,
         message: 'El texto del botón debe ser una cadena.',
@@ -309,6 +325,7 @@ const updateQrActions = async (req, res, next) => {
     }
 
     if (incoming.linksHtml != null && typeof incoming.linksHtml !== 'string') {
+      log.warn('ajuste rechazado', { status: 400, reason: 'El texto de la sección de enlaces no es válido.' });
       return res.status(400).json({
         success: false,
         message: 'El texto de la sección de enlaces no es válido.',
@@ -316,6 +333,7 @@ const updateQrActions = async (req, res, next) => {
     }
 
     if (incoming.links != null && !Array.isArray(incoming.links)) {
+      log.warn('ajuste rechazado', { status: 400, reason: 'Los enlaces del QR deben enviarse como una lista.' });
       return res.status(400).json({
         success: false,
         message: 'Los enlaces del QR deben enviarse como una lista.',
@@ -323,6 +341,7 @@ const updateQrActions = async (req, res, next) => {
     }
     const incomingLinks = Array.isArray(incoming.links) ? incoming.links : [];
     if (incomingLinks.length > 20) {
+      log.warn('ajuste rechazado', { status: 400, reason: 'Puedes agregar hasta 20 enlaces.' });
       return res.status(400).json({
         success: false,
         message: 'Puedes agregar hasta 20 enlaces.',
@@ -332,12 +351,14 @@ const updateQrActions = async (req, res, next) => {
       const name = item && typeof item.name === 'string' ? item.name.trim() : '';
       const url = item ? parseHttpUrlOrEmpty(item.url) : null;
       if (!name) {
+        log.warn('ajuste rechazado', { status: 400, reason: 'Cada enlace necesita un nombre.' });
         return res.status(400).json({
           success: false,
           message: 'Cada enlace necesita un nombre.',
         });
       }
       if (!url) {
+        log.warn('ajuste rechazado', { status: 400, reason: `El enlace "${name}" debe ser una URL http:// o https://` });
         return res.status(400).json({
           success: false,
           message: `El enlace "${name}" debe ser una URL http:// o https://`,
@@ -348,6 +369,7 @@ const updateQrActions = async (req, res, next) => {
     const qrActions = parseQrActions(incoming);
     await upsertValor(KEY_QR_ACTIONS, JSON.stringify(qrActions));
 
+    log.info('updateQrActions');
     const data = await buildPublicData();
     res.json({
       success: true,
@@ -355,6 +377,7 @@ const updateQrActions = async (req, res, next) => {
       message: 'Acciones del QR actualizadas correctamente',
     });
   } catch (error) {
+    log.error('updateQrActions falló', { message: error.message });
     next(error);
   }
 };

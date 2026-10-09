@@ -1,4 +1,7 @@
 const { User, Role, Permission, RolePermission } = require('../models');
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('Permissions');
 
 /**
  * Middleware para verificar permisos específicos del usuario
@@ -91,7 +94,7 @@ const requirePermission = (requiredPermissions) => {
       req.userPermissions = userPermissions;
       next();
     } catch (error) {
-      console.error('Error verificando permisos:', error);
+      log.error('Error verificando permisos', { message: error.message, stack: error.stack });
       return res.status(500).json({
         success: false,
         message: 'Error interno del servidor'
@@ -167,7 +170,7 @@ const requireAllPermissions = (requiredPermissions) => {
       req.userPermissions = userPermissions;
       next();
     } catch (error) {
-      console.error('Error verificando permisos:', error);
+      log.error('Error verificando permisos', { message: error.message, stack: error.stack });
       return res.status(500).json({
         success: false,
         message: 'Error interno del servidor'
@@ -212,7 +215,7 @@ const requireSuperAdmin = () => {
         message: 'Se requiere rol de super administrador'
       });
     } catch (error) {
-      console.error('Error verificando super admin:', error);
+      log.error('Error verificando super admin', { message: error.message, stack: error.stack });
       return res.status(500).json({
         success: false,
         message: 'Error interno del servidor'
@@ -274,7 +277,7 @@ const requireSuperAdminOrPermission = (requiredPermissions) => {
       // Si no es super_admin, verificar permisos específicos
       return requirePermission(requiredPermissions)(req, res, next);
     } catch (error) {
-      console.error('Error en verificación híbrida:', error);
+      log.error('Error en verificación híbrida', { message: error.message, stack: error.stack });
       return res.status(500).json({
         success: false,
         message: 'Error interno del servidor'

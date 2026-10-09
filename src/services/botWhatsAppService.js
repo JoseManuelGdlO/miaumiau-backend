@@ -7,6 +7,9 @@ const {
   isWhatsAppWindowOpen,
 } = require('./whatsappWindowService');
 const { getTimezoneForConversationId } = require('../utils/conversationTimezone');
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('BotWhatsApp');
 
 /**
  * Envía un mensaje de texto del bot por WhatsApp y lo persiste en el chat.
@@ -54,7 +57,7 @@ async function sendBotTextMessage(conversacionId, mensaje, options = {}) {
         ? sendResult.errors.map((e) => `${e.code}: ${e.title} - ${e.message}`).join('; ')
         : (sendResult?.error || 'Error desconocido al enviar WhatsApp');
 
-      console.warn('[botWhatsApp] fallo envío', {
+      log.warn('fallo envío', {
         conversacionId,
         telefono,
         error: errorMessages,
@@ -64,7 +67,7 @@ async function sendBotTextMessage(conversacionId, mensaje, options = {}) {
     }
   } else {
     whatsappPendingDelivery = true;
-    console.warn('[botWhatsApp] ventana cerrada, mensaje guardado pendiente', {
+    log.warn('ventana cerrada, mensaje guardado pendiente', {
       conversacionId,
       telefono,
     });

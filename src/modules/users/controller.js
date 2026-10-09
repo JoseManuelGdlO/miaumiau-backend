@@ -2,6 +2,10 @@ const { User, Role, City } = require('../../models');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Users');
+
 class UsersController {
   // Obtener todos los usuarios
   async getAllUsers(req, res, next) {
@@ -91,6 +95,7 @@ class UsersController {
         }
       });
     } catch (error) {
+      log.error('getAllUsers falló', { message: error.message });
       next(error);
     }
   }
@@ -128,6 +133,7 @@ class UsersController {
         data: user
       });
     } catch (error) {
+      log.error('getUserById falló', { message: error.message });
       next(error);
     }
   }
@@ -143,6 +149,7 @@ class UsersController {
       });
 
       if (existingUser) {
+        log.warn('createUser rechazado', { status: 400, reason: "El correo electrónico ya está registrado" });
         return res.status(400).json({
           success: false,
           message: 'El correo electrónico ya está registrado'
@@ -181,12 +188,14 @@ class UsersController {
         attributes: { exclude: ['contrasena'] }
       });
 
+      log.info('createUser', { id: user.id });
       res.status(201).json({
         success: true,
         message: 'Usuario creado exitosamente',
         data: newUser
       });
     } catch (error) {
+      log.error('createUser falló', { message: error.message });
       next(error);
     }
   }
@@ -199,6 +208,7 @@ class UsersController {
 
       const user = await User.findByPk(id);
       if (!user) {
+        log.warn('updateUser rechazado', { status: 404, reason: "Usuario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Usuario no encontrado'
@@ -211,6 +221,7 @@ class UsersController {
           where: { correo_electronico }
         });
         if (existingUser) {
+          log.warn('updateUser rechazado', { status: 400, reason: "El correo electrónico ya está en uso" });
           return res.status(400).json({
             success: false,
             message: 'El correo electrónico ya está en uso'
@@ -252,12 +263,14 @@ class UsersController {
         attributes: { exclude: ['contrasena'] }
       });
 
+      log.info('updateUser', { id: id });
       res.json({
         success: true,
         message: 'Usuario actualizado exitosamente',
         data: updatedUser
       });
     } catch (error) {
+      log.error('updateUser falló', { message: error.message });
       next(error);
     }
   }
@@ -269,6 +282,7 @@ class UsersController {
 
       const user = await User.findByPk(id);
       if (!user) {
+        log.warn('deleteUser rechazado', { status: 404, reason: "Usuario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Usuario no encontrado'
@@ -286,6 +300,7 @@ class UsersController {
         });
 
         if (adminCount === 0) {
+          log.warn('deleteUser rechazado', { status: 400, reason: "No se puede eliminar el último administrador del sistema" });
           return res.status(400).json({
             success: false,
             message: 'No se puede eliminar el último administrador del sistema'
@@ -296,6 +311,7 @@ class UsersController {
       // Eliminación física del usuario
       await user.destroy();
 
+      log.info('deleteUser', { id: id });
       res.json({
         success: true,
         message: 'Usuario eliminado exitosamente'
@@ -303,11 +319,13 @@ class UsersController {
     } catch (error) {
       // Si hay error por restricciones de clave foránea, informar al usuario
       if (error.name === 'SequelizeForeignKeyConstraintError') {
+        log.warn('deleteUser rechazado', { status: 400, reason: "No se puede eliminar el usuario porque tiene registros asociados (repartidores, etc.). Elimine primero los registros asociados." });
         return res.status(400).json({
           success: false,
           message: 'No se puede eliminar el usuario porque tiene registros asociados (repartidores, etc.). Elimine primero los registros asociados.'
         });
       }
+      log.error('deleteUser falló', { message: error.message });
       next(error);
     }
   }
@@ -319,6 +337,7 @@ class UsersController {
 
       const user = await User.findByPk(id);
       if (!user) {
+        log.warn('restoreUser rechazado', { status: 404, reason: "Usuario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Usuario no encontrado'
@@ -327,11 +346,13 @@ class UsersController {
 
       await user.update({ isActive: true });
 
+      log.info('restoreUser', { id: id });
       res.json({
         success: true,
         message: 'Usuario restaurado exitosamente'
       });
     } catch (error) {
+      log.error('restoreUser falló', { message: error.message });
       next(error);
     }
   }
@@ -344,6 +365,7 @@ class UsersController {
 
       const user = await User.findByPk(id);
       if (!user) {
+        log.warn('changeUserPassword rechazado', { status: 404, reason: "Usuario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Usuario no encontrado'
@@ -352,11 +374,13 @@ class UsersController {
 
       await user.update({ contrasena: newPassword });
 
+      log.info('changeUserPassword', { id: id });
       res.json({
         success: true,
         message: 'Contraseña actualizada exitosamente'
       });
     } catch (error) {
+      log.error('changeUserPassword falló', { message: error.message });
       next(error);
     }
   }
@@ -396,6 +420,7 @@ class UsersController {
         }
       });
     } catch (error) {
+      log.error('getUserStats falló', { message: error.message });
       next(error);
     }
   }

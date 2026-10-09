@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { User, Role, Permission } = require('../models');
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('Auth');
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -97,7 +100,7 @@ const authenticateToken = async (req, res, next) => {
     req.userPermissions = userPermissions;
     next();
   } catch (error) {
-    console.error('Error en autenticación:', error);
+    log.error('Error en autenticación', { message: error.message, stack: error.stack });
     return res.status(401).json({
       success: false,
       message: 'Token inválido o expirado'

@@ -1,6 +1,10 @@
 const { ConversacionFlag, ConversacionFlagAsignacion, Conversacion } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('ConversacionesFlags');
+
 class ConversacionFlagController {
   // Obtener todos los flags
   async getAllFlags(req, res, next) {
@@ -54,6 +58,7 @@ class ConversacionFlagController {
         }
       });
     } catch (error) {
+      log.error('getAllFlags falló', { message: error.message });
       next(error);
     }
   }
@@ -79,6 +84,7 @@ class ConversacionFlagController {
         data: { flag }
       });
     } catch (error) {
+      log.error('getFlagById falló', { message: error.message });
       next(error);
     }
   }
@@ -90,6 +96,7 @@ class ConversacionFlagController {
 
       // Validar color hex si se proporciona
       if (color && !/^#[0-9A-F]{6}$/i.test(color)) {
+        log.warn('createFlag rechazado', { status: 400, reason: "El color debe ser un código hexadecimal válido (ej: #3B82F6)" });
         return res.status(400).json({
           success: false,
           message: 'El color debe ser un código hexadecimal válido (ej: #3B82F6)'
@@ -103,6 +110,7 @@ class ConversacionFlagController {
         activo
       });
 
+      log.info('createFlag', { id: flag.id });
       res.status(201).json({
         success: true,
         message: 'Flag creado exitosamente',
@@ -110,11 +118,13 @@ class ConversacionFlagController {
       });
     } catch (error) {
       if (error.name === 'SequelizeUniqueConstraintError') {
+        log.warn('createFlag rechazado', { status: 400, reason: "Ya existe un flag con ese nombre" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un flag con ese nombre'
         });
       }
+      log.error('createFlag falló', { message: error.message });
       next(error);
     }
   }
@@ -130,6 +140,7 @@ class ConversacionFlagController {
       });
 
       if (!flag) {
+        log.warn('updateFlag rechazado', { status: 404, reason: "Flag no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Flag no encontrado'
@@ -138,6 +149,7 @@ class ConversacionFlagController {
 
       // Validar color hex si se proporciona
       if (color && !/^#[0-9A-F]{6}$/i.test(color)) {
+        log.warn('updateFlag rechazado', { status: 400, reason: "El color debe ser un código hexadecimal válido (ej: #3B82F6)" });
         return res.status(400).json({
           success: false,
           message: 'El color debe ser un código hexadecimal válido (ej: #3B82F6)'
@@ -151,6 +163,7 @@ class ConversacionFlagController {
 
       await flag.save();
 
+      log.info('updateFlag', { id: id });
       res.json({
         success: true,
         message: 'Flag actualizado exitosamente',
@@ -158,11 +171,13 @@ class ConversacionFlagController {
       });
     } catch (error) {
       if (error.name === 'SequelizeUniqueConstraintError') {
+        log.warn('updateFlag rechazado', { status: 400, reason: "Ya existe un flag con ese nombre" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un flag con ese nombre'
         });
       }
+      log.error('updateFlag falló', { message: error.message });
       next(error);
     }
   }
@@ -177,6 +192,7 @@ class ConversacionFlagController {
       });
 
       if (!flag) {
+        log.warn('deleteFlag rechazado', { status: 404, reason: "Flag no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Flag no encontrado'
@@ -192,11 +208,13 @@ class ConversacionFlagController {
 
       await flag.softDelete();
 
+      log.info('deleteFlag', { id: id });
       res.json({
         success: true,
         message: 'Flag eliminado exitosamente. Todas las asignaciones han sido removidas.'
       });
     } catch (error) {
+      log.error('deleteFlag falló', { message: error.message });
       next(error);
     }
   }
@@ -209,6 +227,7 @@ class ConversacionFlagController {
       const flag = await ConversacionFlag.findByPk(id);
 
       if (!flag) {
+        log.warn('restoreFlag rechazado', { status: 404, reason: "Flag no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Flag no encontrado'
@@ -217,12 +236,14 @@ class ConversacionFlagController {
 
       await flag.restore();
 
+      log.info('restoreFlag', { id: id });
       res.json({
         success: true,
         message: 'Flag restaurado exitosamente',
         data: { flag }
       });
     } catch (error) {
+      log.error('restoreFlag falló', { message: error.message });
       next(error);
     }
   }
@@ -238,6 +259,7 @@ class ConversacionFlagController {
       });
 
       if (!flag) {
+        log.warn('assignFlagToConversation rechazado', { status: 404, reason: "Flag no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Flag no encontrado'
@@ -250,6 +272,7 @@ class ConversacionFlagController {
       });
 
       if (!conversacion) {
+        log.warn('assignFlagToConversation rechazado', { status: 404, reason: "Conversación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Conversación no encontrada'
@@ -263,6 +286,7 @@ class ConversacionFlagController {
       );
 
       if (existing) {
+        log.warn('assignFlagToConversation rechazado', { status: 400, reason: "El flag ya está asignado a esta conversación" });
         return res.status(400).json({
           success: false,
           message: 'El flag ya está asignado a esta conversación'
@@ -275,6 +299,7 @@ class ConversacionFlagController {
         fkid_flag: flagId
       });
 
+      log.info('assignFlagToConversation', { id: asignacion.id });
       res.status(201).json({
         success: true,
         message: 'Flag asignado exitosamente',
@@ -282,11 +307,13 @@ class ConversacionFlagController {
       });
     } catch (error) {
       if (error.name === 'SequelizeUniqueConstraintError') {
+        log.warn('assignFlagToConversation rechazado', { status: 400, reason: "El flag ya está asignado a esta conversación" });
         return res.status(400).json({
           success: false,
           message: 'El flag ya está asignado a esta conversación'
         });
       }
+      log.error('assignFlagToConversation falló', { message: error.message });
       next(error);
     }
   }
@@ -302,6 +329,7 @@ class ConversacionFlagController {
       );
 
       if (!asignacion) {
+        log.warn('removeFlagFromConversation rechazado', { status: 404, reason: "El flag no está asignado a esta conversación" });
         return res.status(404).json({
           success: false,
           message: 'El flag no está asignado a esta conversación'
@@ -310,11 +338,13 @@ class ConversacionFlagController {
 
       await asignacion.destroy();
 
+      log.info('removeFlagFromConversation', { id: id });
       res.json({
         success: true,
         message: 'Flag removido exitosamente'
       });
     } catch (error) {
+      log.error('removeFlagFromConversation falló', { message: error.message });
       next(error);
     }
   }
@@ -351,6 +381,7 @@ class ConversacionFlagController {
         data: { flags }
       });
     } catch (error) {
+      log.error('getConversationFlags falló', { message: error.message });
       next(error);
     }
   }

@@ -1,6 +1,10 @@
 const { Mascota, Cliente } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Mascotas');
+
 class MascotaController {
   // Obtener todas las mascotas
   async getAllMascotas(req, res, next) {
@@ -73,6 +77,7 @@ class MascotaController {
         }
       });
     } catch (error) {
+      log.error('getAllMascotas falló', { message: error.message });
       next(error);
     }
   }
@@ -104,6 +109,7 @@ class MascotaController {
         data: { mascota }
       });
     } catch (error) {
+      log.error('getMascotaById falló', { message: error.message });
       next(error);
     }
   }
@@ -124,6 +130,7 @@ class MascotaController {
       // Verificar que el cliente existe
       const cliente = await Cliente.findByPk(fkid_cliente);
       if (!cliente) {
+        log.warn('createMascota rechazado', { status: 400, reason: "El cliente especificado no existe" });
         return res.status(400).json({
           success: false,
           message: 'El cliente especificado no existe'
@@ -151,12 +158,14 @@ class MascotaController {
         ]
       });
 
+      log.info('createMascota', { id: mascota.id });
       res.status(201).json({
         success: true,
         message: 'Mascota creada exitosamente',
         data: { mascota: mascotaCompleta }
       });
     } catch (error) {
+      log.error('createMascota falló', { message: error.message });
       next(error);
     }
   }
@@ -170,6 +179,7 @@ class MascotaController {
       const mascota = await Mascota.findByPk(id);
       
       if (!mascota) {
+        log.warn('updateMascota rechazado', { status: 404, reason: "Mascota no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Mascota no encontrada'
@@ -180,6 +190,7 @@ class MascotaController {
       if (updateData.fkid_cliente) {
         const cliente = await Cliente.findByPk(updateData.fkid_cliente);
         if (!cliente) {
+          log.warn('updateMascota rechazado', { status: 400, reason: "El cliente especificado no existe" });
           return res.status(400).json({
             success: false,
             message: 'El cliente especificado no existe'
@@ -200,12 +211,14 @@ class MascotaController {
         ]
       });
 
+      log.info('updateMascota', { id: id });
       res.json({
         success: true,
         message: 'Mascota actualizada exitosamente',
         data: { mascota: mascotaActualizada }
       });
     } catch (error) {
+      log.error('updateMascota falló', { message: error.message });
       next(error);
     }
   }
@@ -218,6 +231,7 @@ class MascotaController {
       const mascota = await Mascota.findByPk(id);
       
       if (!mascota) {
+        log.warn('deleteMascota rechazado', { status: 404, reason: "Mascota no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Mascota no encontrada'
@@ -226,11 +240,13 @@ class MascotaController {
 
       await mascota.softDelete();
 
+      log.info('deleteMascota', { id: id });
       res.json({
         success: true,
         message: 'Mascota eliminada exitosamente'
       });
     } catch (error) {
+      log.error('deleteMascota falló', { message: error.message });
       next(error);
     }
   }
@@ -243,6 +259,7 @@ class MascotaController {
       const mascota = await Mascota.findByPk(id);
       
       if (!mascota) {
+        log.warn('restoreMascota rechazado', { status: 404, reason: "Mascota no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Mascota no encontrada'
@@ -251,12 +268,14 @@ class MascotaController {
 
       await mascota.restore();
 
+      log.info('restoreMascota', { id: id });
       res.json({
         success: true,
         message: 'Mascota restaurada exitosamente',
         data: { mascota }
       });
     } catch (error) {
+      log.error('restoreMascota falló', { message: error.message });
       next(error);
     }
   }
@@ -288,6 +307,7 @@ class MascotaController {
         }
       });
     } catch (error) {
+      log.error('getMascotasByCliente falló', { message: error.message });
       next(error);
     }
   }
@@ -344,6 +364,7 @@ class MascotaController {
         }
       });
     } catch (error) {
+      log.error('getMascotaStats falló', { message: error.message });
       next(error);
     }
   }
@@ -361,6 +382,7 @@ class MascotaController {
         }
       });
     } catch (error) {
+      log.error('getActiveMascotas falló', { message: error.message });
       next(error);
     }
   }

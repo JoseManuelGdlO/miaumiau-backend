@@ -1,5 +1,8 @@
 const { Paquete, Pedido } = require('../../models');
 const { createStripePaymentLink } = require('../../services/stripePaymentLink');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Pagos');
 
 class PagosController {
   /**
@@ -180,7 +183,7 @@ class PagosController {
         const message = stripeError.message || 'Error al generar el link de pago en Stripe';
 
         if (status >= 500 || stripeError.code === 'STRIPE_NETWORK') {
-          console.error('Error al generar link Stripe (pagos):', {
+          log.error('Error al generar link Stripe', {
             status,
             code: stripeError.code,
             message
@@ -194,7 +197,7 @@ class PagosController {
       }
 
     } catch (error) {
-      console.error('Error en generarLinkStripe:', error);
+      log.error('Error en generarLinkStripe', { message: error.message, stack: error.stack });
       next(error);
     }
   }

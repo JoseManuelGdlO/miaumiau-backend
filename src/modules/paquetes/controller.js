@@ -1,6 +1,10 @@
 const { Paquete, ProductoPaquete, Inventario } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Paquetes');
+
 class PaqueteController {
   // Obtener todos los paquetes
   async getAllPaquetes(req, res, next) {
@@ -65,6 +69,7 @@ class PaqueteController {
         }
       });
     } catch (error) {
+      log.error('getAllPaquetes falló', { message: error.message });
       next(error);
     }
   }
@@ -102,6 +107,7 @@ class PaqueteController {
         data: { paquete }
       });
     } catch (error) {
+      log.error('getPaqueteById falló', { message: error.message });
       next(error);
     }
   }
@@ -119,6 +125,7 @@ class PaqueteController {
 
       // Validar que se proporcionen productos
       if (!productos || productos.length === 0) {
+        log.warn('createPaquete rechazado', { status: 400, reason: "Debe agregar al menos un producto al paquete" });
         return res.status(400).json({
           success: false,
           message: 'Debe agregar al menos un producto al paquete'
@@ -150,6 +157,7 @@ class PaqueteController {
         if (!producto) {
           // Si el producto no existe, eliminar el paquete creado
           await paquete.destroy();
+          log.warn('createPaquete rechazado', { status: 400, reason: "rechazado" });
           return res.status(400).json({
             success: false,
             message: `El producto con ID ${fkid_producto} no existe`
@@ -159,6 +167,7 @@ class PaqueteController {
         // Verificar que la cantidad sea válida
         if (!cantidad || cantidad < 1) {
           await paquete.destroy();
+          log.warn('createPaquete rechazado', { status: 400, reason: "La cantidad debe ser mayor a 0" });
           return res.status(400).json({
             success: false,
             message: 'La cantidad debe ser mayor a 0'
@@ -190,12 +199,14 @@ class PaqueteController {
         ]
       });
 
+      log.info('createPaquete', { id: paquete.id });
       res.status(201).json({
         success: true,
         message: 'Paquete creado exitosamente',
         data: { paquete: paqueteCompleto }
       });
     } catch (error) {
+      log.error('createPaquete falló', { message: error.message });
       next(error);
     }
   }
@@ -209,6 +220,7 @@ class PaqueteController {
       const paquete = await Paquete.findByPk(id);
       
       if (!paquete) {
+        log.warn('updatePaquete rechazado', { status: 404, reason: "Paquete no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Paquete no encontrado'
@@ -240,6 +252,7 @@ class PaqueteController {
           // Verificar que el producto existe
           const producto = await Inventario.findByPk(fkid_producto);
           if (!producto) {
+            log.warn('updatePaquete rechazado', { status: 400, reason: "rechazado" });
             return res.status(400).json({
               success: false,
               message: `El producto con ID ${fkid_producto} no existe`
@@ -248,6 +261,7 @@ class PaqueteController {
 
           // Verificar que la cantidad sea válida
           if (!cantidad || cantidad < 1) {
+            log.warn('updatePaquete rechazado', { status: 400, reason: "La cantidad debe ser mayor a 0" });
             return res.status(400).json({
               success: false,
               message: 'La cantidad debe ser mayor a 0'
@@ -280,12 +294,14 @@ class PaqueteController {
         ]
       });
 
+      log.info('updatePaquete', { id: id });
       res.json({
         success: true,
         message: 'Paquete actualizado exitosamente',
         data: { paquete: paqueteActualizado }
       });
     } catch (error) {
+      log.error('updatePaquete falló', { message: error.message });
       next(error);
     }
   }
@@ -298,6 +314,7 @@ class PaqueteController {
       const paquete = await Paquete.findByPk(id);
       
       if (!paquete) {
+        log.warn('deletePaquete rechazado', { status: 404, reason: "Paquete no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Paquete no encontrado'
@@ -312,11 +329,13 @@ class PaqueteController {
       // Eliminar el paquete
       await paquete.destroy();
 
+      log.info('deletePaquete', { id: id });
       res.json({
         success: true,
         message: 'Paquete eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deletePaquete falló', { message: error.message });
       next(error);
     }
   }
@@ -330,6 +349,7 @@ class PaqueteController {
       const paquete = await Paquete.findByPk(id);
       
       if (!paquete) {
+        log.warn('togglePaqueteStatus rechazado', { status: 404, reason: "Paquete no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Paquete no encontrado'
@@ -339,12 +359,14 @@ class PaqueteController {
       paquete.is_active = is_active !== undefined ? is_active : !paquete.is_active;
       await paquete.save();
 
+      log.info('togglePaqueteStatus', { id: id });
       res.json({
         success: true,
         message: `Paquete ${paquete.is_active ? 'activado' : 'desactivado'} exitosamente`,
         data: { paquete }
       });
     } catch (error) {
+      log.error('togglePaqueteStatus falló', { message: error.message });
       next(error);
     }
   }
@@ -354,6 +376,7 @@ class PaqueteController {
     try {
       const { id } = req.params;
       if (!req.file || !req.file.filename) {
+        log.warn('uploadPaqueteImage rechazado', { status: 400, reason: "No se recibió ninguna imagen. Envía el archivo en el campo " });
         return res.status(400).json({
           success: false,
           message: 'No se recibió ninguna imagen. Envía el archivo en el campo "imagen".'
@@ -362,6 +385,7 @@ class PaqueteController {
 
       const paquete = await Paquete.findByPk(id);
       if (!paquete) {
+        log.warn('uploadPaqueteImage rechazado', { status: 404, reason: "Paquete no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Paquete no encontrado'
@@ -386,12 +410,14 @@ class PaqueteController {
         ]
       });
 
+      log.info('uploadPaqueteImage', { id: id });
       res.json({
         success: true,
         message: 'Imagen subida correctamente',
         data: { paquete: paqueteActualizado }
       });
     } catch (error) {
+      log.error('uploadPaqueteImage falló', { message: error.message });
       next(error);
     }
   }
@@ -409,6 +435,7 @@ class PaqueteController {
         }
       });
     } catch (error) {
+      log.error('getPaquetesActivos falló', { message: error.message });
       next(error);
     }
   }
@@ -419,6 +446,7 @@ class PaqueteController {
       const { search } = req.query;
 
       if (!search) {
+        log.warn('searchPaquetes rechazado', { status: 400, reason: "Se requiere el parámetro de búsqueda" });
         return res.status(400).json({
           success: false,
           message: 'Se requiere el parámetro de búsqueda'
@@ -436,6 +464,7 @@ class PaqueteController {
         }
       });
     } catch (error) {
+      log.error('searchPaquetes falló', { message: error.message });
       next(error);
     }
   }
@@ -465,6 +494,7 @@ class PaqueteController {
         }
       });
     } catch (error) {
+      log.error('getPaqueteStats falló', { message: error.message });
       next(error);
     }
   }

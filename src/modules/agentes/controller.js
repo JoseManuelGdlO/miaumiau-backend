@@ -1,6 +1,10 @@
 const { Agente, AgenteConversacion, Conversacion } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Agentes');
+
 class AgenteController {
   // Obtener todos los agentes
   async getAllAgentes(req, res, next) {
@@ -56,6 +60,7 @@ class AgenteController {
         }
       });
     } catch (error) {
+      log.error('getAllAgentes falló', { message: error.message });
       next(error);
     }
   }
@@ -81,6 +86,7 @@ class AgenteController {
         data: agente
       });
     } catch (error) {
+      log.error('getAgenteById falló', { message: error.message });
       next(error);
     }
   }
@@ -110,12 +116,14 @@ class AgenteController {
         orden_prioridad
       });
 
+      log.info('createAgente', { id: agente.id });
       res.status(201).json({
         success: true,
         message: 'Agente creado exitosamente',
         data: agente
       });
     } catch (error) {
+      log.error('createAgente falló', { message: error.message });
       next(error);
     }
   }
@@ -141,6 +149,7 @@ class AgenteController {
       });
 
       if (!agente) {
+        log.warn('updateAgente rechazado', { status: 404, reason: "Agente no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Agente no encontrado'
@@ -166,12 +175,14 @@ class AgenteController {
 
       await agente.update(updateData);
 
+      log.info('updateAgente', { id: id });
       res.json({
         success: true,
         message: 'Agente actualizado exitosamente',
         data: agente
       });
     } catch (error) {
+      log.error('updateAgente falló', { message: error.message });
       next(error);
     }
   }
@@ -186,6 +197,7 @@ class AgenteController {
       });
 
       if (!agente) {
+        log.warn('deleteAgente rechazado', { status: 404, reason: "Agente no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Agente no encontrado'
@@ -194,11 +206,13 @@ class AgenteController {
 
       await agente.update({ baja_logica: true });
 
+      log.info('deleteAgente', { id: id });
       res.json({
         success: true,
         message: 'Agente eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deleteAgente falló', { message: error.message });
       next(error);
     }
   }
@@ -213,6 +227,7 @@ class AgenteController {
       });
 
       if (!agente) {
+        log.warn('restoreAgente rechazado', { status: 404, reason: "Agente no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Agente no encontrado'
@@ -221,12 +236,14 @@ class AgenteController {
 
       await agente.update({ baja_logica: false });
 
+      log.info('restoreAgente', { id: id });
       res.json({
         success: true,
         message: 'Agente restaurado exitosamente',
         data: agente
       });
     } catch (error) {
+      log.error('restoreAgente falló', { message: error.message });
       next(error);
     }
   }
@@ -238,6 +255,7 @@ class AgenteController {
       const { estado } = req.body;
 
       if (!['activo', 'inactivo', 'mantenimiento'].includes(estado)) {
+        log.warn('changeEstado rechazado', { status: 400, reason: "Estado inválido" });
         return res.status(400).json({
           success: false,
           message: 'Estado inválido'
@@ -249,6 +267,7 @@ class AgenteController {
       });
 
       if (!agente) {
+        log.warn('changeEstado rechazado', { status: 404, reason: "Agente no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Agente no encontrado'
@@ -257,12 +276,14 @@ class AgenteController {
 
       await agente.update({ estado });
 
+      log.info('changeEstado', { id: id });
       res.json({
         success: true,
         message: `Agente ${estado} exitosamente`,
         data: agente
       });
     } catch (error) {
+      log.error('changeEstado falló', { message: error.message });
       next(error);
     }
   }
@@ -277,6 +298,7 @@ class AgenteController {
         data: agentes
       });
     } catch (error) {
+      log.error('getAgentesActivos falló', { message: error.message });
       next(error);
     }
   }
@@ -293,6 +315,7 @@ class AgenteController {
         data: agentes
       });
     } catch (error) {
+      log.error('getAgentesByEspecialidad falló', { message: error.message });
       next(error);
     }
   }
@@ -307,6 +330,7 @@ class AgenteController {
         data: estadisticas
       });
     } catch (error) {
+      log.error('getEstadisticas falló', { message: error.message });
       next(error);
     }
   }
@@ -344,6 +368,7 @@ class AgenteController {
         }
       });
     } catch (error) {
+      log.error('getConversacionesAgente falló', { message: error.message });
       next(error);
     }
   }
@@ -355,6 +380,7 @@ class AgenteController {
       const { rendimiento, feedback } = req.body;
 
       if (rendimiento < 0 || rendimiento > 5) {
+        log.warn('updateRendimiento rechazado', { status: 400, reason: "El rendimiento debe estar entre 0 y 5" });
         return res.status(400).json({
           success: false,
           message: 'El rendimiento debe estar entre 0 y 5'
@@ -364,6 +390,7 @@ class AgenteController {
       const agenteConversacion = await AgenteConversacion.findByPk(id);
 
       if (!agenteConversacion) {
+        log.warn('updateRendimiento rechazado', { status: 404, reason: "Asignación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Asignación no encontrada'
@@ -372,12 +399,14 @@ class AgenteController {
 
       await agenteConversacion.actualizarRendimiento(rendimiento, feedback);
 
+      log.info('updateRendimiento', { id: id });
       res.json({
         success: true,
         message: 'Rendimiento actualizado exitosamente',
         data: agenteConversacion
       });
     } catch (error) {
+      log.error('updateRendimiento falló', { message: error.message });
       next(error);
     }
   }

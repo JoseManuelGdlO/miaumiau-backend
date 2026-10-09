@@ -4,6 +4,9 @@ const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { parseFechaEntregaEstimada } = require('../../utils/date');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Pedidos');
 
 // Funciones helper para normalizar teléfonos
 const normalizePhone = (value) => {
@@ -86,7 +89,7 @@ const updateConversacionesWithCliente = async (telefono, id_cliente, id_pedido =
 
     return actualizadas;
   } catch (error) {
-    console.error('Error al actualizar conversaciones con cliente:', error);
+    log.error('Error al actualizar conversaciones con cliente:', error);
     return 0;
   }
 };
@@ -118,7 +121,7 @@ const logPedidoCreadoEnConversaciones = async (telefono, clienteId, pedido) => {
 
     return registradas;
   } catch (error) {
-    console.error('Error al registrar log de pedido en conversaciones:', error);
+    log.error('Error al registrar log de pedido en conversaciones:', error);
     return 0;
   }
 };
@@ -637,7 +640,7 @@ class PedidoController {
         const message = stripeError.message || 'Error al generar el link de pago en Stripe';
 
         if (status >= 500 || stripeError.code === 'STRIPE_NETWORK') {
-          console.error('Error al generar link Stripe (pedido):', {
+          log.error('Error al generar link Stripe (pedido):', {
             pedidoId: id,
             status,
             code: stripeError.code,
@@ -1005,7 +1008,7 @@ class PedidoController {
         } catch (usageError) {
           // No fallar el pedido si hay error al registrar el uso
           // Solo loguear el error para debugging
-          console.error('Error al registrar uso de promoción:', usageError);
+          log.error('Error al registrar uso de promoción:', usageError);
         }
       }
 
@@ -1563,7 +1566,7 @@ class PedidoController {
               await producto.restaurarStock(cantidadARestaurar);
             } catch (error) {
               // Log error pero continuar restaurando otros productos
-              console.error(`Error al restaurar stock del producto ${producto.id}:`, error.message);
+              log.error(`Error al restaurar stock del producto ${producto.id}:`, error.message);
             }
           }
         }
@@ -1576,7 +1579,7 @@ class PedidoController {
               await producto.restaurarStock(cantidadTotal);
             } catch (error) {
               // Log error pero continuar restaurando otros productos
-              console.error(`Error al restaurar stock del producto ${producto.id} desde paquetes:`, error.message);
+              log.error(`Error al restaurar stock del producto ${producto.id} desde paquetes:`, error.message);
             }
           }
         }

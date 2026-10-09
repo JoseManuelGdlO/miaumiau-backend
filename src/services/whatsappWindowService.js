@@ -8,6 +8,9 @@ const {
   WHATSAPP_REOPEN_TEMPLATE_NAME,
 } = require('../utils/whatsapp');
 const { getTimezoneForConversationId } = require('../utils/conversationTimezone');
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('WhatsApp');
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -133,7 +136,7 @@ async function flushPendingAgentMessages(conversacionId) {
 
     const conversacion = await loadConversationForWhatsApp(conversacionId);
     if (!conversacion) {
-      console.warn('[WhatsApp] flushPending: conversación no encontrada', { conversacionId });
+      log.warn('flushPending: conversación no encontrada', { conversacionId });
       return { flushed: 0, failed: pendingMessages.length };
     }
 
@@ -141,7 +144,7 @@ async function flushPendingAgentMessages(conversacionId) {
     const phoneNumberId = conversacion.whatsapp_phone_number_id;
 
     if (!telefono || !phoneNumberId) {
-      console.warn('[WhatsApp] flushPending: teléfono o phone_number_id faltante', {
+      log.warn('flushPending: teléfono o phone_number_id faltante', {
         conversacionId,
         telefono,
         phoneNumberId,
@@ -165,7 +168,7 @@ async function flushPendingAgentMessages(conversacionId) {
           ? sendResult.errors.map((e) => `${e.code}: ${e.title} - ${e.message}`).join('; ')
           : (sendResult.error || sendResult.data);
 
-        console.error('[WhatsApp] flushPending: fallo al reenviar mensaje', {
+        log.error('flushPending: fallo al reenviar mensaje', {
           conversacionId,
           mensajeId: pending.id,
           error: errorMessages,
@@ -211,7 +214,7 @@ async function flushPendingAgentMessages(conversacionId) {
 
     return { flushed, failed };
   } catch (error) {
-    console.error('[WhatsApp] flushPending: error inesperado', {
+    log.error('flushPending: error inesperado', {
       conversacionId,
       error: error.message,
     });

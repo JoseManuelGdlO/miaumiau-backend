@@ -2,6 +2,10 @@ const { ConversacionChat, Conversacion, ConversacionLog } = require('../../model
 const { Op } = require('sequelize');
 const { createConversationChatMessage } = require('../../services/conversacionChatService');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('ConversacionesChat');
+
 class ConversacionChatController {
   // Obtener todos los mensajes de chat
   async getAllChats(req, res, next) {
@@ -92,6 +96,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getAllChats falló', { message: error.message });
       next(error);
     }
   }
@@ -124,6 +129,7 @@ class ConversacionChatController {
         data: { chat }
       });
     } catch (error) {
+      log.error('getChatById falló', { message: error.message });
       next(error);
     }
   }
@@ -141,6 +147,7 @@ class ConversacionChatController {
 
       const conversacion = await Conversacion.findByPk(fkid_conversacion);
       if (!conversacion) {
+        log.warn('createChat rechazado', { status: 400, reason: "La conversación especificada no existe" });
         return res.status(400).json({
           success: false,
           message: 'La conversación especificada no existe'
@@ -156,12 +163,14 @@ class ConversacionChatController {
         changed_by: req.user?.id || 'sistema',
       });
 
+      log.info('createChat', { id: req.user && req.user.id });
       res.status(201).json({
         success: true,
         message: 'Mensaje enviado exitosamente',
         data: { chat: chatCompleto }
       });
     } catch (error) {
+      log.error('createChat falló', { message: error.message });
       next(error);
     }
   }
@@ -175,6 +184,7 @@ class ConversacionChatController {
       const chat = await ConversacionChat.findByPk(id);
       
       if (!chat) {
+        log.warn('updateChat rechazado', { status: 404, reason: "Mensaje no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Mensaje no encontrado'
@@ -195,12 +205,14 @@ class ConversacionChatController {
         ]
       });
 
+      log.info('updateChat', { id: id });
       res.json({
         success: true,
         message: 'Mensaje actualizado exitosamente',
         data: { chat: chatActualizado }
       });
     } catch (error) {
+      log.error('updateChat falló', { message: error.message });
       next(error);
     }
   }
@@ -213,6 +225,7 @@ class ConversacionChatController {
       const chat = await ConversacionChat.findByPk(id);
       
       if (!chat) {
+        log.warn('deleteChat rechazado', { status: 404, reason: "Mensaje no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Mensaje no encontrado'
@@ -235,11 +248,13 @@ class ConversacionChatController {
         'Mensaje eliminado (baja lógica)'
       );
 
+      log.info('deleteChat', { id: id });
       res.json({
         success: true,
         message: 'Mensaje eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deleteChat falló', { message: error.message });
       next(error);
     }
   }
@@ -252,6 +267,7 @@ class ConversacionChatController {
       const chat = await ConversacionChat.findByPk(id);
       
       if (!chat) {
+        log.warn('restoreChat rechazado', { status: 404, reason: "Mensaje no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Mensaje no encontrado'
@@ -273,12 +289,14 @@ class ConversacionChatController {
         'Mensaje restaurado'
       );
 
+      log.info('restoreChat', { id: id });
       res.json({
         success: true,
         message: 'Mensaje restaurado exitosamente',
         data: { chat }
       });
     } catch (error) {
+      log.error('restoreChat falló', { message: error.message });
       next(error);
     }
   }
@@ -291,6 +309,7 @@ class ConversacionChatController {
       const chat = await ConversacionChat.findByPk(id);
       
       if (!chat) {
+        log.warn('markAsRead rechazado', { status: 404, reason: "Mensaje no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Mensaje no encontrado'
@@ -305,6 +324,7 @@ class ConversacionChatController {
         data: { chat }
       });
     } catch (error) {
+      log.error('markAsRead falló', { message: error.message });
       next(error);
     }
   }
@@ -317,6 +337,7 @@ class ConversacionChatController {
       const chat = await ConversacionChat.findByPk(id);
       
       if (!chat) {
+        log.warn('markAsUnread rechazado', { status: 404, reason: "Mensaje no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Mensaje no encontrado'
@@ -331,6 +352,7 @@ class ConversacionChatController {
         data: { chat }
       });
     } catch (error) {
+      log.error('markAsUnread falló', { message: error.message });
       next(error);
     }
   }
@@ -351,6 +373,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getChatsByConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -371,6 +394,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getChatsByFrom falló', { message: error.message });
       next(error);
     }
   }
@@ -390,6 +414,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getUnreadChats falló', { message: error.message });
       next(error);
     }
   }
@@ -410,6 +435,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getChatsByDate falló', { message: error.message });
       next(error);
     }
   }
@@ -420,6 +446,7 @@ class ConversacionChatController {
       const { search, conversacionId } = req.query;
 
       if (!search) {
+        log.warn('searchChats rechazado', { status: 400, reason: "Se requiere el parámetro de búsqueda" });
         return res.status(400).json({
           success: false,
           message: 'Se requiere el parámetro de búsqueda'
@@ -437,6 +464,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('searchChats falló', { message: error.message });
       next(error);
     }
   }
@@ -499,6 +527,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getChatStats falló', { message: error.message });
       next(error);
     }
   }
@@ -518,6 +547,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getRecentChats falló', { message: error.message });
       next(error);
     }
   }
@@ -537,6 +567,7 @@ class ConversacionChatController {
         }
       });
     } catch (error) {
+      log.error('getChatsByHour falló', { message: error.message });
       next(error);
     }
   }

@@ -1,6 +1,9 @@
 const webpush = require('web-push');
 const { PushSubscription } = require('../models');
 const usersWithPermission = require('../utils/usersWithPermission');
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('Push');
 
 let vapidConfigured = false;
 
@@ -47,7 +50,7 @@ async function sendPushToUsersWithPermission(permissionName, { title, body, url 
         if (err.statusCode === 404 || err.statusCode === 410) {
           await sub.destroy();
         } else {
-          console.warn('[webpush]', err.message);
+          log.warn('webpush', { message: err.message });
         }
       }
     }

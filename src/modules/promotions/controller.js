@@ -3,6 +3,9 @@ const { Op } = require('sequelize');
 const { query } = require('../../config/postgres');
 const { mapCityNameToId } = require('../../utils/cityMapper');
 const { aplicarLogicaDescuento, calcularTotalCarrito, productoCoincideConKeywords } = require('../descuentos/aplicarDescuentos');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Promotions');
 
 class PromotionController {
   // Obtener todas las promociones
@@ -522,7 +525,7 @@ class PromotionController {
           }
         }
       } catch (pgError) {
-        console.error('Error consultando PostgreSQL:', pgError);
+        log.error('Error consultando PostgreSQL:', pgError);
         return res.status(503).json({
           success: false,
           message: 'Error al consultar la base de datos de sesiones. Por favor, intenta de nuevo más tarde.'
@@ -671,7 +674,7 @@ class PromotionController {
       });
 
     } catch (error) {
-      console.error('Error en validarPromocion:', error);
+      log.error('Error en validarPromocion:', error);
       next(error);
     }
   }
@@ -728,7 +731,7 @@ class PromotionController {
 
         sessionData = result.rows[0];
       } catch (pgError) {
-        console.error('Error consultando PostgreSQL:', pgError);
+        log.error('Error consultando PostgreSQL:', pgError);
         return res.status(503).json({
           success: false,
           message: 'Error al consultar la base de datos de sesiones. Por favor, intenta de nuevo más tarde.'
@@ -751,7 +754,7 @@ class PromotionController {
           });
         }
       } catch (parseError) {
-        console.error('Error parseando productos:', parseError);
+        log.error('Error parseando productos:', parseError);
         return res.status(400).json({
           success: false,
           message: 'Error al procesar los datos de la sesión'
@@ -809,7 +812,7 @@ class PromotionController {
             
             // Log para debugging si un producto con ID está siendo considerado
             if (esRegalo && coincideConKeywordsTarget && !sinId) {
-              console.warn('Producto regalo con ID existente detectado (no se modificará):', {
+              log.warn('Producto regalo con ID existente detectado (no se modificará):', {
                 nombre: p.nombre,
                 id: p.id,
                 es_regalo: p.es_regalo
@@ -876,7 +879,7 @@ class PromotionController {
                     
                     // VERIFICACIÓN FINAL: Si el producto tiene un ID válido, NO MODIFICAR
                     if (producto.id !== null && producto.id !== undefined) {
-                      console.error('ERROR: Intento de modificar ID de producto que ya tiene ID:', {
+                      log.error('ERROR: Intento de modificar ID de producto que ya tiene ID:', {
                         nombre: producto.nombre,
                         id_actual: producto.id,
                         id_intentado: idProductoRegalo
@@ -891,7 +894,7 @@ class PromotionController {
                         producto.nombre = productoInventario.nombre;
                       }
                     } else {
-                      console.warn('No se asignó ID al producto porque no cumple todas las condiciones:', {
+                      log.warn('No se asignó ID al producto porque no cumple todas las condiciones:', {
                         nombre: producto.nombre,
                         id_actual: producto.id,
                         es_regalo: producto.es_regalo,
@@ -902,11 +905,11 @@ class PromotionController {
                     }
                   });
                 } else {
-                  console.warn(`No se asignó ID ${idProductoRegalo} al producto regalo porque ya existe otro producto con ese ID en el carrito`);
+                  log.warn(`No se asignó ID ${idProductoRegalo} al producto regalo porque ya existe otro producto con ese ID en el carrito`);
                 }
               }
             } catch (searchError) {
-              console.error('Error buscando producto en inventarios:', searchError);
+              log.error('Error buscando producto en inventarios:', searchError);
               // Continuar sin asignar ID si hay error en la búsqueda
             }
           }
@@ -926,7 +929,7 @@ class PromotionController {
             );
             
             if (productoModificado && productoModificado.id !== productoOriginal.id) {
-              console.error('ERROR CRÍTICO: ID de producto original fue modificado:', {
+              log.error('ERROR CRÍTICO: ID de producto original fue modificado:', {
                 nombre: productoOriginal.nombre,
                 id_original: productoOriginal.id,
                 id_modificado: productoModificado.id,
@@ -953,7 +956,7 @@ class PromotionController {
         const updateQuery = 'UPDATE pedido_sesion SET productos = $1 WHERE session_id = $2';
         await query(updateQuery, [JSON.stringify(productosActualizados), telefono]);
       } catch (updateError) {
-        console.error('Error actualizando PostgreSQL:', updateError);
+        log.error('Error actualizando PostgreSQL:', updateError);
         return res.status(500).json({
           success: false,
           message: 'Error al actualizar los productos en la sesión'
@@ -981,7 +984,7 @@ class PromotionController {
       });
 
     } catch (error) {
-      console.error('Error en aplicarCodigo:', error);
+      log.error('Error en aplicarCodigo:', error);
       next(error);
     }
   }

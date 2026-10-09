@@ -1,3 +1,7 @@
+const { Logger } = require('../utils/logger');
+
+const log = new Logger('Error');
+
 const UNIQUE_FIELD_MESSAGES = {
   codigo_repartidor: 'El código de repartidor ya está en uso',
   email: 'El correo electrónico ya está registrado',
@@ -21,13 +25,19 @@ const errorHandler = (err, req, res, next) => {
     || err.name === 'SequelizeUniqueConstraintError';
 
   // Los conflictos de validación no incluyen el SQL en el log
+  const requestMeta = { method: req.method, path: req.originalUrl || req.path };
+
   if (isExpectedClientError) {
     const detail = err.name === 'SequelizeUniqueConstraintError'
       ? uniqueConstraintMessage(err)
       : err.errors?.map(item => item.message).join(', ');
-    console.warn(detail || err.message);
+    log.warn(detail || err.message, requestMeta);
   } else {
-    console.error(err);
+    log.error(err.message || 'Error interno', {
+      ...requestMeta,
+      name: err.name,
+      stack: err.stack
+    });
   }
 
   // Error de validación de Sequelize

@@ -4,6 +4,9 @@ const { applyCityFilter } = require('../../utils/cityFilter');
 const bcrypt = require('bcryptjs');
 const { generateToken, generateRefreshToken } = require('../../utils/jwt');
 const { Sequelize } = require('sequelize');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Repartidores');
 
 class RepartidorController {
   // Obtener todos los repartidores
@@ -628,23 +631,23 @@ class RepartidorController {
       const repartidorIdParam = req.query.repartidor_id || req.query.repartidorId;
       const repartidorId = repartidorIdParam ? parseInt(repartidorIdParam) : req.repartidorId;
       
-      console.log('=== INICIO getPedidosDelDia ===');
-      console.log('Query params:', req.query);
-      console.log('repartidorIdParam:', repartidorIdParam);
-      console.log('req.repartidorId (del token):', req.repartidorId);
-      console.log('repartidorId final:', repartidorId);
+      log.debug('=== INICIO getPedidosDelDia ===');
+      log.debug('Query params:', req.query);
+      log.debug('repartidorIdParam:', repartidorIdParam);
+      log.debug('req.repartidorId (del token):', req.repartidorId);
+      log.debug('repartidorId final:', repartidorId);
       
       // Obtener la fecha de hoy en formato YYYY-MM-DD
       const hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
       const fechaHoy = hoy.toISOString().split('T')[0]; // Formato: YYYY-MM-DD
       
-      console.log('Fecha de hoy (formato YYYY-MM-DD):', fechaHoy);
-      console.log('Fecha de hoy (Date object):', hoy);
+      log.debug('Fecha de hoy (formato YYYY-MM-DD):', fechaHoy);
+      log.debug('Fecha de hoy (Date object):', hoy);
 
       // Verificar que el repartidorId existe
       if (!repartidorId || isNaN(repartidorId)) {
-        console.log('ERROR: repartidorId inválido');
+        log.debug('ERROR: repartidorId inválido');
         return res.status(400).json({
           success: false,
           message: 'ID de repartidor requerido'
@@ -657,14 +660,14 @@ class RepartidorController {
       });
 
       if (!repartidor) {
-        console.log('ERROR: Repartidor no encontrado con ID:', repartidorId);
+        log.debug('ERROR: Repartidor no encontrado con ID:', repartidorId);
         return res.status(404).json({
           success: false,
           message: 'Repartidor no encontrado'
         });
       }
 
-      console.log('Repartidor encontrado:', {
+      log.debug('Repartidor encontrado:', {
         id: repartidor.id,
         nombre: repartidor.nombre_completo,
         codigo: repartidor.codigo_repartidor
@@ -679,11 +682,11 @@ class RepartidorController {
         estado: 'planificada' // Solo rutas planificadas
       };
       
-      console.log('=== BÚSQUEDA DE RUTAS ===');
-      console.log('Where clause:', JSON.stringify(whereClause, null, 2));
-      console.log('fkid_repartidor:', repartidorId, 'tipo:', typeof repartidorId);
-      console.log('fecha_ruta:', fechaHoy, 'tipo:', typeof fechaHoy);
-      console.log('estado:', 'planificada');
+      log.debug('=== BÚSQUEDA DE RUTAS ===');
+      log.debug('Where clause:', JSON.stringify(whereClause, null, 2));
+      log.debug('fkid_repartidor:', repartidorId, 'tipo:', typeof repartidorId);
+      log.debug('fecha_ruta:', fechaHoy, 'tipo:', typeof fechaHoy);
+      log.debug('estado:', 'planificada');
       
       const rutas = await Ruta.findAll({
         where: whereClause,
@@ -731,10 +734,10 @@ class RepartidorController {
         ]
       });
 
-      console.log('=== RESULTADOS DE LA BÚSQUEDA ===');
-      console.log('Total de rutas encontradas:', rutas.length);
+      log.debug('=== RESULTADOS DE LA BÚSQUEDA ===');
+      log.debug('Total de rutas encontradas:', rutas.length);
       rutas.forEach((ruta, index) => {
-        console.log(`Ruta ${index + 1}:`, {
+        log.debug(`Ruta ${index + 1}:`, {
           id: ruta.id,
           fkid_repartidor: ruta.fkid_repartidor,
           fecha_ruta: ruta.fecha_ruta,
@@ -783,11 +786,11 @@ class RepartidorController {
       // Ordenar por orden de entrega
       pedidos.sort((a, b) => a.orden_entrega - b.orden_entrega);
 
-      console.log('=== PEDIDOS FINALES ===');
-      console.log('Total de pedidos extraídos:', pedidos.length);
+      log.debug('=== PEDIDOS FINALES ===');
+      log.debug('Total de pedidos extraídos:', pedidos.length);
       if (pedidos.length > 0) {
-        console.log('IDs de pedidos:', pedidos.map(p => p.id));
-        console.log('Fechas de pedidos:', pedidos.map(p => ({
+        log.debug('IDs de pedidos:', pedidos.map(p => p.id));
+        log.debug('Fechas de pedidos:', pedidos.map(p => ({
           id: p.id,
           numero_pedido: p.numero_pedido,
           fecha_pedido: p.fecha_pedido,
@@ -795,9 +798,9 @@ class RepartidorController {
           estado_entrega: p.estado_entrega
         })));
       } else {
-        console.log('No se encontraron pedidos para este repartidor en el día de hoy');
+        log.debug('No se encontraron pedidos para este repartidor en el día de hoy');
       }
-      console.log('=== FIN getPedidosDelDia ===');
+      log.debug('=== FIN getPedidosDelDia ===');
 
       res.json({
         success: true,

@@ -1,5 +1,8 @@
 const { City, Inventario, Paquete, ProductoPaquete, Proveedor } = require('../../models');
 const { Op } = require('sequelize');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Catalogo');
 
 const META_CSV_HEADER = 'id,title,description,availability,condition,price,link,image_link,brand,google_product_category,fb_product_category,quantity_to_sell_on_facebook,sale_price,sale_price_effective_date,item_group_id,gender,color,size,age_group,material,pattern,shipping,shipping_weight,video[0].url,video[0].tag[0],gtin,product_tags[0],product_tags[1],style[0]';
 
@@ -77,6 +80,7 @@ async function getCatalogByCitySlug(req, res, next) {
   try {
     const { ciudadSlug } = req.params;
     if (!ciudadSlug) {
+      log.warn('getCatalogByCitySlug rechazado', { status: 400, reason: 'Missing city slug' });
       return res.status(400).send('Missing city slug');
     }
 
@@ -131,6 +135,7 @@ async function getCatalogByCitySlug(req, res, next) {
     res.setHeader('Content-Disposition', `attachment; filename="catalogo.csv"`);
     res.send('\uFEFF' + csv);
   } catch (error) {
+    log.error('getCatalogByCitySlug falló', { message: error.message });
     next(error);
   }
 }

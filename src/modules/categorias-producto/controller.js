@@ -1,6 +1,10 @@
 const { CategoriaProducto } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('CategoriasProducto');
+
 class CategoriaProductoController {
   // Obtener todas las categorías de producto
   async getAllCategorias(req, res, next) {
@@ -51,6 +55,7 @@ class CategoriaProductoController {
         }
       });
     } catch (error) {
+      log.error('getAllCategorias falló', { message: error.message });
       next(error);
     }
   }
@@ -74,6 +79,7 @@ class CategoriaProductoController {
         data: { categoria }
       });
     } catch (error) {
+      log.error('getCategoriaById falló', { message: error.message });
       next(error);
     }
   }
@@ -90,6 +96,7 @@ class CategoriaProductoController {
       const existingCategoria = await CategoriaProducto.findByName(nombre);
 
       if (existingCategoria) {
+        log.warn('createCategoria rechazado', { status: 400, reason: "Ya existe una categoría con ese nombre" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe una categoría con ese nombre'
@@ -101,12 +108,14 @@ class CategoriaProductoController {
         descripcion
       });
 
+      log.info('createCategoria', { id: categoria.id });
       res.status(201).json({
         success: true,
         message: 'Categoría creada exitosamente',
         data: { categoria }
       });
     } catch (error) {
+      log.error('createCategoria falló', { message: error.message });
       next(error);
     }
   }
@@ -120,6 +129,7 @@ class CategoriaProductoController {
       const categoria = await CategoriaProducto.findByPk(id);
       
       if (!categoria) {
+        log.warn('updateCategoria rechazado', { status: 404, reason: "Categoría no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Categoría no encontrada'
@@ -138,6 +148,7 @@ class CategoriaProductoController {
         });
         
         if (existingCategoria) {
+          log.warn('updateCategoria rechazado', { status: 400, reason: "Ya existe una categoría con ese nombre" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe una categoría con ese nombre'
@@ -147,12 +158,14 @@ class CategoriaProductoController {
 
       await categoria.update(updateData);
 
+      log.info('updateCategoria', { id: id });
       res.json({
         success: true,
         message: 'Categoría actualizada exitosamente',
         data: { categoria }
       });
     } catch (error) {
+      log.error('updateCategoria falló', { message: error.message });
       next(error);
     }
   }
@@ -165,6 +178,7 @@ class CategoriaProductoController {
       const categoria = await CategoriaProducto.findByPk(id);
       
       if (!categoria) {
+        log.warn('deleteCategoria rechazado', { status: 404, reason: "Categoría no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Categoría no encontrada'
@@ -173,11 +187,13 @@ class CategoriaProductoController {
 
       await categoria.softDelete();
 
+      log.info('deleteCategoria', { id: id });
       res.json({
         success: true,
         message: 'Categoría eliminada exitosamente'
       });
     } catch (error) {
+      log.error('deleteCategoria falló', { message: error.message });
       next(error);
     }
   }
@@ -190,6 +206,7 @@ class CategoriaProductoController {
       const categoria = await CategoriaProducto.findByPk(id);
       
       if (!categoria) {
+        log.warn('restoreCategoria rechazado', { status: 404, reason: "Categoría no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Categoría no encontrada'
@@ -198,12 +215,14 @@ class CategoriaProductoController {
 
       await categoria.restore();
 
+      log.info('restoreCategoria', { id: id });
       res.json({
         success: true,
         message: 'Categoría restaurada exitosamente',
         data: { categoria }
       });
     } catch (error) {
+      log.error('restoreCategoria falló', { message: error.message });
       next(error);
     }
   }
@@ -216,6 +235,7 @@ class CategoriaProductoController {
       const categoria = await CategoriaProducto.findByPk(id);
       
       if (!categoria) {
+        log.warn('activateCategoria rechazado', { status: 404, reason: "Categoría no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Categoría no encontrada'
@@ -224,12 +244,14 @@ class CategoriaProductoController {
 
       await categoria.activate();
 
+      log.info('activateCategoria', { id: id });
       res.json({
         success: true,
         message: 'Categoría activada exitosamente',
         data: { categoria }
       });
     } catch (error) {
+      log.error('activateCategoria falló', { message: error.message });
       next(error);
     }
   }
@@ -242,6 +264,7 @@ class CategoriaProductoController {
       const categoria = await CategoriaProducto.findByPk(id);
       
       if (!categoria) {
+        log.warn('deactivateCategoria rechazado', { status: 404, reason: "Categoría no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Categoría no encontrada'
@@ -250,12 +273,14 @@ class CategoriaProductoController {
 
       await categoria.deactivate();
 
+      log.info('deactivateCategoria', { id: id });
       res.json({
         success: true,
         message: 'Categoría desactivada exitosamente',
         data: { categoria }
       });
     } catch (error) {
+      log.error('deactivateCategoria falló', { message: error.message });
       next(error);
     }
   }
@@ -273,6 +298,7 @@ class CategoriaProductoController {
         }
       });
     } catch (error) {
+      log.error('getActiveCategorias falló', { message: error.message });
       next(error);
     }
   }
@@ -283,6 +309,7 @@ class CategoriaProductoController {
       const { search } = req.query;
 
       if (!search) {
+        log.warn('searchCategorias rechazado', { status: 400, reason: "Se requiere el parámetro de búsqueda" });
         return res.status(400).json({
           success: false,
           message: 'Se requiere el parámetro de búsqueda'
@@ -300,6 +327,7 @@ class CategoriaProductoController {
         }
       });
     } catch (error) {
+      log.error('searchCategorias falló', { message: error.message });
       next(error);
     }
   }
@@ -344,6 +372,7 @@ class CategoriaProductoController {
         }
       });
     } catch (error) {
+      log.error('getCategoriaStats falló', { message: error.message });
       next(error);
     }
   }

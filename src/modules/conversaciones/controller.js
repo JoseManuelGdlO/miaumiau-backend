@@ -75,6 +75,10 @@ const appendWhereCondition = (whereClause, condition) => {
   return { [Op.and]: [whereClause, condition] };
 };
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Conversaciones');
+
 class ConversacionController {
   // Obtener todas las conversaciones
   async getAllConversaciones(req, res, next) {
@@ -342,6 +346,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('getAllConversaciones falló', { message: error.message });
       next(error);
     }
   }
@@ -400,6 +405,7 @@ class ConversacionController {
         data: { conversacion }
       });
     } catch (error) {
+      log.error('getConversacionById falló', { message: error.message });
       next(error);
     }
   }
@@ -422,6 +428,7 @@ class ConversacionController {
       if (clienteIdNormalizado) {
         cliente = await Cliente.findByPk(clienteIdNormalizado);
         if (!cliente) {
+          log.warn('createConversacion rechazado', { status: 400, reason: "El cliente especificado no existe" });
           return res.status(400).json({
             success: false,
             message: 'El cliente especificado no existe'
@@ -474,12 +481,14 @@ class ConversacionController {
         ]
       });
 
+      log.info('createConversacion', { id: conversacion.id });
       res.status(201).json({
         success: true,
         message: 'Conversación creada exitosamente',
         data: { conversacion: conversacionCompleta }
       });
     } catch (error) {
+      log.error('createConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -499,6 +508,7 @@ class ConversacionController {
 
       // Validar que from esté presente
       if (!from) {
+        log.warn('findOrCreateConversacion rechazado', { status: 400, reason: "El campo " });
         return res.status(400).json({
           success: false,
           message: 'El campo "from" es requerido'
@@ -510,6 +520,7 @@ class ConversacionController {
       if (clienteIdNormalizado) {
         cliente = await Cliente.findByPk(clienteIdNormalizado);
         if (!cliente) {
+          log.warn('findOrCreateConversacion rechazado', { status: 400, reason: "El cliente especificado no existe" });
           return res.status(400).json({
             success: false,
             message: 'El cliente especificado no existe'
@@ -656,6 +667,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('findOrCreateConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -669,6 +681,7 @@ class ConversacionController {
       const conversacion = await Conversacion.findByPk(id);
       
       if (!conversacion) {
+        log.warn('updateConversacion rechazado', { status: 404, reason: "Conversación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Conversación no encontrada'
@@ -679,6 +692,7 @@ class ConversacionController {
       if (updateData.id_cliente) {
         const cliente = await Cliente.findByPk(updateData.id_cliente);
         if (!cliente) {
+          log.warn('updateConversacion rechazado', { status: 400, reason: "El cliente especificado no existe" });
           return res.status(400).json({
             success: false,
             message: 'El cliente especificado no existe'
@@ -718,12 +732,14 @@ class ConversacionController {
         ]
       });
 
+      log.info('updateConversacion', { id: id });
       res.json({
         success: true,
         message: 'Conversación actualizada exitosamente',
         data: { conversacion: conversacionActualizada }
       });
     } catch (error) {
+      log.error('updateConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -736,6 +752,7 @@ class ConversacionController {
       const conversacion = await Conversacion.findByPk(id);
       
       if (!conversacion) {
+        log.warn('deleteConversacion rechazado', { status: 404, reason: "Conversación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Conversación no encontrada'
@@ -756,11 +773,13 @@ class ConversacionController {
         'Conversación eliminada (baja lógica)'
       );
 
+      log.info('deleteConversacion', { id: id });
       res.json({
         success: true,
         message: 'Conversación eliminada exitosamente'
       });
     } catch (error) {
+      log.error('deleteConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -773,6 +792,7 @@ class ConversacionController {
       const conversacion = await Conversacion.findByPk(id);
       
       if (!conversacion) {
+        log.warn('restoreConversacion rechazado', { status: 404, reason: "Conversación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Conversación no encontrada'
@@ -793,12 +813,14 @@ class ConversacionController {
         'Conversación restaurada'
       );
 
+      log.info('restoreConversacion', { id: id });
       res.json({
         success: true,
         message: 'Conversación restaurada exitosamente',
         data: { conversacion }
       });
     } catch (error) {
+      log.error('restoreConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -812,6 +834,7 @@ class ConversacionController {
       const conversacion = await Conversacion.findByPk(id);
       
       if (!conversacion) {
+        log.warn('changeStatus rechazado', { status: 404, reason: "Conversación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Conversación no encontrada'
@@ -849,12 +872,14 @@ class ConversacionController {
         `Status cambiado de ${statusAnterior} a ${status}`
       );
 
+      log.info('changeStatus', { id: id });
       res.json({
         success: true,
         message: `Status cambiado a ${status} exitosamente`,
         data: { conversacion }
       });
     } catch (error) {
+      log.error('changeStatus falló', { message: error.message });
       next(error);
     }
   }
@@ -868,6 +893,7 @@ class ConversacionController {
       const conversacion = await Conversacion.findByPk(id);
       
       if (!conversacion) {
+        log.warn('assignToClient rechazado', { status: 404, reason: "Conversación no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Conversación no encontrada'
@@ -877,6 +903,7 @@ class ConversacionController {
       // Verificar que el cliente existe
       const cliente = await Cliente.findByPk(id_cliente);
       if (!cliente) {
+        log.warn('assignToClient rechazado', { status: 400, reason: "El cliente especificado no existe" });
         return res.status(400).json({
           success: false,
           message: 'El cliente especificado no existe'
@@ -899,12 +926,14 @@ class ConversacionController {
         `Conversación asignada al cliente ${cliente.nombre_completo}`
       );
 
+      log.info('assignToClient', { id: id });
       res.json({
         success: true,
         message: 'Conversación asignada exitosamente',
         data: { conversacion }
       });
     } catch (error) {
+      log.error('assignToClient falló', { message: error.message });
       next(error);
     }
   }
@@ -925,6 +954,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('getConversacionesByStatus falló', { message: error.message });
       next(error);
     }
   }
@@ -945,6 +975,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('getConversacionesByClient falló', { message: error.message });
       next(error);
     }
   }
@@ -962,6 +993,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('getActiveConversaciones falló', { message: error.message });
       next(error);
     }
   }
@@ -972,6 +1004,7 @@ class ConversacionController {
       const { search } = req.query;
 
       if (!search) {
+        log.warn('searchConversaciones rechazado', { status: 400, reason: "Se requiere el parámetro de búsqueda" });
         return res.status(400).json({
           success: false,
           message: 'Se requiere el parámetro de búsqueda'
@@ -989,6 +1022,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('searchConversaciones falló', { message: error.message });
       next(error);
     }
   }
@@ -1063,6 +1097,7 @@ class ConversacionController {
         }
       });
     } catch (error) {
+      log.error('getConversacionStats falló', { message: error.message });
       next(error);
     }
   }

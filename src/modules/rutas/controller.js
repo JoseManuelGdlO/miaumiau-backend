@@ -3,6 +3,9 @@ const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Rutas');
 
 class RutaController {
   // Crear nueva ruta
@@ -90,7 +93,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al crear ruta:', error);
+      log.error('Error al crear ruta:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -189,7 +192,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al obtener rutas:', error);
+      log.error('Error al obtener rutas:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -204,7 +207,7 @@ class RutaController {
       const { fecha } = req.params;
       const { fkid_ciudad, estado } = req.query;
 
-      console.log(`[getRutasByDate] Obteniendo rutas para fecha: ${fecha}, ciudad: ${fkid_ciudad}, estado: ${estado}`);
+      log.debug(`[getRutasByDate] Obteniendo rutas para fecha: ${fecha}, ciudad: ${fkid_ciudad}, estado: ${estado}`);
 
       const where = {
         fecha_ruta: fecha,
@@ -269,12 +272,12 @@ class RutaController {
         order: [['created_at', 'ASC']]
       });
 
-      console.log(`[getRutasByDate] Encontradas ${rutas.length} rutas`);
+      log.debug(`[getRutasByDate] Encontradas ${rutas.length} rutas`);
 
       // Cargar productos y paquetes para cada pedido manualmente
       const rutasConDetalles = [];
       for (const ruta of rutas) {
-        console.log(`[getRutasByDate] Procesando ruta ${ruta.id} con ${ruta.pedidos.length} pedidos`);
+        log.debug(`[getRutasByDate] Procesando ruta ${ruta.id} con ${ruta.pedidos.length} pedidos`);
         const rutaData = ruta.toJSON();
         const pedidosConDetalles = [];
         
@@ -311,7 +314,7 @@ class RutaController {
             rutaPedidoData.pedido.paquetes = paquetes.map(p => p.toJSON());
             
             // Log para depuración
-            console.log(`Pedido ${rutaPedidoData.pedido.id} (${rutaPedidoData.pedido.numero_pedido}): ${productos.length} productos, ${paquetes.length} paquetes`);
+            log.debug(`Pedido ${rutaPedidoData.pedido.id} (${rutaPedidoData.pedido.numero_pedido}): ${productos.length} productos, ${paquetes.length} paquetes`);
           }
           
           pedidosConDetalles.push(rutaPedidoData);
@@ -335,7 +338,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al obtener rutas por fecha:', error);
+      log.error('Error al obtener rutas por fecha:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -489,7 +492,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al obtener pedidos sin asignar:', error);
+      log.error('Error al obtener pedidos sin asignar:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -558,7 +561,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al obtener ruta:', error);
+      log.error('Error al obtener ruta:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -648,7 +651,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al actualizar ruta:', error);
+      log.error('Error al actualizar ruta:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -729,16 +732,16 @@ class RutaController {
       }
 
       // Crear las asignaciones de pedidos
-      console.log(`[RUTAS] Asignando ${pedidos.length} pedidos a la ruta ${id}`);
-      console.log(`[RUTAS] Datos recibidos:`, JSON.stringify(pedidos, null, 2));
-      console.log(`[RUTAS] ID de ruta (tipo): ${typeof id}, valor: ${id}`);
+      log.debug(`[RUTAS] Asignando ${pedidos.length} pedidos a la ruta ${id}`);
+      log.debug(`[RUTAS] Datos recibidos:`, JSON.stringify(pedidos, null, 2));
+      log.debug(`[RUTAS] ID de ruta (tipo): ${typeof id}, valor: ${id}`);
       
       const rutaPedidos = [];
       const errores = [];
       
       for (const pedido of pedidos) {
         try {
-          console.log(`[RUTAS] Intentando crear RutaPedido para pedido ${pedido.fkid_pedido}...`);
+          log.debug(`[RUTAS] Intentando crear RutaPedido para pedido ${pedido.fkid_pedido}...`);
           const rutaPedido = await RutaPedido.create({
             fkid_ruta: parseInt(id),
             fkid_pedido: parseInt(pedido.fkid_pedido),
@@ -749,17 +752,17 @@ class RutaController {
             estado_entrega: 'pendiente',
             notas_entrega: pedido.notas_entrega || null
           });
-          console.log(`[RUTAS] ✅ Pedido ${pedido.fkid_pedido} asignado exitosamente (orden ${pedido.orden_entrega}), ID: ${rutaPedido.id}`);
+          log.debug(`[RUTAS] ✅ Pedido ${pedido.fkid_pedido} asignado exitosamente (orden ${pedido.orden_entrega}), ID: ${rutaPedido.id}`);
           rutaPedidos.push(rutaPedido);
           try {
             const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido);
             await ensureDeliveryCode(pedidoAsignado);
           } catch (codeError) {
-            console.error(`[RUTAS] Error generando código de entrega para pedido ${pedido.fkid_pedido}:`, codeError);
+            log.error(`[RUTAS] Error generando código de entrega para pedido ${pedido.fkid_pedido}:`, codeError);
           }
         } catch (error) {
-          console.error(`[RUTAS] ❌ Error asignando pedido ${pedido.fkid_pedido}:`, error);
-          console.error(`[RUTAS] Error details:`, {
+          log.error(`[RUTAS] ❌ Error asignando pedido ${pedido.fkid_pedido}:`, error);
+          log.error(`[RUTAS] Error details:`, {
             message: error.message,
             name: error.name,
             stack: error.stack,
@@ -772,10 +775,10 @@ class RutaController {
         }
       }
       
-      console.log(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
+      log.debug(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
       
       if (errores.length > 0) {
-        console.error(`[RUTAS] Errores al asignar pedidos:`, errores);
+        log.error(`[RUTAS] Errores al asignar pedidos:`, errores);
         return res.status(400).json({
           success: false,
           message: `Error al asignar algunos pedidos. ${rutaPedidos.length} asignados, ${errores.length} fallaron`,
@@ -800,7 +803,7 @@ class RutaController {
       // Recargar la ruta para obtener el valor actualizado
       await ruta.reload();
       
-      console.log(`[RUTAS] Total de pedidos en ruta actualizado a: ${ruta.total_pedidos}`);
+      log.debug(`[RUTAS] Total de pedidos en ruta actualizado a: ${ruta.total_pedidos}`);
 
       // Obtener los pedidos asignados con sus detalles
       const pedidosAsignadosCompletos = await RutaPedido.findAll({
@@ -823,7 +826,7 @@ class RutaController {
         order: [['orden_entrega', 'ASC']]
       });
       
-      console.log(`[RUTAS] Pedidos encontrados en BD después de asignar: ${pedidosAsignadosCompletos.length}`);
+      log.debug(`[RUTAS] Pedidos encontrados en BD después de asignar: ${pedidosAsignadosCompletos.length}`);
 
       res.json({
         success: true,
@@ -837,7 +840,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al asignar pedidos:', error);
+      log.error('Error al asignar pedidos:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -874,7 +877,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al cambiar estado de ruta:', error);
+      log.error('Error al cambiar estado de ruta:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -904,7 +907,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al eliminar ruta:', error);
+      log.error('Error al eliminar ruta:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -940,7 +943,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al restaurar ruta:', error);
+      log.error('Error al restaurar ruta:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -1006,7 +1009,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al obtener estadísticas:', error);
+      log.error('Error al obtener estadísticas:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -1104,7 +1107,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al desasignar pedido:', error);
+      log.error('Error al desasignar pedido:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',
@@ -1195,7 +1198,7 @@ class RutaController {
       });
 
     } catch (error) {
-      console.error('Error al desasignar repartidor:', error);
+      log.error('Error al desasignar repartidor:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',

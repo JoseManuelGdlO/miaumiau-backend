@@ -1,6 +1,10 @@
 const { Peso } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Pesos');
+
 class PesoController {
   // Obtener todos los pesos
   async getAllPesos(req, res, next) {
@@ -56,6 +60,7 @@ class PesoController {
         }
       });
     } catch (error) {
+      log.error('getAllPesos falló', { message: error.message });
       next(error);
     }
   }
@@ -79,6 +84,7 @@ class PesoController {
         data: { peso }
       });
     } catch (error) {
+      log.error('getPesoById falló', { message: error.message });
       next(error);
     }
   }
@@ -101,6 +107,7 @@ class PesoController {
       });
 
       if (existingPeso) {
+        log.warn('createPeso rechazado', { status: 400, reason: "Ya existe un peso con esa cantidad y unidad de medida" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un peso con esa cantidad y unidad de medida'
@@ -112,12 +119,14 @@ class PesoController {
         unidad_medida
       });
 
+      log.info('createPeso', { id: peso.id });
       res.status(201).json({
         success: true,
         message: 'Peso creado exitosamente',
         data: { peso }
       });
     } catch (error) {
+      log.error('createPeso falló', { message: error.message });
       next(error);
     }
   }
@@ -131,6 +140,7 @@ class PesoController {
       const peso = await Peso.findByPk(id);
       
       if (!peso) {
+        log.warn('updatePeso rechazado', { status: 404, reason: "Peso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Peso no encontrado'
@@ -149,6 +159,7 @@ class PesoController {
         });
         
         if (existingPeso) {
+          log.warn('updatePeso rechazado', { status: 400, reason: "Ya existe un peso con esa cantidad y unidad de medida" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe un peso con esa cantidad y unidad de medida'
@@ -163,12 +174,14 @@ class PesoController {
 
       await peso.update(updateData);
 
+      log.info('updatePeso', { id: id });
       res.json({
         success: true,
         message: 'Peso actualizado exitosamente',
         data: { peso }
       });
     } catch (error) {
+      log.error('updatePeso falló', { message: error.message });
       next(error);
     }
   }
@@ -181,6 +194,7 @@ class PesoController {
       const peso = await Peso.findByPk(id);
       
       if (!peso) {
+        log.warn('deletePeso rechazado', { status: 404, reason: "Peso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Peso no encontrado'
@@ -189,11 +203,13 @@ class PesoController {
 
       await peso.softDelete();
 
+      log.info('deletePeso', { id: id });
       res.json({
         success: true,
         message: 'Peso eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deletePeso falló', { message: error.message });
       next(error);
     }
   }
@@ -206,6 +222,7 @@ class PesoController {
       const peso = await Peso.findByPk(id);
       
       if (!peso) {
+        log.warn('restorePeso rechazado', { status: 404, reason: "Peso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Peso no encontrado'
@@ -214,12 +231,14 @@ class PesoController {
 
       await peso.restore();
 
+      log.info('restorePeso', { id: id });
       res.json({
         success: true,
         message: 'Peso restaurado exitosamente',
         data: { peso }
       });
     } catch (error) {
+      log.error('restorePeso falló', { message: error.message });
       next(error);
     }
   }
@@ -232,6 +251,7 @@ class PesoController {
       const peso = await Peso.findByPk(id);
       
       if (!peso) {
+        log.warn('activatePeso rechazado', { status: 404, reason: "Peso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Peso no encontrado'
@@ -240,12 +260,14 @@ class PesoController {
 
       await peso.activate();
 
+      log.info('activatePeso', { id: id });
       res.json({
         success: true,
         message: 'Peso activado exitosamente',
         data: { peso }
       });
     } catch (error) {
+      log.error('activatePeso falló', { message: error.message });
       next(error);
     }
   }
@@ -258,6 +280,7 @@ class PesoController {
       const peso = await Peso.findByPk(id);
       
       if (!peso) {
+        log.warn('deactivatePeso rechazado', { status: 404, reason: "Peso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Peso no encontrado'
@@ -266,12 +289,14 @@ class PesoController {
 
       await peso.deactivate();
 
+      log.info('deactivatePeso', { id: id });
       res.json({
         success: true,
         message: 'Peso desactivado exitosamente',
         data: { peso }
       });
     } catch (error) {
+      log.error('deactivatePeso falló', { message: error.message });
       next(error);
     }
   }
@@ -292,6 +317,7 @@ class PesoController {
         }
       });
     } catch (error) {
+      log.error('getPesosByUnidad falló', { message: error.message });
       next(error);
     }
   }
@@ -309,6 +335,7 @@ class PesoController {
         }
       });
     } catch (error) {
+      log.error('getActivePesos falló', { message: error.message });
       next(error);
     }
   }
@@ -323,6 +350,7 @@ class PesoController {
         data: { unidades }
       });
     } catch (error) {
+      log.error('getUnidadesDisponibles falló', { message: error.message });
       next(error);
     }
   }
@@ -333,6 +361,7 @@ class PesoController {
       const { min, max } = req.query;
 
       if (!min || !max) {
+        log.warn('getPesosByRange rechazado', { status: 400, reason: "Se requieren los parámetros min y max" });
         return res.status(400).json({
           success: false,
           message: 'Se requieren los parámetros min y max'
@@ -350,6 +379,7 @@ class PesoController {
         }
       });
     } catch (error) {
+      log.error('getPesosByRange falló', { message: error.message });
       next(error);
     }
   }
@@ -397,6 +427,7 @@ class PesoController {
         }
       });
     } catch (error) {
+      log.error('getPesoStats falló', { message: error.message });
       next(error);
     }
   }

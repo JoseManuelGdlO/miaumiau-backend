@@ -1,6 +1,10 @@
 const { User, Role, Permission } = require('../../models');
 const { generateToken, generateRefreshToken, generatePermanentToken } = require('../../utils/jwt');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Auth');
+
 class AuthController {
   // Registro de usuario
   async register(req, res, next) {
@@ -13,6 +17,7 @@ class AuthController {
       });
 
       if (existingUser) {
+        log.warn('register rechazado', { status: 400, reason: "El correo electrónico ya está registrado" });
         return res.status(400).json({
           success: false,
           message: 'El correo electrónico ya está registrado'
@@ -38,6 +43,7 @@ class AuthController {
       const token = generateToken({ userId: user.id, email: user.correo_electronico });
       const refreshToken = generateRefreshToken({ userId: user.id });
 
+      log.info('register', { id: user.id });
       res.status(201).json({
         success: true,
         message: 'Usuario registrado exitosamente',
@@ -48,6 +54,7 @@ class AuthController {
         }
       });
     } catch (error) {
+      log.error('register falló', { message: error.message });
       next(error);
     }
   }
@@ -78,6 +85,7 @@ class AuthController {
       });
 
       if (!user) {
+        log.warn('login rechazado', { status: 401, reason: "Credenciales inválidas" });
         return res.status(401).json({
           success: false,
           message: 'Credenciales inválidas',
@@ -87,6 +95,7 @@ class AuthController {
 
       // Verificar si el usuario está activo
       if (!user.isActive) {
+        log.warn('login rechazado', { status: 401, reason: "Cuenta desactivada. Contacta al administrador." });
         return res.status(401).json({
           success: false,
           message: 'Cuenta desactivada. Contacta al administrador.',
@@ -98,6 +107,7 @@ class AuthController {
       const isPasswordValid = user.contrasena === contrasena;
 
       if (!isPasswordValid) {
+        log.warn('login rechazado', { status: 401, reason: "Credenciales inválidas" });
         return res.status(401).json({
           success: false,
           message: 'Credenciales inválidas',
@@ -128,6 +138,7 @@ class AuthController {
       });
       const refreshToken = generateRefreshToken({ userId: user.id });
 
+      log.info('login', { id: user.id });
       res.json({
         success: true,
         message: 'Login exitoso',
@@ -150,6 +161,7 @@ class AuthController {
         }
       });
     } catch (error) {
+      log.error('login falló', { message: error.message });
       next(error);
     }
   }
@@ -164,6 +176,7 @@ class AuthController {
         }
       });
     } catch (error) {
+      log.error('getProfile falló', { message: error.message });
       next(error);
     }
   }
@@ -178,6 +191,7 @@ class AuthController {
       if (correo_electronico && correo_electronico !== req.user.correo_electronico) {
         const existingUser = await User.findByEmail(correo_electronico);
         if (existingUser) {
+          log.warn('updateProfile rechazado', { status: 400, reason: "El correo electrónico ya está en uso" });
           return res.status(400).json({
             success: false,
             message: 'El correo electrónico ya está en uso'
@@ -201,6 +215,7 @@ class AuthController {
       
       await updatedUser.update(updateData);
 
+      log.info('updateProfile', { id: req.user.id });
       res.json({
         success: true,
         message: 'Perfil actualizado exitosamente',
@@ -209,6 +224,7 @@ class AuthController {
         }
       });
     } catch (error) {
+      log.error('updateProfile falló', { message: error.message });
       next(error);
     }
   }
@@ -226,6 +242,7 @@ class AuthController {
       const isCurrentPasswordValid = await user.comparePassword(currentPassword);
 
       if (!isCurrentPasswordValid) {
+        log.warn('changePassword rechazado', { status: 400, reason: "La contraseña actual es incorrecta" });
         return res.status(400).json({
           success: false,
           message: 'La contraseña actual es incorrecta'
@@ -235,11 +252,13 @@ class AuthController {
       // Actualizar contraseña
       await user.update({ contrasena: newPassword });
 
+      log.info('changePassword', { id: req.user.id });
       res.json({
         success: true,
         message: 'Contraseña actualizada exitosamente'
       });
     } catch (error) {
+      log.error('changePassword falló', { message: error.message });
       next(error);
     }
   }
@@ -247,11 +266,13 @@ class AuthController {
   // Logout (en el cliente se debe eliminar el token)
   async logout(req, res, next) {
     try {
+      log.info('logout', { id: req.user && req.user.id });
       res.json({
         success: true,
         message: 'Logout exitoso'
       });
     } catch (error) {
+      log.error('logout falló', { message: error.message });
       next(error);
     }
   }
@@ -262,6 +283,7 @@ class AuthController {
       const { refreshToken } = req.body;
 
       if (!refreshToken) {
+        log.warn('refreshToken rechazado', { status: 401, reason: "Refresh token requerido" });
         return res.status(401).json({
           success: false,
           message: 'Refresh token requerido'
@@ -274,6 +296,7 @@ class AuthController {
       // Verificar que el usuario aún existe
       const user = await User.findByPk(decoded.userId);
       if (!user || !user.isActive) {
+        log.warn('refreshToken rechazado', { status: 401, reason: "Usuario no válido" });
         return res.status(401).json({
           success: false,
           message: 'Usuario no válido'
@@ -283,6 +306,7 @@ class AuthController {
       // Generar nuevo token
       const newToken = generateToken({ userId: user.id, email: user.email });
 
+      log.info('refreshToken', { id: user.id });
       res.json({
         success: true,
         data: {
@@ -290,6 +314,7 @@ class AuthController {
         }
       });
     } catch (error) {
+      log.error('refreshToken falló', { message: error.message });
       next(error);
     }
   }
@@ -300,6 +325,7 @@ class AuthController {
       const { userId } = req.body;
 
       if (!userId) {
+        log.warn('generatePermanentToken rechazado', { status: 400, reason: "ID de usuario requerido" });
         return res.status(400).json({
           success: false,
           message: 'ID de usuario requerido'
@@ -326,6 +352,7 @@ class AuthController {
       });
 
       if (!user) {
+        log.warn('generatePermanentToken rechazado', { status: 404, reason: "Usuario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Usuario no encontrado'
@@ -333,6 +360,7 @@ class AuthController {
       }
 
       if (!user.isActive) {
+        log.warn('generatePermanentToken rechazado', { status: 400, reason: "Usuario inactivo" });
         return res.status(400).json({
           success: false,
           message: 'Usuario inactivo'
@@ -358,6 +386,7 @@ class AuthController {
         permissions: userPermissions
       });
 
+      log.info('generatePermanentToken', { id: user.id });
       res.json({
         success: true,
         message: 'Token permanente generado exitosamente',
@@ -378,6 +407,7 @@ class AuthController {
         }
       });
     } catch (error) {
+      log.error('generatePermanentToken falló', { message: error.message });
       next(error);
     }
   }

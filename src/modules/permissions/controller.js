@@ -1,6 +1,10 @@
 const { Permission } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Permissions');
+
 class PermissionController {
   // Obtener todos los permisos
   async getAllPermissions(req, res, next) {
@@ -39,6 +43,7 @@ class PermissionController {
         }
       });
     } catch (error) {
+      log.error('getAllPermissions falló', { message: error.message });
       next(error);
     }
   }
@@ -62,6 +67,7 @@ class PermissionController {
         data: { permission }
       });
     } catch (error) {
+      log.error('getPermissionById falló', { message: error.message });
       next(error);
     }
   }
@@ -77,6 +83,7 @@ class PermissionController {
       });
 
       if (existingPermission) {
+        log.warn('createPermission rechazado', { status: 400, reason: "Ya existe un permiso con ese nombre" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un permiso con ese nombre'
@@ -90,12 +97,14 @@ class PermissionController {
         tipo
       });
 
+      log.info('createPermission', { id: permission.id });
       res.status(201).json({
         success: true,
         message: 'Permiso creado exitosamente',
         data: { permission }
       });
     } catch (error) {
+      log.error('createPermission falló', { message: error.message });
       next(error);
     }
   }
@@ -109,6 +118,7 @@ class PermissionController {
       const permission = await Permission.findByPk(id);
       
       if (!permission) {
+        log.warn('updatePermission rechazado', { status: 404, reason: "Permiso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Permiso no encontrado'
@@ -125,6 +135,7 @@ class PermissionController {
         });
         
         if (existingPermission) {
+          log.warn('updatePermission rechazado', { status: 400, reason: "Ya existe un permiso con ese nombre" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe un permiso con ese nombre'
@@ -139,12 +150,14 @@ class PermissionController {
         tipo: tipo || permission.tipo
       });
 
+      log.info('updatePermission', { id: id });
       res.json({
         success: true,
         message: 'Permiso actualizado exitosamente',
         data: { permission }
       });
     } catch (error) {
+      log.error('updatePermission falló', { message: error.message });
       next(error);
     }
   }
@@ -157,6 +170,7 @@ class PermissionController {
       const permission = await Permission.findByPk(id);
       
       if (!permission) {
+        log.warn('deletePermission rechazado', { status: 404, reason: "Permiso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Permiso no encontrado'
@@ -165,11 +179,13 @@ class PermissionController {
 
       await permission.softDelete();
 
+      log.info('deletePermission', { id: id });
       res.json({
         success: true,
         message: 'Permiso eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deletePermission falló', { message: error.message });
       next(error);
     }
   }
@@ -182,6 +198,7 @@ class PermissionController {
       const permission = await Permission.findByPk(id);
       
       if (!permission) {
+        log.warn('restorePermission rechazado', { status: 404, reason: "Permiso no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Permiso no encontrado'
@@ -190,12 +207,14 @@ class PermissionController {
 
       await permission.restore();
 
+      log.info('restorePermission', { id: id });
       res.json({
         success: true,
         message: 'Permiso restaurado exitosamente',
         data: { permission }
       });
     } catch (error) {
+      log.error('restorePermission falló', { message: error.message });
       next(error);
     }
   }
@@ -217,6 +236,7 @@ class PermissionController {
         data: { categories: categoryList }
       });
     } catch (error) {
+      log.error('getCategories falló', { message: error.message });
       next(error);
     }
   }
@@ -231,6 +251,7 @@ class PermissionController {
         data: { types }
       });
     } catch (error) {
+      log.error('getTypes falló', { message: error.message });
       next(error);
     }
   }

@@ -1,6 +1,9 @@
 const { Notificacion, Sequelize, Conversacion, Pedido, Cliente, Inventario, City, ProductoPedido } = require('../../models');
 const { Op } = require('sequelize');
 const { sendPushForNotificacion } = require('../../services/pushService');
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Notificaciones');
 
 class NotificacionController {
   // Obtener todas las notificaciones
@@ -121,7 +124,7 @@ class NotificacionController {
       try {
         await sendPushForNotificacion(notificacion);
       } catch (pushError) {
-        console.warn('[push] create-notificacion', pushError.message);
+        log.warn('create-notificacion', { message: pushError.message });
       }
 
       res.status(201).json({

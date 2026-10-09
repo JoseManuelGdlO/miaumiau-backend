@@ -1,6 +1,10 @@
 const { ConversacionLog, Conversacion } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const logger = new Logger('ConversacionesLogs');
+
 class ConversacionLogController {
   // Obtener todos los logs
   async getAllLogs(req, res, next) {
@@ -84,6 +88,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getAllLogs falló', { message: error.message });
       next(error);
     }
   }
@@ -116,6 +121,7 @@ class ConversacionLogController {
         data: { log }
       });
     } catch (error) {
+      logger.error('getLogById falló', { message: error.message });
       next(error);
     }
   }
@@ -134,6 +140,7 @@ class ConversacionLogController {
       // Verificar que la conversación existe
       const conversacion = await Conversacion.findByPk(fkid_conversacion);
       if (!conversacion) {
+        logger.warn('createLog rechazado', { status: 400, reason: "La conversación especificada no existe" });
         return res.status(400).json({
           success: false,
           message: 'La conversación especificada no existe'
@@ -160,12 +167,14 @@ class ConversacionLogController {
         ]
       });
 
+      logger.info('createLog', { id: log.id });
       res.status(201).json({
         success: true,
         message: 'Log creado exitosamente',
         data: { log: logCompleto }
       });
     } catch (error) {
+      logger.error('createLog falló', { message: error.message });
       next(error);
     }
   }
@@ -179,6 +188,7 @@ class ConversacionLogController {
       const log = await ConversacionLog.findByPk(id);
       
       if (!log) {
+        logger.warn('updateLog rechazado', { status: 404, reason: "Log no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Log no encontrado'
@@ -199,12 +209,14 @@ class ConversacionLogController {
         ]
       });
 
+      logger.info('updateLog', { id: id });
       res.json({
         success: true,
         message: 'Log actualizado exitosamente',
         data: { log: logActualizado }
       });
     } catch (error) {
+      logger.error('updateLog falló', { message: error.message });
       next(error);
     }
   }
@@ -217,6 +229,7 @@ class ConversacionLogController {
       const log = await ConversacionLog.findByPk(id);
       
       if (!log) {
+        logger.warn('deleteLog rechazado', { status: 404, reason: "Log no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Log no encontrado'
@@ -225,11 +238,13 @@ class ConversacionLogController {
 
       await log.softDelete();
 
+      logger.info('deleteLog', { id: id });
       res.json({
         success: true,
         message: 'Log eliminado exitosamente'
       });
     } catch (error) {
+      logger.error('deleteLog falló', { message: error.message });
       next(error);
     }
   }
@@ -242,6 +257,7 @@ class ConversacionLogController {
       const log = await ConversacionLog.findByPk(id);
       
       if (!log) {
+        logger.warn('restoreLog rechazado', { status: 404, reason: "Log no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Log no encontrado'
@@ -250,12 +266,14 @@ class ConversacionLogController {
 
       await log.restore();
 
+      logger.info('restoreLog', { id: id });
       res.json({
         success: true,
         message: 'Log restaurado exitosamente',
         data: { log }
       });
     } catch (error) {
+      logger.error('restoreLog falló', { message: error.message });
       next(error);
     }
   }
@@ -276,6 +294,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getLogsByConversacion falló', { message: error.message });
       next(error);
     }
   }
@@ -296,6 +315,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getLogsByType falló', { message: error.message });
       next(error);
     }
   }
@@ -316,6 +336,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getLogsByLevel falló', { message: error.message });
       next(error);
     }
   }
@@ -336,6 +357,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getLogsByDate falló', { message: error.message });
       next(error);
     }
   }
@@ -355,6 +377,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getErrorLogs falló', { message: error.message });
       next(error);
     }
   }
@@ -374,6 +397,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getWarningLogs falló', { message: error.message });
       next(error);
     }
   }
@@ -384,6 +408,7 @@ class ConversacionLogController {
       const { search_key, search_value, conversacionId } = req.query;
 
       if (!search_key || !search_value) {
+        logger.warn('searchInData rechazado', { status: 400, reason: "Se requieren los parámetros search_key y search_value" });
         return res.status(400).json({
           success: false,
           message: 'Se requieren los parámetros search_key y search_value'
@@ -402,6 +427,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('searchInData falló', { message: error.message });
       next(error);
     }
   }
@@ -466,6 +492,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getLogStats falló', { message: error.message });
       next(error);
     }
   }
@@ -485,6 +512,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getRecentLogs falló', { message: error.message });
       next(error);
     }
   }
@@ -504,6 +532,7 @@ class ConversacionLogController {
         }
       });
     } catch (error) {
+      logger.error('getLogsByHour falló', { message: error.message });
       next(error);
     }
   }
@@ -517,6 +546,7 @@ class ConversacionLogController {
       const log = await ConversacionLog.findByPk(id);
       
       if (!log) {
+        logger.warn('updateLogData rechazado', { status: 404, reason: "Log no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Log no encontrado'
@@ -525,12 +555,14 @@ class ConversacionLogController {
 
       await log.updateData(data);
 
+      logger.info('updateLogData', { id: id });
       res.json({
         success: true,
         message: 'Data del log actualizada exitosamente',
         data: { log }
       });
     } catch (error) {
+      logger.error('updateLogData falló', { message: error.message });
       next(error);
     }
   }
@@ -544,6 +576,7 @@ class ConversacionLogController {
       const log = await ConversacionLog.findByPk(id);
       
       if (!log) {
+        logger.warn('addToLogData rechazado', { status: 404, reason: "Log no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Log no encontrado'
@@ -552,12 +585,14 @@ class ConversacionLogController {
 
       await log.addToData(key, value);
 
+      logger.info('addToLogData', { id: id });
       res.json({
         success: true,
         message: 'Data agregada al log exitosamente',
         data: { log }
       });
     } catch (error) {
+      logger.error('addToLogData falló', { message: error.message });
       next(error);
     }
   }

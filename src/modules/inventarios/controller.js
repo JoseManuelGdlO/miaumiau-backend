@@ -3,6 +3,10 @@ const { Op, col } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId } = require('../../utils/cityMapper');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Inventarios');
+
 class InventarioController {
   // Obtener todos los inventarios
   async getAllInventarios(req, res, next) {
@@ -47,6 +51,7 @@ class InventarioController {
           });
           const ciudadesDisponibles = todasLasCiudades.map(c => `${c.nombre} (ID: ${c.id})`).join(', ');
           
+          log.warn('getAllInventarios rechazado', { status: 400, reason: "rechazado" });
           return res.status(400).json({
             success: false,
             message: `La ciudad especificada "${ciudad}" no existe o está inactiva. Ciudades disponibles: ${ciudadesDisponibles}`
@@ -62,6 +67,7 @@ class InventarioController {
           });
           const ciudadesDisponibles = todasLasCiudades.map(c => `${c.nombre} (ID: ${c.id})`).join(', ');
           
+          log.warn('getAllInventarios rechazado', { status: 400, reason: "rechazado" });
           return res.status(400).json({
             success: false,
             message: `La ciudad especificada "${ciudad}" no existe o está inactiva. Ciudades disponibles: ${ciudadesDisponibles}`
@@ -153,6 +159,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('getAllInventarios falló', { message: error.message });
       next(error);
     }
   }
@@ -209,6 +216,7 @@ class InventarioController {
         data: { inventario }
       });
     } catch (error) {
+      log.error('getInventarioById falló', { message: error.message });
       next(error);
     }
   }
@@ -236,6 +244,7 @@ class InventarioController {
       const existingInventario = await Inventario.findBySKU(sku);
 
       if (existingInventario) {
+        log.warn('createInventario rechazado', { status: 400, reason: "Ya existe un inventario con ese SKU" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un inventario con ese SKU'
@@ -245,6 +254,7 @@ class InventarioController {
       // Verificar que las relaciones existan
       const peso = await Peso.findByPk(fkid_peso);
       if (!peso) {
+        log.warn('createInventario rechazado', { status: 400, reason: "El peso especificado no existe" });
         return res.status(400).json({
           success: false,
           message: 'El peso especificado no existe'
@@ -253,6 +263,7 @@ class InventarioController {
 
       const categoria = await CategoriaProducto.findByPk(fkid_categoria);
       if (!categoria) {
+        log.warn('createInventario rechazado', { status: 400, reason: "La categoría especificada no existe" });
         return res.status(400).json({
           success: false,
           message: 'La categoría especificada no existe'
@@ -261,6 +272,7 @@ class InventarioController {
 
       const ciudad = await City.findByPk(fkid_ciudad);
       if (!ciudad) {
+        log.warn('createInventario rechazado', { status: 400, reason: "La ciudad especificada no existe" });
         return res.status(400).json({
           success: false,
           message: 'La ciudad especificada no existe'
@@ -269,6 +281,7 @@ class InventarioController {
 
       const proveedor = await Proveedor.findByPk(fkid_proveedor);
       if (!proveedor) {
+        log.warn('createInventario rechazado', { status: 400, reason: "El proveedor especificado no existe" });
         return res.status(400).json({
           success: false,
           message: 'El proveedor especificado no existe'
@@ -324,12 +337,14 @@ class InventarioController {
         ]
       });
 
+      log.info('createInventario', { id: inventario.id });
       res.status(201).json({
         success: true,
         message: 'Inventario creado exitosamente',
         data: { inventario: inventarioCompleto }
       });
     } catch (error) {
+      log.error('createInventario falló', { message: error.message });
       next(error);
     }
   }
@@ -343,6 +358,7 @@ class InventarioController {
       const inventario = await Inventario.findByPk(id);
       
       if (!inventario) {
+        log.warn('updateInventario rechazado', { status: 404, reason: "Inventario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Inventario no encontrado'
@@ -359,6 +375,7 @@ class InventarioController {
         });
         
         if (existingInventario) {
+          log.warn('updateInventario rechazado', { status: 400, reason: "Ya existe un inventario con ese SKU" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe un inventario con ese SKU'
@@ -370,6 +387,7 @@ class InventarioController {
       if (updateData.fkid_peso) {
         const peso = await Peso.findByPk(updateData.fkid_peso);
         if (!peso) {
+          log.warn('updateInventario rechazado', { status: 400, reason: "El peso especificado no existe" });
           return res.status(400).json({
             success: false,
             message: 'El peso especificado no existe'
@@ -380,6 +398,7 @@ class InventarioController {
       if (updateData.fkid_categoria) {
         const categoria = await CategoriaProducto.findByPk(updateData.fkid_categoria);
         if (!categoria) {
+          log.warn('updateInventario rechazado', { status: 400, reason: "La categoría especificada no existe" });
           return res.status(400).json({
             success: false,
             message: 'La categoría especificada no existe'
@@ -390,6 +409,7 @@ class InventarioController {
       if (updateData.fkid_ciudad) {
         const ciudad = await City.findByPk(updateData.fkid_ciudad);
         if (!ciudad) {
+          log.warn('updateInventario rechazado', { status: 400, reason: "La ciudad especificada no existe" });
           return res.status(400).json({
             success: false,
             message: 'La ciudad especificada no existe'
@@ -400,6 +420,7 @@ class InventarioController {
       if (updateData.fkid_proveedor) {
         const proveedor = await Proveedor.findByPk(updateData.fkid_proveedor);
         if (!proveedor) {
+          log.warn('updateInventario rechazado', { status: 400, reason: "El proveedor especificado no existe" });
           return res.status(400).json({
             success: false,
             message: 'El proveedor especificado no existe'
@@ -435,12 +456,14 @@ class InventarioController {
         ]
       });
 
+      log.info('updateInventario', { id: id });
       res.json({
         success: true,
         message: 'Inventario actualizado exitosamente',
         data: { inventario: inventarioActualizado }
       });
     } catch (error) {
+      log.error('updateInventario falló', { message: error.message });
       next(error);
     }
   }
@@ -453,6 +476,7 @@ class InventarioController {
       const inventario = await Inventario.findByPk(id);
       
       if (!inventario) {
+        log.warn('deleteInventario rechazado', { status: 404, reason: "Inventario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Inventario no encontrado'
@@ -461,11 +485,13 @@ class InventarioController {
 
       await inventario.softDelete();
 
+      log.info('deleteInventario', { id: id });
       res.json({
         success: true,
         message: 'Inventario eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deleteInventario falló', { message: error.message });
       next(error);
     }
   }
@@ -478,6 +504,7 @@ class InventarioController {
       const inventario = await Inventario.findByPk(id);
       
       if (!inventario) {
+        log.warn('restoreInventario rechazado', { status: 404, reason: "Inventario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Inventario no encontrado'
@@ -486,12 +513,14 @@ class InventarioController {
 
       await inventario.restore();
 
+      log.info('restoreInventario', { id: id });
       res.json({
         success: true,
         message: 'Inventario restaurado exitosamente',
         data: { inventario }
       });
     } catch (error) {
+      log.error('restoreInventario falló', { message: error.message });
       next(error);
     }
   }
@@ -505,6 +534,7 @@ class InventarioController {
       const inventario = await Inventario.findByPk(id);
       
       if (!inventario) {
+        log.warn('updateStock rechazado', { status: 404, reason: "Inventario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Inventario no encontrado'
@@ -513,12 +543,14 @@ class InventarioController {
 
       await inventario.updateStock(stock_inicial);
 
+      log.info('updateStock', { id: id });
       res.json({
         success: true,
         message: 'Stock actualizado exitosamente',
         data: { inventario }
       });
     } catch (error) {
+      log.error('updateStock falló', { message: error.message });
       next(error);
     }
   }
@@ -528,6 +560,7 @@ class InventarioController {
     try {
       const { id } = req.params;
       if (!req.file || !req.file.filename) {
+        log.warn('uploadInventarioImage rechazado', { status: 400, reason: "No se recibió ninguna imagen. Envía el archivo en el campo " });
         return res.status(400).json({
           success: false,
           message: 'No se recibió ninguna imagen. Envía el archivo en el campo "imagen".'
@@ -536,6 +569,7 @@ class InventarioController {
 
       const inventario = await Inventario.findByPk(id);
       if (!inventario) {
+        log.warn('uploadInventarioImage rechazado', { status: 404, reason: "Inventario no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Inventario no encontrado'
@@ -559,12 +593,14 @@ class InventarioController {
         ]
       });
 
+      log.info('uploadInventarioImage', { id: id });
       res.json({
         success: true,
         message: 'Imagen subida correctamente',
         data: { inventario: inventarioActualizado }
       });
     } catch (error) {
+      log.error('uploadInventarioImage falló', { message: error.message });
       next(error);
     }
   }
@@ -603,6 +639,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('getInventariosByCategory falló', { message: error.message });
       next(error);
     }
   }
@@ -653,6 +690,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('getInventariosByCity falló', { message: error.message });
       next(error);
     }
   }
@@ -691,6 +729,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('getInventariosByProvider falló', { message: error.message });
       next(error);
     }
   }
@@ -728,6 +767,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('getLowStockInventarios falló', { message: error.message });
       next(error);
     }
   }
@@ -738,6 +778,7 @@ class InventarioController {
       const { search } = req.query;
 
       if (!search) {
+        log.warn('searchInventarios rechazado', { status: 400, reason: "Se requiere el parámetro de búsqueda" });
         return res.status(400).json({
           success: false,
           message: 'Se requiere el parámetro de búsqueda'
@@ -777,6 +818,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('searchInventarios falló', { message: error.message });
       next(error);
     }
   }
@@ -841,6 +883,7 @@ class InventarioController {
         }
       });
     } catch (error) {
+      log.error('getInventarioStats falló', { message: error.message });
       next(error);
     }
   }

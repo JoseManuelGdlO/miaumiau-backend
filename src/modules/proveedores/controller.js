@@ -1,6 +1,10 @@
 const { Proveedor } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Proveedores');
+
 class ProveedorController {
   // Obtener todos los proveedores
   async getAllProveedores(req, res, next) {
@@ -52,6 +56,7 @@ class ProveedorController {
         }
       });
     } catch (error) {
+      log.error('getAllProveedores falló', { message: error.message });
       next(error);
     }
   }
@@ -75,6 +80,7 @@ class ProveedorController {
         data: { proveedor }
       });
     } catch (error) {
+      log.error('getProveedorById falló', { message: error.message });
       next(error);
     }
   }
@@ -93,6 +99,7 @@ class ProveedorController {
       const existingProveedor = await Proveedor.findByEmail(correo);
 
       if (existingProveedor) {
+        log.warn('createProveedor rechazado', { status: 400, reason: "Ya existe un proveedor con ese correo electrónico" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un proveedor con ese correo electrónico'
@@ -103,6 +110,7 @@ class ProveedorController {
       const existingPhone = await Proveedor.findByPhone(telefono);
 
       if (existingPhone) {
+        log.warn('createProveedor rechazado', { status: 400, reason: "Ya existe un proveedor con ese número de teléfono" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe un proveedor con ese número de teléfono'
@@ -116,12 +124,14 @@ class ProveedorController {
         telefono
       });
 
+      log.info('createProveedor', { id: proveedor.id });
       res.status(201).json({
         success: true,
         message: 'Proveedor creado exitosamente',
         data: { proveedor }
       });
     } catch (error) {
+      log.error('createProveedor falló', { message: error.message });
       next(error);
     }
   }
@@ -135,6 +145,7 @@ class ProveedorController {
       const proveedor = await Proveedor.findByPk(id);
       
       if (!proveedor) {
+        log.warn('updateProveedor rechazado', { status: 404, reason: "Proveedor no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Proveedor no encontrado'
@@ -151,6 +162,7 @@ class ProveedorController {
         });
         
         if (existingProveedor) {
+          log.warn('updateProveedor rechazado', { status: 400, reason: "Ya existe un proveedor con ese correo electrónico" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe un proveedor con ese correo electrónico'
@@ -168,6 +180,7 @@ class ProveedorController {
         });
         
         if (existingPhone) {
+          log.warn('updateProveedor rechazado', { status: 400, reason: "Ya existe un proveedor con ese número de teléfono" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe un proveedor con ese número de teléfono'
@@ -177,12 +190,14 @@ class ProveedorController {
 
       await proveedor.update(updateData);
 
+      log.info('updateProveedor', { id: id });
       res.json({
         success: true,
         message: 'Proveedor actualizado exitosamente',
         data: { proveedor }
       });
     } catch (error) {
+      log.error('updateProveedor falló', { message: error.message });
       next(error);
     }
   }
@@ -195,6 +210,7 @@ class ProveedorController {
       const proveedor = await Proveedor.findByPk(id);
       
       if (!proveedor) {
+        log.warn('deleteProveedor rechazado', { status: 404, reason: "Proveedor no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Proveedor no encontrado'
@@ -203,11 +219,13 @@ class ProveedorController {
 
       await proveedor.softDelete();
 
+      log.info('deleteProveedor', { id: id });
       res.json({
         success: true,
         message: 'Proveedor eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deleteProveedor falló', { message: error.message });
       next(error);
     }
   }
@@ -220,6 +238,7 @@ class ProveedorController {
       const proveedor = await Proveedor.findByPk(id);
       
       if (!proveedor) {
+        log.warn('restoreProveedor rechazado', { status: 404, reason: "Proveedor no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Proveedor no encontrado'
@@ -228,12 +247,14 @@ class ProveedorController {
 
       await proveedor.restore();
 
+      log.info('restoreProveedor', { id: id });
       res.json({
         success: true,
         message: 'Proveedor restaurado exitosamente',
         data: { proveedor }
       });
     } catch (error) {
+      log.error('restoreProveedor falló', { message: error.message });
       next(error);
     }
   }
@@ -246,6 +267,7 @@ class ProveedorController {
       const proveedor = await Proveedor.findByPk(id);
       
       if (!proveedor) {
+        log.warn('activateProveedor rechazado', { status: 404, reason: "Proveedor no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Proveedor no encontrado'
@@ -254,12 +276,14 @@ class ProveedorController {
 
       await proveedor.activate();
 
+      log.info('activateProveedor', { id: id });
       res.json({
         success: true,
         message: 'Proveedor activado exitosamente',
         data: { proveedor }
       });
     } catch (error) {
+      log.error('activateProveedor falló', { message: error.message });
       next(error);
     }
   }
@@ -272,6 +296,7 @@ class ProveedorController {
       const proveedor = await Proveedor.findByPk(id);
       
       if (!proveedor) {
+        log.warn('deactivateProveedor rechazado', { status: 404, reason: "Proveedor no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Proveedor no encontrado'
@@ -280,12 +305,14 @@ class ProveedorController {
 
       await proveedor.deactivate();
 
+      log.info('deactivateProveedor', { id: id });
       res.json({
         success: true,
         message: 'Proveedor desactivado exitosamente',
         data: { proveedor }
       });
     } catch (error) {
+      log.error('deactivateProveedor falló', { message: error.message });
       next(error);
     }
   }
@@ -303,6 +330,7 @@ class ProveedorController {
         }
       });
     } catch (error) {
+      log.error('getActiveProveedores falló', { message: error.message });
       next(error);
     }
   }
@@ -313,6 +341,7 @@ class ProveedorController {
       const { search } = req.query;
 
       if (!search) {
+        log.warn('searchProveedores rechazado', { status: 400, reason: "Se requiere el parámetro de búsqueda" });
         return res.status(400).json({
           success: false,
           message: 'Se requiere el parámetro de búsqueda'
@@ -330,6 +359,7 @@ class ProveedorController {
         }
       });
     } catch (error) {
+      log.error('searchProveedores falló', { message: error.message });
       next(error);
     }
   }
@@ -353,6 +383,7 @@ class ProveedorController {
         data: { proveedor }
       });
     } catch (error) {
+      log.error('getProveedorByEmail falló', { message: error.message });
       next(error);
     }
   }
@@ -376,6 +407,7 @@ class ProveedorController {
         data: { proveedor }
       });
     } catch (error) {
+      log.error('getProveedorByPhone falló', { message: error.message });
       next(error);
     }
   }
@@ -420,6 +452,7 @@ class ProveedorController {
         }
       });
     } catch (error) {
+      log.error('getProveedorStats falló', { message: error.message });
       next(error);
     }
   }

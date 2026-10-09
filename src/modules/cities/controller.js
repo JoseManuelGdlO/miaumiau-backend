@@ -32,6 +32,10 @@ function validateHorarioPorDia(value) {
   return null;
 }
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('Cities');
+
 class CityController {
   // Obtener todas las ciudades
   async getAllCities(req, res, next) {
@@ -95,6 +99,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getAllCities falló', { message: error.message });
       next(error);
     }
   }
@@ -137,6 +142,7 @@ class CityController {
         data: { city }
       });
     } catch (error) {
+      log.error('getCityById falló', { message: error.message });
       next(error);
     }
   }
@@ -197,6 +203,7 @@ class CityController {
 
         city = cliente.ciudad;
       } else {
+        log.warn('getNumeroSoporteCliente rechazado', { status: 400, reason: "Debe proporcionar cityId o telefono" });
         return res.status(400).json({
           success: false,
           message: 'Debe proporcionar cityId o telefono'
@@ -212,6 +219,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getNumeroSoporteCliente falló', { message: error.message });
       next(error);
     }
   }
@@ -242,6 +250,7 @@ class CityController {
       const existingCity = await City.findByNameAndDepartment(nombre, departamento);
 
       if (existingCity) {
+        log.warn('createCity rechazado', { status: 400, reason: "Ya existe una ciudad con ese nombre en ese departamento" });
         return res.status(400).json({
           success: false,
           message: 'Ya existe una ciudad con ese nombre en ese departamento'
@@ -251,6 +260,7 @@ class CityController {
       // Validar dias_trabajo si se proporciona
       if (dias_trabajo !== undefined && dias_trabajo !== null) {
         if (!Array.isArray(dias_trabajo) || dias_trabajo.length === 0) {
+          log.warn('createCity rechazado', { status: 400, reason: "dias_trabajo debe ser un array con al menos un día" });
           return res.status(400).json({
             success: false,
             message: 'dias_trabajo debe ser un array con al menos un día'
@@ -259,6 +269,7 @@ class CityController {
         const validDays = [0, 1, 2, 3, 4, 5, 6];
         for (const day of dias_trabajo) {
           if (!validDays.includes(day)) {
+            log.warn('createCity rechazado', { status: 400, reason: "dias_trabajo debe contener solo valores entre 0 y 6 (0=domingo, 6=sábado)" });
             return res.status(400).json({
               success: false,
               message: 'dias_trabajo debe contener solo valores entre 0 y 6 (0=domingo, 6=sábado)'
@@ -270,6 +281,7 @@ class CityController {
       // Validar max_pedidos_por_horario si se proporciona
       if (max_pedidos_por_horario !== undefined && max_pedidos_por_horario !== null) {
         if (typeof max_pedidos_por_horario !== 'number' || max_pedidos_por_horario < 1 || max_pedidos_por_horario > 100) {
+          log.warn('createCity rechazado', { status: 400, reason: "max_pedidos_por_horario debe ser un número entre 1 y 100" });
           return res.status(400).json({
             success: false,
             message: 'max_pedidos_por_horario debe ser un número entre 1 y 100'
@@ -280,6 +292,7 @@ class CityController {
       if (horario_por_dia !== undefined && horario_por_dia !== null) {
         const horarioError = validateHorarioPorDia(horario_por_dia);
         if (horarioError) {
+          log.warn('createCity rechazado', { status: 400, reason: "rechazado" });
           return res.status(400).json({
             success: false,
             message: horarioError
@@ -307,12 +320,14 @@ class CityController {
         ...horasEntregaData
       });
 
+      log.info('createCity', { id: city.id });
       res.status(201).json({
         success: true,
         message: 'Ciudad creada exitosamente',
         data: { city }
       });
     } catch (error) {
+      log.error('createCity falló', { message: error.message });
       next(error);
     }
   }
@@ -326,6 +341,7 @@ class CityController {
       // Intentar convertir nombre a ID si es necesario
       const cityId = await mapCityNameToId(id);
       if (!cityId) {
+        log.warn('updateCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -335,6 +351,7 @@ class CityController {
       const city = await City.findByPk(cityId);
       
       if (!city) {
+        log.warn('updateCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -352,6 +369,7 @@ class CityController {
         });
         
         if (existingCity) {
+          log.warn('updateCity rechazado', { status: 400, reason: "Ya existe una ciudad con ese nombre en ese departamento" });
           return res.status(400).json({
             success: false,
             message: 'Ya existe una ciudad con ese nombre en ese departamento'
@@ -362,6 +380,7 @@ class CityController {
       // Validar dias_trabajo si se proporciona en la actualización
       if (updateData.dias_trabajo !== undefined && updateData.dias_trabajo !== null) {
         if (!Array.isArray(updateData.dias_trabajo) || updateData.dias_trabajo.length === 0) {
+          log.warn('updateCity rechazado', { status: 400, reason: "dias_trabajo debe ser un array con al menos un día" });
           return res.status(400).json({
             success: false,
             message: 'dias_trabajo debe ser un array con al menos un día'
@@ -370,6 +389,7 @@ class CityController {
         const validDays = [0, 1, 2, 3, 4, 5, 6];
         for (const day of updateData.dias_trabajo) {
           if (!validDays.includes(day)) {
+            log.warn('updateCity rechazado', { status: 400, reason: "dias_trabajo debe contener solo valores entre 0 y 6 (0=domingo, 6=sábado)" });
             return res.status(400).json({
               success: false,
               message: 'dias_trabajo debe contener solo valores entre 0 y 6 (0=domingo, 6=sábado)'
@@ -381,6 +401,7 @@ class CityController {
       // Validar max_pedidos_por_horario si se proporciona en la actualización
       if (updateData.max_pedidos_por_horario !== undefined && updateData.max_pedidos_por_horario !== null) {
         if (typeof updateData.max_pedidos_por_horario !== 'number' || updateData.max_pedidos_por_horario < 1 || updateData.max_pedidos_por_horario > 100) {
+          log.warn('updateCity rechazado', { status: 400, reason: "max_pedidos_por_horario debe ser un número entre 1 y 100" });
           return res.status(400).json({
             success: false,
             message: 'max_pedidos_por_horario debe ser un número entre 1 y 100'
@@ -392,6 +413,7 @@ class CityController {
         if (updateData.horario_por_dia !== null) {
           const horarioError = validateHorarioPorDia(updateData.horario_por_dia);
           if (horarioError) {
+            log.warn('updateCity rechazado', { status: 400, reason: "rechazado" });
             return res.status(400).json({
               success: false,
               message: horarioError
@@ -403,12 +425,14 @@ class CityController {
 
       await city.update(updateData);
 
+      log.info('updateCity', { id: id });
       res.json({
         success: true,
         message: 'Ciudad actualizada exitosamente',
         data: { city }
       });
     } catch (error) {
+      log.error('updateCity falló', { message: error.message });
       next(error);
     }
   }
@@ -421,6 +445,7 @@ class CityController {
       // Intentar convertir nombre a ID si es necesario
       const cityId = await mapCityNameToId(id);
       if (!cityId) {
+        log.warn('deleteCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -430,6 +455,7 @@ class CityController {
       const city = await City.findByPk(cityId);
       
       if (!city) {
+        log.warn('deleteCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -438,11 +464,13 @@ class CityController {
 
       await city.softDelete();
 
+      log.info('deleteCity', { id: id });
       res.json({
         success: true,
         message: 'Ciudad eliminada exitosamente'
       });
     } catch (error) {
+      log.error('deleteCity falló', { message: error.message });
       next(error);
     }
   }
@@ -455,6 +483,7 @@ class CityController {
       // Intentar convertir nombre a ID si es necesario
       const cityId = await mapCityNameToId(id);
       if (!cityId) {
+        log.warn('restoreCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -464,6 +493,7 @@ class CityController {
       const city = await City.findByPk(cityId);
       
       if (!city) {
+        log.warn('restoreCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -472,12 +502,14 @@ class CityController {
 
       await city.restore();
 
+      log.info('restoreCity', { id: id });
       res.json({
         success: true,
         message: 'Ciudad restaurada exitosamente',
         data: { city }
       });
     } catch (error) {
+      log.error('restoreCity falló', { message: error.message });
       next(error);
     }
   }
@@ -490,6 +522,7 @@ class CityController {
       // Intentar convertir nombre a ID si es necesario
       const cityId = await mapCityNameToId(id);
       if (!cityId) {
+        log.warn('activateCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -499,6 +532,7 @@ class CityController {
       const city = await City.findByPk(cityId);
       
       if (!city) {
+        log.warn('activateCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -507,12 +541,14 @@ class CityController {
 
       await city.activate();
 
+      log.info('activateCity', { id: id });
       res.json({
         success: true,
         message: 'Ciudad activada exitosamente',
         data: { city }
       });
     } catch (error) {
+      log.error('activateCity falló', { message: error.message });
       next(error);
     }
   }
@@ -525,6 +561,7 @@ class CityController {
       // Intentar convertir nombre a ID si es necesario
       const cityId = await mapCityNameToId(id);
       if (!cityId) {
+        log.warn('deactivateCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -534,6 +571,7 @@ class CityController {
       const city = await City.findByPk(cityId);
       
       if (!city) {
+        log.warn('deactivateCity rechazado', { status: 404, reason: "rechazado" });
         return res.status(404).json({
           success: false,
           message: `Ciudad "${id}" no encontrada`
@@ -542,12 +580,14 @@ class CityController {
 
       await city.deactivate();
 
+      log.info('deactivateCity', { id: id });
       res.json({
         success: true,
         message: 'Ciudad desactivada exitosamente',
         data: { city }
       });
     } catch (error) {
+      log.error('deactivateCity falló', { message: error.message });
       next(error);
     }
   }
@@ -568,6 +608,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getCitiesByDepartment falló', { message: error.message });
       next(error);
     }
   }
@@ -588,6 +629,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getCitiesByStatus falló', { message: error.message });
       next(error);
     }
   }
@@ -605,6 +647,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getActiveCities falló', { message: error.message });
       next(error);
     }
   }
@@ -662,6 +705,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getAllPointsOfSale falló', { message: error.message });
       next(error);
     }
   }
@@ -683,6 +727,7 @@ class CityController {
         data: { departments: departmentList }
       });
     } catch (error) {
+      log.error('getDepartments falló', { message: error.message });
       next(error);
     }
   }
@@ -697,6 +742,7 @@ class CityController {
         data: { statuses }
       });
     } catch (error) {
+      log.error('getStatuses falló', { message: error.message });
       next(error);
     }
   }
@@ -747,6 +793,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getCityStats falló', { message: error.message });
       next(error);
     }
   }
@@ -774,6 +821,7 @@ class CityController {
         }
       });
     } catch (error) {
+      log.error('getPointsOfSale falló', { message: error.message });
       next(error);
     }
   }
@@ -786,6 +834,7 @@ class CityController {
 
       const city = await City.findByPk(cityId);
       if (!city) {
+        log.warn('createPointOfSale rechazado', { status: 404, reason: "Ciudad no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Ciudad no encontrada'
@@ -800,12 +849,14 @@ class CityController {
         encargado
       });
 
+      log.info('createPointOfSale', { id: punto.id });
       res.status(201).json({
         success: true,
         message: 'Punto de venta creado exitosamente',
         data: { pointOfSale: punto }
       });
     } catch (error) {
+      log.error('createPointOfSale falló', { message: error.message });
       next(error);
     }
   }
@@ -818,6 +869,7 @@ class CityController {
 
       const city = await City.findByPk(cityId);
       if (!city) {
+        log.warn('updatePointOfSale rechazado', { status: 404, reason: "Ciudad no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Ciudad no encontrada'
@@ -832,6 +884,7 @@ class CityController {
       });
 
       if (!punto) {
+        log.warn('updatePointOfSale rechazado', { status: 404, reason: "Punto de venta no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Punto de venta no encontrado'
@@ -840,12 +893,14 @@ class CityController {
 
       await punto.update(updateData);
 
+      log.info('updatePointOfSale', {});
       res.json({
         success: true,
         message: 'Punto de venta actualizado exitosamente',
         data: { pointOfSale: punto }
       });
     } catch (error) {
+      log.error('updatePointOfSale falló', { message: error.message });
       next(error);
     }
   }
@@ -857,6 +912,7 @@ class CityController {
 
       const city = await City.findByPk(cityId);
       if (!city) {
+        log.warn('deletePointOfSale rechazado', { status: 404, reason: "Ciudad no encontrada" });
         return res.status(404).json({
           success: false,
           message: 'Ciudad no encontrada'
@@ -871,6 +927,7 @@ class CityController {
       });
 
       if (!punto) {
+        log.warn('deletePointOfSale rechazado', { status: 404, reason: "Punto de venta no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Punto de venta no encontrado'
@@ -879,11 +936,13 @@ class CityController {
 
       await punto.update({ baja_logica: true });
 
+      log.info('deletePointOfSale', {});
       res.json({
         success: true,
         message: 'Punto de venta eliminado exitosamente'
       });
     } catch (error) {
+      log.error('deletePointOfSale falló', { message: error.message });
       next(error);
     }
   }

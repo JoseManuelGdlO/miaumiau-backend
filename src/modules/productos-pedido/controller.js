@@ -1,6 +1,10 @@
 const { ProductoPedido, Pedido, Inventario } = require('../../models');
 const { Op } = require('sequelize');
 
+const { Logger } = require('../../utils/logger');
+
+const log = new Logger('ProductosPedido');
+
 class ProductoPedidoController {
   // Obtener todos los productos de pedido
   async getAllProductosPedido(req, res, next) {
@@ -84,6 +88,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getAllProductosPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -122,6 +127,7 @@ class ProductoPedidoController {
         data: { productoPedido }
       });
     } catch (error) {
+      log.error('getProductoPedidoById falló', { message: error.message });
       next(error);
     }
   }
@@ -141,6 +147,7 @@ class ProductoPedidoController {
       // Verificar que el pedido existe
       const pedido = await Pedido.findByPk(fkid_pedido);
       if (!pedido) {
+        log.warn('createProductoPedido rechazado', { status: 400, reason: "El pedido especificado no existe" });
         return res.status(400).json({
           success: false,
           message: 'El pedido especificado no existe'
@@ -150,6 +157,7 @@ class ProductoPedidoController {
       // Verificar que el producto existe
       const producto = await Inventario.findByPk(fkid_producto);
       if (!producto) {
+        log.warn('createProductoPedido rechazado', { status: 400, reason: "El producto especificado no existe" });
         return res.status(400).json({
           success: false,
           message: 'El producto especificado no existe'
@@ -159,6 +167,7 @@ class ProductoPedidoController {
       // Verificar que no existe ya este producto en el pedido
       const productoExistente = await ProductoPedido.findByPedidoAndProducto(fkid_pedido, fkid_producto);
       if (productoExistente) {
+        log.warn('createProductoPedido rechazado', { status: 400, reason: "Este producto ya está en el pedido" });
         return res.status(400).json({
           success: false,
           message: 'Este producto ya está en el pedido'
@@ -203,12 +212,14 @@ class ProductoPedidoController {
         ]
       });
 
+      log.info('createProductoPedido', { id: productoPedido.id });
       res.status(201).json({
         success: true,
         message: 'Producto agregado al pedido exitosamente',
         data: { productoPedido: productoPedidoCompleto }
       });
     } catch (error) {
+      log.error('createProductoPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -222,6 +233,7 @@ class ProductoPedidoController {
       const productoPedido = await ProductoPedido.findByPk(id);
       
       if (!productoPedido) {
+        log.warn('updateProductoPedido rechazado', { status: 404, reason: "Producto de pedido no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Producto de pedido no encontrado'
@@ -265,12 +277,14 @@ class ProductoPedidoController {
         ]
       });
 
+      log.info('updateProductoPedido', { id: id });
       res.json({
         success: true,
         message: 'Producto de pedido actualizado exitosamente',
         data: { productoPedido: productoPedidoActualizado }
       });
     } catch (error) {
+      log.error('updateProductoPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -283,6 +297,7 @@ class ProductoPedidoController {
       const productoPedido = await ProductoPedido.findByPk(id);
       
       if (!productoPedido) {
+        log.warn('deleteProductoPedido rechazado', { status: 404, reason: "Producto de pedido no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Producto de pedido no encontrado'
@@ -297,11 +312,13 @@ class ProductoPedidoController {
       const nuevoSubtotal = parseFloat(totalProductos[0].total_pedido) || 0;
       await pedido.actualizarSubtotal(nuevoSubtotal);
 
+      log.info('deleteProductoPedido', { id: id });
       res.json({
         success: true,
         message: 'Producto eliminado del pedido exitosamente'
       });
     } catch (error) {
+      log.error('deleteProductoPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -314,6 +331,7 @@ class ProductoPedidoController {
       const productoPedido = await ProductoPedido.findByPk(id);
       
       if (!productoPedido) {
+        log.warn('restoreProductoPedido rechazado', { status: 404, reason: "Producto de pedido no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Producto de pedido no encontrado'
@@ -328,12 +346,14 @@ class ProductoPedidoController {
       const nuevoSubtotal = parseFloat(totalProductos[0].total_pedido);
       await pedido.actualizarSubtotal(nuevoSubtotal);
 
+      log.info('restoreProductoPedido', { id: id });
       res.json({
         success: true,
         message: 'Producto restaurado en el pedido exitosamente',
         data: { productoPedido }
       });
     } catch (error) {
+      log.error('restoreProductoPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -347,6 +367,7 @@ class ProductoPedidoController {
       const productoPedido = await ProductoPedido.findByPk(id);
       
       if (!productoPedido) {
+        log.warn('updateCantidad rechazado', { status: 404, reason: "Producto de pedido no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Producto de pedido no encontrado'
@@ -361,12 +382,14 @@ class ProductoPedidoController {
       const nuevoSubtotal = parseFloat(totalProductos[0].total_pedido);
       await pedido.actualizarSubtotal(nuevoSubtotal);
 
+      log.info('updateCantidad', { id: id });
       res.json({
         success: true,
         message: 'Cantidad actualizada exitosamente',
         data: { productoPedido }
       });
     } catch (error) {
+      log.error('updateCantidad falló', { message: error.message });
       next(error);
     }
   }
@@ -380,6 +403,7 @@ class ProductoPedidoController {
       const productoPedido = await ProductoPedido.findByPk(id);
       
       if (!productoPedido) {
+        log.warn('aplicarDescuento rechazado', { status: 404, reason: "Producto de pedido no encontrado" });
         return res.status(404).json({
           success: false,
           message: 'Producto de pedido no encontrado'
@@ -394,12 +418,14 @@ class ProductoPedidoController {
       const nuevoSubtotal = parseFloat(totalProductos[0].total_pedido);
       await pedido.actualizarSubtotal(nuevoSubtotal);
 
+      log.info('aplicarDescuento', { id: id });
       res.json({
         success: true,
         message: 'Descuento aplicado exitosamente',
         data: { productoPedido }
       });
     } catch (error) {
+      log.error('aplicarDescuento falló', { message: error.message });
       next(error);
     }
   }
@@ -420,6 +446,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getProductosByPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -440,6 +467,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getProductosByProducto falló', { message: error.message });
       next(error);
     }
   }
@@ -457,6 +485,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getProductosConDescuento falló', { message: error.message });
       next(error);
     }
   }
@@ -525,6 +554,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getProductoPedidoStats falló', { message: error.message });
       next(error);
     }
   }
@@ -544,6 +574,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getRecentProductosPedido falló', { message: error.message });
       next(error);
     }
   }
@@ -563,6 +594,7 @@ class ProductoPedidoController {
         }
       });
     } catch (error) {
+      log.error('getProductosMasVendidos falló', { message: error.message });
       next(error);
     }
   }
