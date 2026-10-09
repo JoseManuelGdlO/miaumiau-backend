@@ -51,10 +51,13 @@ test('solicitarValidacion persiste la carga calculada', async () => {
     cargas: [],
     update: async (data) => Object.assign(jornada, data),
   };
+  let aviso;
+  const updates = [];
   const result = await solicitarValidacion({
     jornada,
     repartidorId: 1,
     fecha: '2026-10-09',
+    repartidor: { nombre_completo: 'Ana Ruiz' },
     models: {
       Ruta: { findAll: async () => rutaConArena() },
       JornadaCarga: {
@@ -62,7 +65,13 @@ test('solicitarValidacion persiste la carga calculada', async () => {
         bulkCreate: async (rows) => { created.push(...rows); },
       },
     },
-    crearNotificacion: async () => ({ id: 9 }),
+    crearNotificacion: async (payload) => {
+      aviso = payload;
+      return {
+        id: 9,
+        update: async (patch) => { updates.push(patch); },
+      };
+    },
   });
   expect(created).toEqual([
     expect.objectContaining({
@@ -78,6 +87,17 @@ test('solicitarValidacion persiste la carga calculada', async () => {
   expect(Number(jornada.dinero_esperado)).toBe(80);
   expect(jornada.fkid_notificacion).toBe(9);
   expect(result.notificacion_id).toBe(9);
+  expect(aviso).toMatchObject({
+    nombre: 'Validar carga de Ana Ruiz',
+    descripcion: 'Ana Ruiz',
+    datos: expect.objectContaining({
+      tipo: 'check_in',
+      repartidor_nombre: 'Ana Ruiz',
+      repartidor_id: 1,
+      jornada_id: 3,
+    }),
+  });
+  expect(updates[0].datos.actionUrl).toBe('/dashboard/call-center?tab=validacion&solicitud=9');
 });
 
 test('solicitarValidacion responde 422 sin productos en la ruta', async () => {

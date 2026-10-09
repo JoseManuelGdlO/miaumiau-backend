@@ -237,7 +237,7 @@ test('guardarExtras reemplaza solo las líneas extra y no marca leída', async (
     jornada,
     lineas: [{ fkid_producto: 8, cantidad: 2, precio_unitario: 15 }],
     models: {
-      Inventario: { findByPk: async (id) => (id === 8 ? { id: 8, nombre: 'Snack' } : null) },
+      Inventario: { findByPk: async (id) => (id === 8 ? { id: 8, nombre: 'Snack', precio_venta: '10.00' } : null) },
       JornadaCarga: {
         destroy: async (query) => { destroyed.push(query); },
         bulkCreate: async (rows) => { created.push(...rows); },
@@ -252,7 +252,7 @@ test('guardarExtras reemplaza solo las líneas extra y no marca leída', async (
       nombre: 'Snack',
       fkid_producto: 8,
       cantidad: 2,
-      precio_unitario: 15,
+      precio_unitario: 10,
       es_extra: true,
     }),
   ]);
@@ -283,6 +283,23 @@ test('buscarInventario devuelve id, nombre y precio', async () => {
     },
   });
   expect(rows).toEqual([{ id: 4, nombre: 'Arena', precio_venta: 10.5 }]);
+});
+
+test('buscarInventario sin texto lista el inventario activo', async () => {
+  let seen;
+  const rows = await buscarInventario({
+    models: {
+      Inventario: {
+        findAll: async (query) => {
+          seen = query;
+          return [{ id: 4, nombre: 'Arena', precio_venta: 10 }];
+        },
+      },
+    },
+  });
+  expect(seen.where).toEqual({ baja_logica: false });
+  expect(seen.limit).toBe(100);
+  expect(rows).toEqual([{ id: 4, nombre: 'Arena', precio_venta: 10 }]);
 });
 
 test('la lista deja fuera lo leído y arma el detalle sin código', async () => {

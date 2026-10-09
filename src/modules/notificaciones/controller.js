@@ -1,7 +1,15 @@
-const { Notificacion, Sequelize, Conversacion, Pedido, Cliente, Inventario, City, ProductoPedido } = require('../../models');
+const { Notificacion, Sequelize, Conversacion, Pedido, Cliente, Inventario, City, ProductoPedido, Repartidor } = require('../../models');
 const { Op } = require('sequelize');
 const { sendPushForNotificacion } = require('../../services/pushService');
 const { Logger } = require('../../utils/logger');
+const { presentNotificaciones, isPendingCheckIn } = require('./checkInNotice');
+
+function findRepartidoresByIds(ids) {
+  return Repartidor.findAll({
+    where: { id: ids },
+    attributes: ['id', 'nombre_completo'],
+  });
+}
 
 const log = new Logger('Notificaciones');
 
@@ -65,7 +73,7 @@ class NotificacionController {
 
       res.status(200).json({
         success: true,
-        data: notificaciones,
+        data: await presentNotificaciones(notificaciones, findRepartidoresByIds),
         pagination: {
           total: count,
           page: parseInt(page),
@@ -210,6 +218,14 @@ class NotificacionController {
         });
       }
 
+      if (isPendingCheckIn(notificacion.datos)) {
+        return res.status(200).json({
+          success: true,
+          message: 'La validación de carga sigue pendiente hasta que Call Center la apruebe',
+          data: notificacion
+        });
+      }
+
       await notificacion.marcarComoLeida();
 
       res.status(200).json({
@@ -253,7 +269,16 @@ class NotificacionController {
     try {
       await Notificacion.update(
         { leida: true },
-        { where: { leida: false } }
+        {
+          where: {
+            leida: false,
+            [Op.and]: [
+              Sequelize.literal(
+                "(JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.tipo')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.tipo')) <> 'check_in' OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) = 'cancelada')"
+              ),
+            ],
+          },
+        }
       );
 
       res.status(200).json({
@@ -350,7 +375,7 @@ class NotificacionController {
 
       res.status(200).json({
         success: true,
-        data: notificaciones
+        data: await presentNotificaciones(notificaciones, findRepartidoresByIds)
       });
     } catch (error) {
       next(error);

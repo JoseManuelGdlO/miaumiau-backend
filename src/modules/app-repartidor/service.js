@@ -13,6 +13,7 @@ const {
   agruparCarga,
   META_DIARIA,
 } = require('./domain');
+const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
@@ -86,6 +87,18 @@ async function loadNotificacion(deps, jornada) {
   if (!jornada?.fkid_notificacion) return null;
   const db = getModels(deps);
   return db.Notificacion.findByPk(jornada.fkid_notificacion);
+}
+
+async function nombreDelRepartidor(deps) {
+  const direct = deps.repartidor?.nombre_completo;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  const db = getModels(deps);
+  if (!db.Repartidor?.findByPk || deps.repartidorId == null) return null;
+  const row = await db.Repartidor.findByPk(deps.repartidorId, {
+    attributes: ['id', 'nombre_completo'],
+  });
+  const nombre = row?.nombre_completo;
+  return typeof nombre === 'string' && nombre.trim() ? nombre.trim() : null;
 }
 
 async function defaultCrearNotificacion(deps, payload) {
@@ -220,16 +233,25 @@ async function solicitarValidacion(deps = {}) {
     }))
   );
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
+  const aviso = noticeFromNombre(await nombreDelRepartidor(deps));
+  const datos = {
+    tipo: 'check_in',
+    estado_solicitud: 'abierta',
+    repartidor_id: jornada.fkid_repartidor || deps.repartidorId,
+    jornada_id: jornada.id,
+    ...(aviso.repartidor_nombre ? { repartidor_nombre: aviso.repartidor_nombre } : {}),
+  };
   const notificacion = await crearNotificacion({
-    nombre: 'Validar carga del repartidor',
+    nombre: aviso.nombre,
+    descripcion: aviso.descripcion,
     prioridad: 'alta',
-    datos: {
-      tipo: 'check_in',
-      estado_solicitud: 'abierta',
-      repartidor_id: jornada.fkid_repartidor || deps.repartidorId,
-      jornada_id: jornada.id,
-    },
+    datos,
   });
+  if (typeof notificacion.update === 'function') {
+    await notificacion.update({
+      datos: { ...datos, actionUrl: validacionCargaPath(notificacion.id) },
+    });
+  }
   await jornada.update({
     estado: 'esperando_call_center',
     fkid_notificacion: notificacion.id,

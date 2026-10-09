@@ -233,12 +233,13 @@ async function guardarExtras(deps = {}) {
   const resolved = [];
   for (const line of deps.lineas || []) {
     const cantidad = Number(line.cantidad);
-    const precio = Number(line.precio_unitario);
-    if (!Number.isInteger(cantidad) || cantidad < 1 || !Number.isFinite(precio) || precio < 0) {
-      fail(422, 'La cantidad y el precio del extra no son válidos');
+    if (!Number.isInteger(cantidad) || cantidad < 1) {
+      fail(422, 'La cantidad del extra no es válida');
     }
     const producto = await db.Inventario.findByPk(line.fkid_producto);
     if (!producto || producto.baja_logica) fail(422, 'Producto extra sin inventario');
+    const precio = Number(producto.precio_venta);
+    if (!Number.isFinite(precio) || precio < 0) fail(422, 'El producto no tiene precio de venta');
     resolved.push({
       fkid_jornada: jornada.id,
       nombre: producto.nombre,
@@ -264,15 +265,13 @@ async function guardarExtras(deps = {}) {
 
 async function buscarInventario(deps = {}) {
   const q = String(deps.q || '').trim();
-  if (!q) return [];
   const db = getModels(deps);
+  const where = { baja_logica: false };
+  if (q) where.nombre = { [Op.like]: `%${q.replace(/[\\%_]/g, '\\$&')}%` };
   const rows = await db.Inventario.findAll({
-    where: {
-      baja_logica: false,
-      nombre: { [Op.like]: `%${q.replace(/[\\%_]/g, '\\$&')}%` },
-    },
+    where,
     attributes: ['id', 'nombre', 'precio_venta'],
-    limit: 20,
+    limit: q ? 20 : 100,
     order: [['nombre', 'ASC']],
   });
   return rows.map((row) => ({
