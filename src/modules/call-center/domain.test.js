@@ -7,6 +7,8 @@ const {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  isValidatedCheckIn,
+  toCargaValidada,
   toSolicitudDetalle,
   toPedidoDia,
   NOTE_LIMIT,
@@ -104,6 +106,26 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   }]);
   expect(detalle.codigo_entrega).toBeUndefined();
   expect(JSON.stringify(detalle)).not.toContain('123456');
+});
+
+test('el histórico solo incluye check-in leídos y no cancelados', () => {
+  const base = { leida: true, datos: { tipo: 'check_in', estado_solicitud: 'abierta' } };
+  expect(isValidatedCheckIn(base)).toBe(true);
+  expect(isValidatedCheckIn({ ...base, leida: false })).toBe(false);
+  expect(isValidatedCheckIn({ leida: true, datos: { tipo: 'check_in', estado_solicitud: 'cancelada' } })).toBe(false);
+  expect(isValidatedCheckIn({ leida: true, datos: { tipo: 'soporte', estado_solicitud: 'abierta' } })).toBe(false);
+  const row = toCargaValidada({
+    notificacion: { id: 2, datos: { tipo: 'check_in' }, fecha_creacion: '2026-10-09', hora_creacion: '10:00:00' },
+    repartidor: { id: 3, nombre_completo: 'Luis' },
+    jornada: {
+      dinero_esperado: 80,
+      validado_por_nombre: 'Mariana G.',
+      cargas: [{ id: 1, fkid_producto: 4, nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false }],
+    },
+  });
+  expect(row.validado_por_nombre).toBe('Mariana G.');
+  expect(row.dinero_esperado).toBe(80);
+  expect(row.cargas[0].nombre).toBe('Arena');
 });
 
 test('la cola ignora leídas, canceladas y otros tipos', () => {

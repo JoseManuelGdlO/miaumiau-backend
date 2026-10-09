@@ -96,6 +96,23 @@ function isOpenSolicitud(row) {
   return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada';
 }
 
+function isValidatedCheckIn(row) {
+  const datos = row?.datos || {};
+  return Boolean(row?.leida) && datos.tipo === 'check_in' && datos.estado_solicitud !== 'cancelada';
+}
+
+function toCargaValidada({ notificacion, repartidor, jornada }) {
+  return {
+    ...toSolicitudDetalle({
+      notificacion,
+      repartidor,
+      cargas: jornada?.cargas || [],
+      dineroEsperado: jornada?.dinero_esperado,
+    }),
+    validado_por_nombre: jornada?.validado_por_nombre || null,
+  };
+}
+
 function repartidorDto(repartidor) {
   if (!repartidor) return null;
   return { id: repartidor.id, nombre_completo: repartidor.nombre_completo };
@@ -171,6 +188,8 @@ module.exports = {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  isValidatedCheckIn,
+  toCargaValidada,
   toSolicitudResumen,
   toSolicitudDetalle,
   toPedidoDia,

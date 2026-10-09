@@ -1,4 +1,4 @@
-const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, detalleSolicitud, listarPedidos, listarRepartidores } = require('./service');
+const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -698,6 +698,30 @@ test('repartidores sin ciudad responde 422', async () => {
   await expect(listarRepartidores({ models })).rejects.toMatchObject({ status: 422 });
   await expect(listarRepartidores({ models, ciudadId: '' })).rejects.toMatchObject({ status: 422 });
   expect(models.Repartidor.findAll).not.toHaveBeenCalled();
+});
+
+test('el histórico deja fuera abiertas y canceladas', async () => {
+  const list = await listarCargasValidadas({
+    rows: [
+      { id: 1, leida: false, prioridad: 'alta', fecha_creacion: '2026-10-09', hora_creacion: '09:00:00', datos: { tipo: 'check_in', estado_solicitud: 'abierta', jornada_id: 3, repartidor_id: 1 } },
+      { id: 2, leida: true, prioridad: 'alta', fecha_creacion: '2026-10-09', hora_creacion: '10:00:00', datos: { tipo: 'check_in', estado_solicitud: 'abierta', jornada_id: 5, repartidor_id: 3 } },
+      { id: 3, leida: true, prioridad: 'alta', fecha_creacion: '2026-10-09', hora_creacion: '11:00:00', datos: { tipo: 'check_in', estado_solicitud: 'cancelada', jornada_id: 6, repartidor_id: 3 } },
+    ],
+    models: {
+      Repartidor: { findByPk: async (id) => ({ id, nombre_completo: 'Luis' }) },
+      JornadaRepartidor: {
+        findByPk: async () => ({
+          dinero_esperado: 80,
+          validado_por_nombre: 'Mariana G.',
+          cargas: [{ id: 1, fkid_producto: 4, nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false }],
+        }),
+      },
+    },
+  });
+  expect(list.map((row) => row.id)).toEqual([2]);
+  expect(list[0].validado_por_nombre).toBe('Mariana G.');
+  expect(list[0].dinero_esperado).toBe(80);
+  expect(list[0].cargas[0].nombre).toBe('Arena');
 });
 
 test('la cola consulta solo solicitudes abiertas', async () => {
