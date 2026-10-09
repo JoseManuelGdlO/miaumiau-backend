@@ -79,3 +79,52 @@ test('cierra 4001 si nadie se autentica a tiempo', async () => {
   await close();
   server.close();
 });
+
+test('un error en el websocket del servidor no tumba el proceso', async () => {
+  const hub = createHub();
+  let serverSocket = null;
+  const originalAdd = hub.add;
+  hub.add = (id, ws) => {
+    serverSocket = ws;
+    return originalAdd(id, ws);
+  };
+  const server = http.createServer();
+  const close = attachRealtime(server, {
+    hub,
+    authTimeoutMs: 500,
+    verifyToken: async () => ({ repartidorId: 9 }),
+  });
+  const port = await listen(server);
+  const ws = await openSocket(port, '/api/app-repartidor/ws');
+  const ready = onceMessage(ws);
+  ws.send(JSON.stringify({ type: 'auth', token: 'ok' }));
+  await expect(ready).resolves.toEqual({ type: 'ready' });
+  expect(serverSocket).not.toBeNull();
+  expect(() => serverSocket.emit('error', new Error('ECONNRESET'))).not.toThrow();
+  const closed = onceClose(ws);
+  serverSocket.terminate();
+  await closed;
+  expect(hub.notify(9, { type: 'x' })).toBe(0);
+  await close();
+  server.close();
+});
+
+test('no registra en el hub un socket que el timer ya cerró mientras verificaba el token', async () => {
+  const hub = createHub();
+  const add = jest.spyOn(hub, 'add');
+  const server = http.createServer();
+  const close = attachRealtime(server, {
+    hub,
+    authTimeoutMs: 50,
+    verifyToken: () => new Promise((resolve) => setTimeout(() => resolve({ repartidorId: 2 }), 200)),
+  });
+  const port = await listen(server);
+  const ws = await openSocket(port, '/api/app-repartidor/ws');
+  const closed = onceClose(ws);
+  ws.send(JSON.stringify({ type: 'auth', token: 'ok' }));
+  await expect(closed).resolves.toBe(4001);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(add).not.toHaveBeenCalled();
+  await close();
+  server.close();
+});

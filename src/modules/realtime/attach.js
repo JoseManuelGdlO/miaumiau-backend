@@ -1,6 +1,14 @@
-const { WebSocketServer } = require('ws');
+const { WebSocket, WebSocketServer } = require('ws');
 
 const DEFAULT_PATH = '/api/app-repartidor/ws';
+
+function safeSend(ws, payload) {
+  try {
+    ws.send(JSON.stringify(payload), () => {});
+  } catch {
+    // El socket pudo morir entre el chequeo y el envío.
+  }
+}
 
 function attachRealtime(httpServer, options) {
   const hub = options.hub;
@@ -21,12 +29,16 @@ function attachRealtime(httpServer, options) {
       socket.destroy();
       return;
     }
+    // Sin listener, un ECONNRESET en el socket crudo tumba el proceso.
+    socket.on('error', () => socket.destroy());
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
   }
 
   wss.on('connection', (ws) => {
+    // Tragarse el error es intencional: close ya limpia el hub y un reset no debe matar Node.
+    ws.on('error', () => {});
     let repartidorId = null;
     const timer = setTimeout(() => {
       if (repartidorId == null) ws.close(4001, 'auth timeout');
@@ -56,13 +68,15 @@ function attachRealtime(httpServer, options) {
           ws.close(4003, 'token invalid');
           return;
         }
-        repartidorId = user.repartidorId;
         clearTimeout(timer);
+        // El timer de auth (o el cliente) pudo cerrar el socket mientras verificábamos.
+        if (ws.readyState !== WebSocket.OPEN) return;
+        repartidorId = user.repartidorId;
         hub.add(repartidorId, ws);
-        ws.send(JSON.stringify({ type: 'ready' }));
+        safeSend(ws, { type: 'ready' });
         return;
       }
-      if (message.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
+      if (message.type === 'ping') safeSend(ws, { type: 'pong' });
     });
 
     ws.on('close', () => {
