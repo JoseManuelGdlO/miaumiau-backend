@@ -9,6 +9,8 @@ const guard = [authenticateToken, requireSuperAdminOrPermission('operar_call_cen
 router.get('/solicitudes', ...guard, controller.solicitudes);
 router.get('/solicitudes/:id', ...guard, controller.solicitud);
 router.post('/solicitudes/:id/aprobar', ...guard, controller.aprobar);
+router.put('/solicitudes/:id/extras', ...guard, controller.extras);
+router.get('/inventario', ...guard, controller.inventario);
 router.post('/solicitudes/:id/atender', ...guard, controller.atender);
 router.get('/pedidos', ...guard, controller.pedidos);
 router.patch('/pedidos/:id/estado', ...guard, controller.estado);

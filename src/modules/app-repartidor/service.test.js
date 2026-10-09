@@ -1,25 +1,112 @@
-const { replaceCarga, leerSolicitud, toPedidoDto, noEntregar, detallePedido } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido } = require('./service');
 
-test('replaceCarga en espera cancela la notificación y responde 409', async () => {
-  const updates = [];
+function rutaConArena() {
+  return [{
+    estado: 'planificada',
+    pedidos: [
+      {
+        pedido: {
+          estado: 'confirmado',
+          total: 80,
+          productos: [
+            { fkid_producto: 4, cantidad: 2, precio_unidad: 10, baja_logica: false, producto: { id: 4, nombre: 'Arena' } },
+          ],
+          paquetes: [{
+            cantidad: 1,
+            paquete: {
+              productos: [{
+                fkid_producto: 4,
+                cantidad: 3,
+                producto: { id: 4, nombre: 'Arena', precio_venta: 15 },
+              }],
+            },
+          }],
+        },
+      },
+      {
+        pedido: {
+          estado: 'cancelado',
+          total: 999,
+          productos: [
+            { fkid_producto: 4, cantidad: 50, precio_unidad: 10, producto: { id: 4, nombre: 'Arena' } },
+          ],
+        },
+      },
+    ],
+  }];
+}
+
+test('replaceCarga responde 403', async () => {
+  await expect(replaceCarga({
+    lineas: [{ nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: true }],
+  })).rejects.toMatchObject({ status: 403, message: 'La carga la calcula el sistema' });
+});
+
+test('solicitarValidacion persiste la carga calculada', async () => {
+  const created = [];
   const jornada = {
-    id: 1,
-    estado: 'esperando_call_center',
-    fkid_notificacion: 9,
-    cargas: [{ nombre: 'Arena', cantidad: 1, precio_unitario: 10, es_extra: false }],
+    id: 3,
+    fkid_repartidor: 1,
+    estado: 'borrador',
+    cargas: [],
     update: async (data) => Object.assign(jornada, data),
   };
-  const notificacion = { id: 9, leida: false, datos: { estado_solicitud: 'abierta' }, update: async (data) => updates.push(data) };
-  const result = await replaceCarga({
+  const result = await solicitarValidacion({
     jornada,
-    lineas: [{ nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false }],
-    notificacion,
-    replaceLineas: async () => {},
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: {
+      Ruta: { findAll: async () => rutaConArena() },
+      JornadaCarga: {
+        destroy: async () => {},
+        bulkCreate: async (rows) => { created.push(...rows); },
+      },
+    },
+    crearNotificacion: async () => ({ id: 9 }),
   });
-  expect(result.statusCode).toBe(409);
-  expect(jornada.estado).toBe('borrador');
-  expect(updates[0].leida).toBe(true);
-  expect(updates[0].datos.estado_solicitud).toBe('cancelada');
+  expect(created).toEqual([
+    expect.objectContaining({
+      fkid_jornada: 3,
+      nombre: 'Arena',
+      fkid_producto: 4,
+      cantidad: 5,
+      precio_unitario: 10,
+      es_extra: false,
+    }),
+  ]);
+  expect(jornada.estado).toBe('esperando_call_center');
+  expect(Number(jornada.dinero_esperado)).toBe(80);
+  expect(jornada.fkid_notificacion).toBe(9);
+  expect(result.notificacion_id).toBe(9);
+});
+
+test('solicitarValidacion responde 422 sin productos en la ruta', async () => {
+  await expect(solicitarValidacion({
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: { Ruta: { findAll: async () => [] } },
+  })).rejects.toMatchObject({ status: 422, message: 'No hay productos en la ruta de hoy' });
+});
+
+test('obtenerJornada en borrador devuelve la carga calculada sin usar la guardada', async () => {
+  const data = await obtenerJornada({
+    jornada: {
+      id: 3,
+      fecha: '2026-10-09',
+      estado: 'borrador',
+      fkid_notificacion: null,
+      cargas: [{ nombre: 'Vieja', cantidad: 9, precio_unitario: 1, es_extra: true }],
+      efectivo_a_depositar: 0,
+      comprobante_deposito_path: null,
+      cerrada_en: null,
+    },
+    models: { Ruta: { findAll: async () => rutaConArena() } },
+  });
+  expect(data.cargas).toEqual([
+    expect.objectContaining({ nombre: 'Arena', cantidad: 5, es_extra: false }),
+  ]);
+  expect(data.dinero_esperado).toBe(80);
+  expect(data.validado_por_nombre).toBeNull();
 });
 
 test('leerSolicitud valida la jornada solo si la notificación vigente está leída', async () => {

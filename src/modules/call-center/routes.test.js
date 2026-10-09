@@ -8,6 +8,8 @@ test('expone la API de call center', () => {
     'GET /solicitudes',
     'GET /solicitudes/:id',
     'POST /solicitudes/:id/aprobar',
+    'PUT /solicitudes/:id/extras',
+    'GET /inventario',
     'POST /solicitudes/:id/atender',
     'GET /pedidos',
     'PATCH /pedidos/:id/estado',

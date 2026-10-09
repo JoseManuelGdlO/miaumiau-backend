@@ -10,6 +10,7 @@ const {
   evaluateLogros,
   stripPhone,
   dayKey,
+  agruparCarga,
   META_DIARIA,
   PUNTOS_POR_ENTREGA,
 } = require('./domain');
@@ -88,5 +89,26 @@ describe('domain app-repartidor', () => {
 
   test('dayKey usa la zona horaria', () => {
     expect(dayKey(new Date('2026-10-07T05:30:00.000Z'), 'America/Mexico_City')).toBe('2026-10-06');
+  });
+
+  test('agruparCarga suma el mismo producto de dos pedidos y de un paquete', () => {
+    expect(agruparCarga([
+      { fkid_producto: 4, nombre: 'Arena', cantidad: 2, precio_unitario: 10 },
+      { fkid_producto: 4, nombre: 'Arena', cantidad: 1, precio_unitario: 12 },
+      { fkid_producto: 4, nombre: 'Arena', cantidad: 3, precio_unitario: 15 },
+      { fkid_producto: 8, nombre: 'Snack', cantidad: 1, precio_unitario: 20 },
+    ])).toEqual([
+      { fkid_producto: 4, nombre: 'Arena', cantidad: 6, precio_unitario: 10, es_extra: false },
+      { fkid_producto: 8, nombre: 'Snack', cantidad: 1, precio_unitario: 20, es_extra: false },
+    ]);
+  });
+
+  test('agruparCarga agrupa por nombre si no hay producto', () => {
+    expect(agruparCarga([
+      { fkid_producto: null, nombre: 'Regalo', cantidad: 1, precio_unitario: 0 },
+      { nombre: 'Regalo', cantidad: 2, precio_unitario: null },
+    ])).toEqual([
+      { fkid_producto: null, nombre: 'Regalo', cantidad: 3, precio_unitario: 0, es_extra: false },
+    ]);
   });
 });

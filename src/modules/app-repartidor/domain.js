@@ -95,6 +95,43 @@ function stripPhone(cliente) {
   return rest;
 }
 
+function precioNoNulo(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function agruparCarga(lineas) {
+  const groups = new Map();
+  for (const line of lineas || []) {
+    const rawId = line.fkid_producto;
+    const id = rawId == null || rawId === '' ? null : Number(rawId);
+    const fkid = id == null || Number.isNaN(id) ? null : id;
+    const nombre = String(line.nombre || '');
+    const key = fkid == null ? `nombre:${nombre}` : `id:${fkid}`;
+    const cantidad = Number(line.cantidad) || 0;
+    const precio = precioNoNulo(line.precio_unitario);
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        fkid_producto: fkid,
+        nombre,
+        cantidad,
+        precio_unitario: precio,
+        es_extra: false,
+      });
+      continue;
+    }
+    existing.cantidad += cantidad;
+    if (existing.precio_unitario == null && precio != null) existing.precio_unitario = precio;
+    if (!existing.nombre && nombre) existing.nombre = nombre;
+  }
+  return [...groups.values()].map((row) => ({
+    ...row,
+    precio_unitario: row.precio_unitario == null ? 0 : row.precio_unitario,
+  }));
+}
+
 function dayKey(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timeZone || 'America/Mexico_City',
@@ -120,4 +157,5 @@ module.exports = {
   emptyLogros,
   stripPhone,
   dayKey,
+  agruparCarga,
 };
