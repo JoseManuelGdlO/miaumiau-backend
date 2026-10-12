@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -100,6 +100,51 @@ test('solicitarValidacion persiste la carga calculada', async () => {
   expect(updates[0].datos.actionUrl).toBe('/dashboard/call-center?tab=validacion&solicitud=9');
 });
 
+test('solicitarValidacion reutiliza la solicitud abierta del check-in', async () => {
+  const updates = [];
+  const notificacion = {
+    id: 9,
+    leida: false,
+    datos: {
+      tipo: 'check_in',
+      estado_solicitud: 'abierta',
+      espera_reenvio: true,
+      jornada_id: 3,
+      repartidor_id: 1,
+      archivada: true,
+    },
+    update: async (patch) => {
+      updates.push(patch);
+      Object.assign(notificacion, patch);
+    },
+  };
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 1,
+    fkid_notificacion: 9,
+    estado: 'borrador',
+    cargas: [],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  const result = await solicitarValidacion({
+    jornada,
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: {
+      Ruta: { findAll: async () => rutaConArena() },
+      JornadaCarga: { destroy: async () => {}, bulkCreate: async () => {} },
+      Notificacion: { findByPk: async () => notificacion },
+    },
+    crearNotificacion: async () => { throw new Error('no debía crear otra solicitud'); },
+  });
+  expect(result.notificacion_id).toBe(9);
+  expect(jornada.fkid_notificacion).toBe(9);
+  expect(jornada.estado).toBe('esperando_call_center');
+  expect(updates[0].datos.espera_reenvio).toBe(false);
+  expect(updates[0].datos.estado_solicitud).toBe('abierta');
+  expect(updates[0].datos.archivada).toBe(true);
+});
+
 test('solicitarValidacion responde 422 sin productos en la ruta', async () => {
   await expect(solicitarValidacion({
     repartidorId: 1,
@@ -108,7 +153,62 @@ test('solicitarValidacion responde 422 sin productos en la ruta', async () => {
   })).rejects.toMatchObject({ status: 422, message: 'No hay productos en la ruta de hoy' });
 });
 
-test('obtenerJornada en borrador devuelve la carga calculada sin usar la guardada', async () => {
+test('refrescarCargaEnValidacion reescribe la ruta y conserva el extra', async () => {
+  const destroyed = [];
+  const created = [];
+  const jornada = {
+    id: 3,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+    cargas: [
+      { nombre: 'Vieja', fkid_producto: 4, cantidad: 1, precio_unitario: 10, es_extra: false },
+      { nombre: 'Snack', fkid_producto: 8, cantidad: 2, precio_unitario: 10, es_extra: true },
+    ],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  const refreshed = await refrescarCargaEnValidacion({
+    jornada,
+    repartidorId: 1,
+    fecha: new Date('2026-10-09T00:00:00Z'),
+    models: {
+      Ruta: { findAll: async () => rutaConArena() },
+      JornadaCarga: {
+        destroy: async (query) => { destroyed.push(query); },
+        bulkCreate: async (rows) => { created.push(...rows); },
+      },
+    },
+  });
+  expect(refreshed).toBe(true);
+  expect(destroyed).toEqual([{ where: { fkid_jornada: 3, es_extra: false } }]);
+  expect(created).toEqual([
+    expect.objectContaining({ nombre: 'Arena', cantidad: 5, es_extra: false }),
+  ]);
+  expect(jornada.estado).toBe('esperando_call_center');
+  expect(jornada.fkid_notificacion).toBe(9);
+  expect(Number(jornada.dinero_esperado)).toBe(100);
+});
+
+test('refrescarCargaEnValidacion no toca una jornada que no está en validación', async () => {
+  const jornada = {
+    id: 3,
+    estado: 'borrador',
+    cargas: [{ nombre: 'Snack', fkid_producto: 8, cantidad: 2, precio_unitario: 10, es_extra: true }],
+    update: async () => { throw new Error('no debía guardar'); },
+  };
+  const refreshed = await refrescarCargaEnValidacion({
+    jornada,
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: {
+      Ruta: { findAll: async () => { throw new Error('no debía leer la ruta'); } },
+      JornadaCarga: { destroy: async () => { throw new Error('no debía borrar'); } },
+    },
+  });
+  expect(refreshed).toBe(false);
+  expect(jornada.estado).toBe('borrador');
+});
+
+test('obtenerJornada en borrador recalcula la ruta y conserva el extra', async () => {
   const data = await obtenerJornada({
     jornada: {
       id: 3,
@@ -124,9 +224,40 @@ test('obtenerJornada en borrador devuelve la carga calculada sin usar la guardad
   });
   expect(data.cargas).toEqual([
     expect.objectContaining({ nombre: 'Arena', cantidad: 5, es_extra: false }),
+    expect.objectContaining({ nombre: 'Vieja', cantidad: 9, precio_unitario: 1, es_extra: true }),
   ]);
-  expect(data.dinero_esperado).toBe(80);
+  expect(data.dinero_esperado).toBe(89);
   expect(data.validado_por_nombre).toBeNull();
+});
+
+test('solicitarValidacion conserva el producto extra al volver a enviar', async () => {
+  const created = [];
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 1,
+    estado: 'borrador',
+    cargas: [{ nombre: 'Snack', fkid_producto: 8, cantidad: 2, precio_unitario: 10, es_extra: true }],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await solicitarValidacion({
+    jornada,
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: {
+      Ruta: { findAll: async () => rutaConArena() },
+      JornadaCarga: {
+        destroy: async () => {},
+        bulkCreate: async (rows) => { created.push(...rows); },
+      },
+    },
+    crearNotificacion: async () => ({ id: 9, update: async () => {} }),
+  });
+  expect(created).toEqual(expect.arrayContaining([
+    expect.objectContaining({ nombre: 'Arena', es_extra: false, cantidad: 5 }),
+    expect.objectContaining({ nombre: 'Snack', fkid_producto: 8, cantidad: 2, es_extra: true }),
+  ]));
+  expect(jornada.estado).toBe('esperando_call_center');
+  expect(Number(jornada.dinero_esperado)).toBe(100);
 });
 
 test('leerSolicitud valida la jornada solo si la notificación vigente está leída', async () => {

@@ -1,5 +1,6 @@
 const { Op, literal } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
+const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
 const {
   approveCheck,
   attendCheck,
@@ -260,10 +261,20 @@ async function guardarExtras(deps = {}) {
     });
   }
 
+  const previos = await leerExtras(db, jornada);
+  const cambiaron = firmaExtra(previos) !== firmaExtra(resolved);
   await db.JornadaCarga.destroy({ where: { fkid_jornada: jornada.id, es_extra: true } });
   if (resolved.length) await db.JornadaCarga.bulkCreate(resolved);
+  if (cambiaron) {
+    const datosActuales = { ...(notificacion.datos || {}), espera_reenvio: true };
+    if (typeof notificacion.update === 'function') await notificacion.update({ datos: datosActuales });
+    else notificacion.datos = datosActuales;
+    if (typeof jornada.update === 'function') await jornada.update({ estado: 'borrador' });
+    else jornada.estado = 'borrador';
+  }
   await safeNotify(deps, jornada?.fkid_repartidor, { type: 'jornada.actualizada' });
   return {
+    reenvio: cambiaron,
     cargas: resolved.map((c) => ({
       nombre: c.nombre,
       fkid_producto: c.fkid_producto,
@@ -272,6 +283,23 @@ async function guardarExtras(deps = {}) {
       es_extra: true,
     })),
   };
+}
+
+function firmaExtra(lines) {
+  return (lines || [])
+    .map((line) => `${Number(line.fkid_producto)}:${Number(line.cantidad)}`)
+    .sort()
+    .join('|');
+}
+
+async function leerExtras(db, jornada) {
+  if (typeof db.JornadaCarga?.findAll === 'function') {
+    const rows = await db.JornadaCarga.findAll({
+      where: { fkid_jornada: jornada.id, es_extra: true },
+    });
+    return rows || [];
+  }
+  return (jornada.cargas || []).filter((line) => line && line.es_extra);
 }
 
 async function buscarInventario(deps = {}) {
@@ -473,11 +501,23 @@ async function reasignar(deps = {}) {
     return { ruta_id: destino.id, creada, orden_entrega: orden };
   });
   const pedidoId = Number(deps.pedidoId);
+  const fecha = fechaKey(ruta.fecha_ruta);
+  await refrescarFoto(deps, anterior, fecha);
+  if (Number(nuevo) !== Number(anterior)) await refrescarFoto(deps, nuevo, fecha);
   await safeNotify(deps, anterior, { type: 'ruta.actualizada', pedidoId });
   if (Number(nuevo) !== Number(anterior)) {
     await safeNotify(deps, nuevo, { type: 'ruta.actualizada', pedidoId });
   }
   return result;
+}
+
+async function refrescarFoto(deps, repartidorId, fecha) {
+  if (repartidorId == null || repartidorId === '') return;
+  try {
+    await refrescarCargaEnValidacion({ models: deps.models, repartidorId, fecha });
+  } catch (error) {
+    log.warn('No se pudo refrescar la carga en validación', { message: error.message });
+  }
 }
 
 async function fechaDeHoy(deps) {

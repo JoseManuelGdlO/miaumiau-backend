@@ -184,6 +184,52 @@ test('reasignar crea la ruta, conserva el código y limpia la llegada', async ()
   expect(destino.total_pedidos).toBe(1);
 });
 
+test('reasignar refresca la foto de los dos repartidores antes de avisar', async () => {
+  const vistos = [];
+  const rutaPedido = {
+    fkid_ruta: 1,
+    orden_entrega: 1,
+    estado_entrega: 'pendiente',
+    update: async (patch) => Object.assign(rutaPedido, patch),
+    pedido: { id: 4, estado: 'en_camino', codigo_entrega: '123456' },
+    ruta: {
+      id: 1,
+      fkid_ciudad: 7,
+      fkid_repartidor: 3,
+      fecha_ruta: '2026-10-07',
+      total_pedidos: 1,
+      estado: 'planificada',
+      update: async (patch) => Object.assign(rutaPedido.ruta, patch),
+    },
+  };
+  const destino = { id: 20, total_pedidos: 0, update: async (patch) => Object.assign(destino, patch) };
+  const notify = jest.fn();
+  await reasignar({
+    models: {
+      Ruta: { findAll: async () => [], create: async () => destino },
+      RutaPedido: { findAll: async () => [] },
+      JornadaRepartidor: {
+        findOne: async (query) => {
+          vistos.push(query.where);
+          return null;
+        },
+      },
+    },
+    rutaPedido,
+    pedidoId: 4,
+    fechaHoy: '2026-10-07',
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+    transaction: async (fn) => fn(),
+    notify,
+  });
+  expect(vistos).toEqual([
+    { fkid_repartidor: 3, fecha: '2026-10-07' },
+    { fkid_repartidor: 8, fecha: '2026-10-07' },
+  ]);
+  expect(notify).toHaveBeenNthCalledWith(1, 3, { type: 'ruta.actualizada', pedidoId: 4 });
+  expect(notify).toHaveBeenNthCalledWith(2, 8, { type: 'ruta.actualizada', pedidoId: 4 });
+});
+
 test('reasignar un pedido cerrado responde 409', async () => {
   const rutaPedido = {
     pedido: { estado: 'entregado' },
@@ -231,6 +277,7 @@ test('guardarExtras reemplaza solo las líneas extra y no marca leída', async (
     cargas: [
       { id: 1, nombre: 'Arena', fkid_producto: 4, cantidad: 5, precio_unitario: 10, es_extra: false },
     ],
+    update: async (data) => Object.assign(jornada, data),
   };
   const result = await guardarExtras({
     notificacion: n,
@@ -245,6 +292,10 @@ test('guardarExtras reemplaza solo las líneas extra y no marca leída', async (
     },
   });
   expect(n.leida).toBe(false);
+  expect(n.datos.estado_solicitud).toBe('abierta');
+  expect(n.datos.espera_reenvio).toBe(true);
+  expect(jornada.estado).toBe('borrador');
+  expect(result.reenvio).toBe(true);
   expect(destroyed[0].where).toEqual({ fkid_jornada: 3, es_extra: true });
   expect(created).toEqual([
     expect.objectContaining({
@@ -258,6 +309,31 @@ test('guardarExtras reemplaza solo las líneas extra y no marca leída', async (
   ]);
   expect(result.cargas[0].es_extra).toBe(true);
   expect(jornada.cargas[0].es_extra).toBe(false);
+});
+
+test('guardarExtras iguales no pide reenvío', async () => {
+  const n = notificacion();
+  const jornada = {
+    id: 3,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+    cargas: [
+      { id: 2, nombre: 'Snack', fkid_producto: 8, cantidad: 2, precio_unitario: 10, es_extra: true },
+    ],
+    update: async () => { throw new Error('no debía cambiar la jornada'); },
+  };
+  const result = await guardarExtras({
+    notificacion: n,
+    jornada,
+    lineas: [{ fkid_producto: 8, cantidad: 2, precio_unitario: 10 }],
+    models: {
+      Inventario: { findByPk: async () => ({ id: 8, nombre: 'Snack', precio_venta: 10, baja_logica: false }) },
+      JornadaCarga: { destroy: async () => {}, bulkCreate: async () => {} },
+    },
+  });
+  expect(result.reenvio).toBe(false);
+  expect(n.datos.estado_solicitud).toBe('abierta');
+  expect(jornada.estado).toBe('esperando_call_center');
 });
 
 test('guardarExtras responde 422 si el producto no existe', async () => {
@@ -876,6 +952,7 @@ test('guardar extras avisa y un notify roto no falla el guardado', async () => {
     },
   });
   expect(result.cargas[0].es_extra).toBe(true);
+  expect(result.reenvio).toBe(true);
   expect(notify).toHaveBeenCalledWith(8, { type: 'jornada.actualizada' });
 });
 

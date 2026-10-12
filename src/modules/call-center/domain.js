@@ -140,6 +140,7 @@ function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPe
     return {
       ...base,
       dinero_esperado: dineroEsperado == null || dineroEsperado === '' ? 0 : Number(dineroEsperado),
+      espera_reenvio: Boolean(datos.espera_reenvio),
       cargas: (cargas || []).map((c) => ({
         id: c.id ?? null,
         fkid_producto: c.fkid_producto ?? null,

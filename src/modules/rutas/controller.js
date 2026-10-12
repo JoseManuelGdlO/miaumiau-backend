@@ -3,9 +3,20 @@ const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
+const { getHub } = require('../realtime');
+const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
+
+async function refrescarFotoDeRuta(repartidorId, fecha) {
+  if (repartidorId == null || repartidorId === '') return;
+  try {
+    await refrescarCargaEnValidacion({ repartidorId, fecha });
+  } catch (error) {
+    log.warn('[RUTAS] No se pudo refrescar la carga en validación', { message: error.message });
+  }
+}
 
 class RutaController {
   // Crear nueva ruta
@@ -776,6 +787,17 @@ class RutaController {
       }
       
       log.debug(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
+
+      if (rutaPedidos.length > 0 && ruta.fkid_repartidor) {
+        await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
+        try {
+          getHub().notify(ruta.fkid_repartidor, { type: 'jornada.actualizada' });
+        } catch (notifyError) {
+          log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
+            message: notifyError.message,
+          });
+        }
+      }
       
       if (errores.length > 0) {
         log.error(`[RUTAS] Errores al asignar pedidos:`, errores);
@@ -1069,6 +1091,17 @@ class RutaController {
 
       // Eliminar la asignación del pedido
       await rutaPedido.destroy();
+
+      if (ruta.fkid_repartidor) {
+        await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
+        try {
+          getHub().notify(ruta.fkid_repartidor, { type: 'jornada.actualizada' });
+        } catch (notifyError) {
+          log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
+            message: notifyError.message,
+          });
+        }
+      }
 
       // Actualizar el total de pedidos en la ruta
       await ruta.update({

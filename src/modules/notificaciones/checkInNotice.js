@@ -2,11 +2,22 @@ function cleanName(nombre) {
   return typeof nombre === 'string' ? nombre.trim() : '';
 }
 
+const SOLICITUD_TIPOS = ['check_in', 'llamada_cliente', 'soporte'];
+
+function parseDatos(datos) {
+  if (typeof datos === 'string') {
+    try { return JSON.parse(datos); } catch { return {}; }
+  }
+  return datos || {};
+}
+
 function isPendingCheckIn(datos) {
-  const parsed = typeof datos === 'string'
-    ? (() => { try { return JSON.parse(datos); } catch { return {}; } })()
-    : (datos || {});
+  const parsed = parseDatos(datos);
   return parsed.tipo === 'check_in' && parsed.estado_solicitud !== 'cancelada';
+}
+
+function isSolicitud(datos) {
+  return SOLICITUD_TIPOS.includes(parseDatos(datos).tipo);
 }
 
 function validacionCargaPath(id) {
@@ -92,4 +103,5 @@ module.exports = {
   decorateCheckIn,
   presentNotificaciones,
   isPendingCheckIn,
+  isSolicitud,
 };

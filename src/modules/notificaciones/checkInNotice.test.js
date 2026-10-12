@@ -1,4 +1,11 @@
-const { noticeFromNombre, decorateCheckIn, presentNotificaciones, validacionCargaPath, isPendingCheckIn } = require('./checkInNotice');
+const { noticeFromNombre, decorateCheckIn, presentNotificaciones, validacionCargaPath, isPendingCheckIn, isSolicitud } = require('./checkInNotice');
+
+test('una solicitud sigue siendo solicitud aunque se archive en la bandeja', () => {
+  expect(isSolicitud({ tipo: 'check_in', estado_solicitud: 'abierta' })).toBe(true);
+  expect(isSolicitud({ tipo: 'llamada_cliente', estado_solicitud: 'abierta' })).toBe(true);
+  expect(isSolicitud({ tipo: 'soporte', estado_solicitud: 'abierta' })).toBe(true);
+  expect(isSolicitud({ tipo: 'stock' })).toBe(false);
+});
 
 test('un check-in abierto no se puede cerrar marcándolo como leído', () => {
   expect(isPendingCheckIn({ tipo: 'check_in', estado_solicitud: 'abierta' })).toBe(true);

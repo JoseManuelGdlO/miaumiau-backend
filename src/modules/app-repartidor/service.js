@@ -220,42 +220,62 @@ async function solicitarValidacion(deps = {}) {
   if (!calculo.lineas.length) fail(422, 'No hay productos en la ruta de hoy');
   const jornada = await loadJornada(deps, { findOrCreate: true });
   if (!jornada) fail(404, 'Jornada no encontrada');
+  const extras = lineasExtra(jornada);
   const db = getModels(deps);
   await db.JornadaCarga.destroy({ where: { fkid_jornada: jornada.id } });
-  await db.JornadaCarga.bulkCreate(
-    calculo.lineas.map((l) => ({
+  await db.JornadaCarga.bulkCreate([
+    ...calculo.lineas.map((l) => ({
       fkid_jornada: jornada.id,
       nombre: l.nombre,
       fkid_producto: l.fkid_producto ?? null,
       cantidad: l.cantidad,
       precio_unitario: l.precio_unitario,
       es_extra: false,
-    }))
-  );
+    })),
+    ...extras,
+  ]);
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
   const aviso = noticeFromNombre(await nombreDelRepartidor(deps));
   const datos = {
     tipo: 'check_in',
     estado_solicitud: 'abierta',
+    espera_reenvio: false,
     repartidor_id: jornada.fkid_repartidor || deps.repartidorId,
     jornada_id: jornada.id,
     ...(aviso.repartidor_nombre ? { repartidor_nombre: aviso.repartidor_nombre } : {}),
   };
-  const notificacion = await crearNotificacion({
-    nombre: aviso.nombre,
-    descripcion: aviso.descripcion,
-    prioridad: 'alta',
-    datos,
-  });
-  if (typeof notificacion.update === 'function') {
-    await notificacion.update({
-      datos: { ...datos, actionUrl: validacionCargaPath(notificacion.id) },
+  const vigente = await notificacionDeCheckIn(deps, jornada);
+  let notificacion = vigente;
+  if (notificacion) {
+    const nextDatos = {
+      ...(notificacion.datos || {}),
+      ...datos,
+      espera_reenvio: false,
+      actionUrl: validacionCargaPath(notificacion.id),
+    };
+    if (typeof notificacion.update === 'function') {
+      await notificacion.update({ leida: false, datos: nextDatos });
+    } else {
+      notificacion.leida = false;
+      notificacion.datos = nextDatos;
+    }
+  } else {
+    notificacion = await crearNotificacion({
+      nombre: aviso.nombre,
+      descripcion: aviso.descripcion,
+      prioridad: 'alta',
+      datos,
     });
+    if (typeof notificacion.update === 'function') {
+      await notificacion.update({
+        datos: { ...datos, actionUrl: validacionCargaPath(notificacion.id) },
+      });
+    }
   }
   await jornada.update({
     estado: 'esperando_call_center',
     fkid_notificacion: notificacion.id,
-    dinero_esperado: calculo.dinero_esperado,
+    dinero_esperado: dineroConExtras(calculo.dinero_esperado, extras),
   });
   return { id: notificacion.id, notificacion_id: notificacion.id, jornada_id: jornada.id };
 }
@@ -302,7 +322,20 @@ async function leerSolicitud(deps = {}) {
   ) {
     await jornada.update({ estado: 'validada' });
   }
-  return { atendida };
+  return {
+    atendida,
+    reenvio: Boolean(!atendida && (datos.estado_solicitud === 'cancelada' || datos.espera_reenvio)),
+  };
+}
+
+async function notificacionDeCheckIn(deps, jornada) {
+  if (!jornada?.fkid_notificacion) return null;
+  const db = getModels(deps);
+  if (typeof db.Notificacion?.findByPk !== 'function') return null;
+  const row = await db.Notificacion.findByPk(jornada.fkid_notificacion);
+  const datos = row?.datos || {};
+  if (!row || datos.tipo !== 'check_in' || row.leida || datos.estado_solicitud === 'cancelada') return null;
+  return row;
 }
 
 function cargaDto(c) {
@@ -316,15 +349,80 @@ function cargaDto(c) {
   };
 }
 
+function lineasExtra(jornada) {
+  return (jornada?.cargas || [])
+    .filter((c) => c && c.es_extra)
+    .map((c) => ({
+      fkid_jornada: jornada.id,
+      nombre: c.nombre,
+      fkid_producto: c.fkid_producto ?? null,
+      cantidad: Number(c.cantidad) || 0,
+      precio_unitario: Number(c.precio_unitario) || 0,
+      es_extra: true,
+    }))
+    .filter((c) => c.nombre && c.cantidad >= 1);
+}
+
+function dineroConExtras(base, extras) {
+  const extraCents = (extras || []).reduce((sum, line) => {
+    return sum + Math.round((Number(line.precio_unitario) || 0) * (Number(line.cantidad) || 0) * 100);
+  }, 0);
+  return (Math.round((Number(base) || 0) * 100) + extraCents) / 100;
+}
+
+function fechaDeRuta(value) {
+  if (value == null || value === '') return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).slice(0, 10);
+}
+
+async function refrescarCargaEnValidacion(deps = {}) {
+  const repartidorId = deps.repartidorId;
+  const fecha = fechaDeRuta(deps.fecha);
+  if (repartidorId == null || repartidorId === '' || !fecha) return false;
+  const db = getModels(deps);
+  let jornada = deps.jornada;
+  if (!jornada) {
+    if (typeof db.JornadaRepartidor?.findOne !== 'function') return false;
+    jornada = await db.JornadaRepartidor.findOne({
+      where: { fkid_repartidor: repartidorId, fecha },
+      include: [{ model: db.JornadaCarga, as: 'cargas' }],
+    });
+  }
+  if (!jornada || jornada.estado !== 'esperando_call_center') return false;
+  const calculo = await calcularCargaDelDia({ ...deps, repartidorId, fecha });
+  const extras = lineasExtra(jornada);
+  await db.JornadaCarga.destroy({ where: { fkid_jornada: jornada.id, es_extra: false } });
+  const routeLines = calculo.lineas.map((l) => ({
+    fkid_jornada: jornada.id,
+    nombre: l.nombre,
+    fkid_producto: l.fkid_producto ?? null,
+    cantidad: l.cantidad,
+    precio_unitario: l.precio_unitario,
+    es_extra: false,
+  }));
+  if (routeLines.length) await db.JornadaCarga.bulkCreate(routeLines);
+  const dinero_esperado = dineroConExtras(calculo.dinero_esperado, extras);
+  if (typeof jornada.update === 'function') await jornada.update({ dinero_esperado });
+  else jornada.dinero_esperado = dinero_esperado;
+  return true;
+}
+
 async function obtenerJornada(deps = {}) {
   const jornada = await loadJornada(deps, { findOrCreate: false });
   if (!jornada || jornada.estado === 'borrador') {
     const calculo = await calcularCargaDelDia(deps);
+    const extras = lineasExtra(jornada).map(cargaDto);
     const base = {
       estado: 'borrador',
-      dinero_esperado: calculo.dinero_esperado,
+      dinero_esperado: dineroConExtras(calculo.dinero_esperado, extras),
       validado_por_nombre: null,
-      cargas: calculo.lineas,
+      cargas: [...calculo.lineas, ...extras],
     };
     if (!jornada) return base;
     const raw = plain(jornada);
@@ -943,6 +1041,7 @@ async function logros(deps = {}) {
 module.exports = {
   replaceCarga,
   solicitarValidacion,
+  refrescarCargaEnValidacion,
   leerSolicitud,
   obtenerJornada,
   assertRutaDelRepartidor,

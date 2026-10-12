@@ -2,7 +2,11 @@ const { Notificacion, Sequelize, Conversacion, Pedido, Cliente, Inventario, City
 const { Op } = require('sequelize');
 const { sendPushForNotificacion } = require('../../services/pushService');
 const { Logger } = require('../../utils/logger');
-const { presentNotificaciones, isPendingCheckIn } = require('./checkInNotice');
+const { presentNotificaciones, isPendingCheckIn, isSolicitud } = require('./checkInNotice');
+
+const INBOX_VISIBLE = Sequelize.literal(
+  "(JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.archivada')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.archivada')) <> 'true')"
+);
 
 function findRepartidoresByIds(ids) {
   return Repartidor.findAll({
@@ -63,6 +67,9 @@ class NotificacionController {
       }
 
       const offset = (page - 1) * limit;
+      const visible = whereClause[Op.and] ? [].concat(whereClause[Op.and]) : [];
+      visible.push(INBOX_VISIBLE);
+      whereClause[Op.and] = visible;
 
       const { count, rows: notificaciones } = await Notificacion.findAndCountAll({
         where: whereClause,
@@ -193,7 +200,13 @@ class NotificacionController {
         });
       }
 
-      await notificacion.destroy();
+      if (isSolicitud(notificacion.datos)) {
+        const datos = notificacion.datos && typeof notificacion.datos === 'object' ? notificacion.datos : {};
+        notificacion.datos = { ...datos, archivada: true };
+        await notificacion.save();
+      } else {
+        await notificacion.destroy();
+      }
 
       res.status(200).json({
         success: true,
@@ -371,7 +384,11 @@ class NotificacionController {
     try {
       const { limit = 10 } = req.query;
 
-      const notificaciones = await Notificacion.getRecent(parseInt(limit));
+      const notificaciones = await Notificacion.findAll({
+        where: { [Op.and]: [INBOX_VISIBLE] },
+        order: [['created_at', 'DESC']],
+        limit: parseInt(limit, 10),
+      });
 
       res.status(200).json({
         success: true,
