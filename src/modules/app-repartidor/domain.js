@@ -8,6 +8,14 @@ function buildDeliveryCode() {
   return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 }
 
+function packageCodeComponents(codigo) {
+  const text = String(codigo);
+  return [
+    { type: 'body', parameters: [{ type: 'text', text }] },
+    { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text }] },
+  ];
+}
+
 function codesMatch(stored, typed) {
   const a = String(stored || '');
   const b = String(typed || '').replace(/\D/g, '').slice(0, 6);
@@ -146,6 +154,7 @@ module.exports = {
   PUNTOS_POR_ENTREGA,
   LOGRO_CODES,
   buildDeliveryCode,
+  packageCodeComponents,
   codesMatch,
   applyLoadChange,
   checkInOpens,

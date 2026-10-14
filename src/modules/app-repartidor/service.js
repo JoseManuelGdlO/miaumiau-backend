@@ -3,6 +3,7 @@ const {
   checkInOpens,
   canListOrders,
   codesMatch,
+  packageCodeComponents,
   validatePayment,
   validateStock,
   nextPoints,
@@ -14,6 +15,14 @@ const {
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
+const { phoneOf } = require('../call-center/domain');
+const { ensureDeliveryCode } = require('./assignCode');
+const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
+const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
+
+const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
+const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
+const PACKAGE_CODE_SEND_ERROR = 'No se pudo enviar el código al cliente. Intenta de nuevo.';
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
@@ -451,13 +460,15 @@ async function obtenerJornada(deps = {}) {
   };
 }
 
-function pedidoInclude(db, { withCode = false } = {}) {
+function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
+  const clienteAttributes = ['id', 'nombre_completo'];
+  if (withPhone) clienteAttributes.push('telefono');
   return {
     model: db.Pedido,
     as: 'pedido',
     attributes: withCode ? undefined : { exclude: ['codigo_entrega'] },
     include: [
-      { model: db.Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] },
+      { model: db.Cliente, as: 'cliente', attributes: clienteAttributes },
       {
         model: db.ProductoPedido,
         as: 'productos',
@@ -469,7 +480,7 @@ function pedidoInclude(db, { withCode = false } = {}) {
   };
 }
 
-async function assertRutaDelRepartidor(deps = {}, { withCode = false } = {}) {
+async function assertRutaDelRepartidor(deps = {}, { withCode = false, withPhone = false } = {}) {
   if (deps.rutaPedido) {
     const owner = deps.rutaPedido.ruta?.fkid_repartidor;
     if (owner != null && owner !== deps.repartidorId) {
@@ -487,7 +498,7 @@ async function assertRutaDelRepartidor(deps = {}, { withCode = false } = {}) {
         required: true,
         where: { fkid_repartidor: deps.repartidorId },
       },
-      pedidoInclude(db, { withCode }),
+      pedidoInclude(db, { withCode, withPhone }),
     ],
   });
   if (!rutaPedido) fail(403, 'Pedido no encontrado en tu ruta');
@@ -536,9 +547,47 @@ async function detallePedido(deps = {}) {
   return toPedidoDto(rutaPedido.pedido, rutaPedido);
 }
 
+async function lineaWhatsAppDelCliente(deps, pedido) {
+  const clienteId = pedido?.cliente?.id ?? pedido?.fkid_cliente;
+  const db = getModels(deps);
+  if (clienteId != null && typeof db.Conversacion?.findOne === 'function') {
+    const conversacion = await db.Conversacion.findOne({
+      where: { id_cliente: clienteId },
+      order: [['updated_at', 'DESC']],
+      attributes: ['whatsapp_phone_number_id'],
+    });
+    if (conversacion?.whatsapp_phone_number_id) return conversacion.whatsapp_phone_number_id;
+  }
+  return DEFAULT_WHATSAPP_PHONE_NUMBER_ID;
+}
+
 async function llegada(deps = {}) {
   await requireJornadaAbierta(deps);
-  const rutaPedido = await assertRutaDelRepartidor(deps);
+  const rutaPedido = await assertRutaDelRepartidor(deps, { withCode: true, withPhone: true });
+  if (rutaPedido.llego_en) return toPedidoDto(rutaPedido.pedido, rutaPedido);
+
+  const pedido = rutaPedido.pedido;
+  await ensureDeliveryCode(pedido);
+  const telefono = formatPhoneForWhatsApp(phoneOf(pedido));
+  if (!telefono) fail(422, 'El pedido no tiene teléfono para enviar el código');
+
+  const send = deps.sendWhatsAppTemplate || sendWhatsAppTemplate;
+  let result;
+  try {
+    result = await send(
+      telefono,
+      await lineaWhatsAppDelCliente(deps, pedido),
+      PACKAGE_CODE_TEMPLATE_NAME,
+      {
+        languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
+        components: packageCodeComponents(pedido.codigo_entrega),
+      }
+    );
+  } catch {
+    fail(502, PACKAGE_CODE_SEND_ERROR);
+  }
+  if (!result?.success) fail(502, PACKAGE_CODE_SEND_ERROR);
+
   await rutaPedido.update({
     llego_en: new Date(),
     estado_entrega: 'en_camino',

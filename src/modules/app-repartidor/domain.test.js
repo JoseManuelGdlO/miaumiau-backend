@@ -1,5 +1,6 @@
 const {
   buildDeliveryCode,
+  packageCodeComponents,
   codesMatch,
   applyLoadChange,
   checkInOpens,
@@ -18,6 +19,13 @@ const {
 describe('domain app-repartidor', () => {
   test('el código tiene 6 dígitos', () => {
     expect(buildDeliveryCode()).toMatch(/^\d{6}$/);
+  });
+
+  test('packageCodeComponents repite el código en el cuerpo y en copiar código', () => {
+    expect(packageCodeComponents('123456')).toEqual([
+      { type: 'body', parameters: [{ type: 'text', text: '123456' }] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '123456' }] },
+    ]);
   });
 
   test('codesMatch no filtra el código guardado', () => {

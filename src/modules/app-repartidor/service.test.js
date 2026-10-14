@@ -1,4 +1,6 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada } = require('./service');
+const { packageCodeComponents } = require('./domain');
+const { WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 
 function rutaConArena() {
   return [{
@@ -350,4 +352,173 @@ test('detallePedido no selecciona codigo_entrega', async () => {
   });
   expect(pedidoInclude.attributes).toEqual({ exclude: ['codigo_entrega'] });
   expect(dto).not.toHaveProperty('codigo_entrega');
+});
+
+function pedidoConCodigo(extra = {}) {
+  return {
+    id: 7,
+    codigo_entrega: '482193',
+    telefono_referencia: '6181112233',
+    cliente: { id: 1, nombre_completo: 'Ana', telefono: '6180000000' },
+    ...extra,
+  };
+}
+
+test('llegada no guarda la llegada si WhatsApp rechaza el código', async () => {
+  let updated = false;
+  const rutaPedido = {
+    llego_en: null,
+    pedido: pedidoConCodigo(),
+    update: async () => { updated = true; },
+  };
+  await expect(llegada({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    rutaPedido,
+    models: {},
+    sendWhatsAppTemplate: async () => ({ success: false }),
+  })).rejects.toMatchObject({
+    status: 502,
+    message: 'No se pudo enviar el código al cliente. Intenta de nuevo.',
+  });
+  expect(updated).toBe(false);
+  expect(rutaPedido.llego_en).toBeNull();
+});
+
+test('llegada responde 422 y no envía si el pedido no tiene teléfono', async () => {
+  let sent = false;
+  const rutaPedido = {
+    llego_en: null,
+    pedido: pedidoConCodigo({ telefono_referencia: '   ', cliente: { id: 1, telefono: '' } }),
+    update: async () => { throw new Error('no debe actualizar'); },
+  };
+  await expect(llegada({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    rutaPedido,
+    models: {},
+    sendWhatsAppTemplate: async () => { sent = true; return { success: true }; },
+  })).rejects.toMatchObject({ status: 422, message: 'El pedido no tiene teléfono para enviar el código' });
+  expect(sent).toBe(false);
+});
+
+test('llegada envía codigo_paquete y solo entonces marca la llegada', async () => {
+  const sends = [];
+  let conversacionQuery;
+  const pedido = pedidoConCodigo();
+  const rutaPedido = {
+    llego_en: null,
+    pedido,
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  let pedidoQuery;
+  const dto = await llegada({
+    jornada: { estado: 'validada' },
+    pedidoId: 7,
+    repartidorId: 1,
+    models: {
+      RutaPedido: {
+        findOne: async (query) => {
+          pedidoQuery = query.include.find((item) => item.as === 'pedido');
+          return rutaPedido;
+        },
+      },
+      Conversacion: {
+        findOne: async (query) => {
+          conversacionQuery = query;
+          return { whatsapp_phone_number_id: '111' };
+        },
+      },
+    },
+    sendWhatsAppTemplate: async (...args) => {
+      sends.push(args);
+      return { success: true };
+    },
+  });
+  expect(pedidoQuery.attributes).toBeUndefined();
+  expect(pedidoQuery.include[0].attributes).toEqual(['id', 'nombre_completo', 'telefono']);
+  expect(conversacionQuery.where).toEqual({ id_cliente: 1 });
+  expect(conversacionQuery.order).toEqual([['updated_at', 'DESC']]);
+  expect(sends).toEqual([[
+    '526181112233',
+    '111',
+    'codigo_paquete',
+    {
+      languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
+      components: packageCodeComponents('482193'),
+    },
+  ]]);
+  expect(rutaPedido.estado_entrega).toBe('en_camino');
+  expect(rutaPedido.llego_en).toBeInstanceOf(Date);
+  expect(dto).not.toHaveProperty('codigo_entrega');
+  expect(dto).not.toHaveProperty('telefono_referencia');
+  expect(dto.cliente).not.toHaveProperty('telefono');
+});
+
+test('llegada usa el teléfono del cliente y la línea por defecto', async () => {
+  const sends = [];
+  const rutaPedido = {
+    llego_en: null,
+    pedido: pedidoConCodigo({
+      telefono_referencia: '',
+      fkid_cliente: 4,
+      cliente: { id: 4, nombre_completo: 'Ana', telefono: '6180000000' },
+    }),
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  await llegada({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    rutaPedido,
+    models: {
+      Conversacion: { findOne: async () => null },
+    },
+    sendWhatsAppTemplate: async (...args) => {
+      sends.push(args);
+      return { success: true };
+    },
+  });
+  expect(sends[0][0]).toBe('526180000000');
+  expect(sends[0][1]).toBe('986416624552272');
+});
+
+test('llegada no reenvía el código si ya llegó', async () => {
+  let sent = false;
+  const rutaPedido = {
+    llego_en: new Date('2026-10-01T00:00:00Z'),
+    pedido: pedidoConCodigo(),
+    update: async () => { throw new Error('no debe actualizar'); },
+  };
+  const dto = await llegada({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    rutaPedido,
+    models: {},
+    sendWhatsAppTemplate: async () => { sent = true; return { success: true }; },
+  });
+  expect(sent).toBe(false);
+  expect(dto).not.toHaveProperty('codigo_entrega');
+});
+
+test('llegada genera el código antes de enviarlo', async () => {
+  const pedido = pedidoConCodigo({ codigo_entrega: null, save: async () => {} });
+  const rutaPedido = {
+    llego_en: null,
+    pedido,
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  let sentCode;
+  await llegada({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    rutaPedido,
+    models: {},
+    sendWhatsAppTemplate: async (_phone, _line, _name, options) => {
+      sentCode = options.components[0].parameters[0].text;
+      return { success: true };
+    },
+  });
+  expect(pedido.codigo_entrega).toMatch(/^\d{6}$/);
+  expect(sentCode).toBe(pedido.codigo_entrega);
+  expect(packageCodeComponents(sentCode)[1].parameters[0].text).toBe(sentCode);
 });
