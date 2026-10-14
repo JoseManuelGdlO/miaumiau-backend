@@ -186,7 +186,17 @@ function fueModificado(pedido) {
   return cobrado !== original;
 }
 
+function comprobantePublicPath(pathValue) {
+  const raw = String(pathValue || '').trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const relative = raw.replace(/^\/+/, '');
+  const withUploads = relative.startsWith('uploads/') ? relative : `uploads/${relative}`;
+  return `/${withUploads}`;
+}
+
 function toPedidoDia({ pedido, rutaPedido, ruta }) {
+  const cobro = pedido.cobro_entrega || pedido.cobroEntrega || null;
   return {
     id: pedido.id,
     ruta_pedido_id: rutaPedido.id,
@@ -199,6 +209,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     direccion: pedido.direccion_entrega || null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
+    comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
   };
 }
 
@@ -223,5 +234,6 @@ module.exports = {
   toSolicitudDetalle,
   toPedidoDia,
   fueModificado,
+  comprobantePublicPath,
   toRepartidorOpcion,
 };

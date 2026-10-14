@@ -89,6 +89,7 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   expect(dia.codigo_entrega).toBeUndefined();
   expect(dia.ciudad_id).toBe(2);
   expect(dia.modificado).toBe(false);
+  expect(dia.comprobante_url).toBeNull();
   const tocado = toPedidoDia({
     pedido: {
       id: 4,
@@ -109,12 +110,13 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
       estado: 'entregado',
       metodo_pago: 'efectivo',
       productos: [],
-      cobro_entrega: { metodo: 'transferencia' },
+      cobro_entrega: { metodo: 'transferencia', comprobante_path: 'comprobantes/pago-5.jpg' },
     },
     rutaPedido: { id: 10, estado_entrega: 'entregado' },
     ruta: {},
   });
   expect(cobroDistinto.modificado).toBe(true);
+  expect(cobroDistinto.comprobante_url).toBe('/uploads/comprobantes/pago-5.jpg');
   const detalle = toSolicitudDetalle({
     notificacion: { id: 8, datos: { tipo: 'check_in' }, fecha_creacion: '2026-10-07', hora_creacion: '09:00:00' },
     repartidor: { id: 3, nombre_completo: 'Luis' },
