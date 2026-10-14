@@ -424,6 +424,7 @@ test('los pedidos del día salen con teléfono y sin código', async () => {
   const rows = await listarPedidos({ models, now: new Date('2026-10-07T18:00:00Z') });
   expect(rows[0].telefono).toBe('618222');
   expect(rows[0].codigo_entrega).toBeUndefined();
+  expect(rows[0].modificado).toBe(false);
 });
 
 test('repartidores excluye inactivos', async () => {

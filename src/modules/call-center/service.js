@@ -615,7 +615,16 @@ async function listarPedidos(deps = {}) {
   if (deps.repartidorId) rutaWhere.fkid_repartidor = deps.repartidorId;
   const rows = await db.RutaPedido.findAll({
     include: [
-      { association: 'pedido', required: true, where: { baja_logica: false }, include: [{ association: 'cliente' }] },
+      {
+        association: 'pedido',
+        required: true,
+        where: { baja_logica: false },
+        include: [
+          { association: 'cliente' },
+          { association: 'productos', required: false },
+          { association: 'cobro_entrega', required: false },
+        ],
+      },
       { association: 'ruta', required: true, where: rutaWhere, include: [{ association: 'repartidor' }] },
     ],
     order: [['orden_entrega', 'ASC']],

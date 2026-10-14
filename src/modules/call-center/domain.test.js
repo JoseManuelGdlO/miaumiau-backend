@@ -88,6 +88,33 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   expect(dia.telefono).toBe('618111');
   expect(dia.codigo_entrega).toBeUndefined();
   expect(dia.ciudad_id).toBe(2);
+  expect(dia.modificado).toBe(false);
+  const tocado = toPedidoDia({
+    pedido: {
+      id: 4,
+      numero_pedido: 'P-4',
+      estado: 'en_camino',
+      created_at: '2026-10-07T12:00:00Z',
+      metodo_pago: 'efectivo',
+      productos: [{ created_at: '2026-10-07T12:00:00Z', updated_at: '2026-10-07T12:10:00Z', baja_logica: false }],
+    },
+    rutaPedido: { id: 9, estado_entrega: 'en_camino' },
+    ruta: {},
+  });
+  expect(tocado.modificado).toBe(true);
+  const cobroDistinto = toPedidoDia({
+    pedido: {
+      id: 5,
+      numero_pedido: 'P-5',
+      estado: 'entregado',
+      metodo_pago: 'efectivo',
+      productos: [],
+      cobro_entrega: { metodo: 'transferencia' },
+    },
+    rutaPedido: { id: 10, estado_entrega: 'entregado' },
+    ruta: {},
+  });
+  expect(cobroDistinto.modificado).toBe(true);
   const detalle = toSolicitudDetalle({
     notificacion: { id: 8, datos: { tipo: 'check_in' }, fecha_creacion: '2026-10-07', hora_creacion: '09:00:00' },
     repartidor: { id: 3, nombre_completo: 'Luis' },

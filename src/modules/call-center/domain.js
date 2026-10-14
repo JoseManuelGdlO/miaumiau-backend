@@ -159,6 +159,33 @@ function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPe
   };
 }
 
+function timestamp(value) {
+  if (value == null || value === '') return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function fueModificado(pedido) {
+  if (!pedido) return false;
+  const born = timestamp(pedido.created_at ?? pedido.createdAt);
+  const lines = Array.isArray(pedido.productos) ? pedido.productos : [];
+  const linesChanged = lines.some((line) => {
+    if (line?.baja_logica) return true;
+    const created = timestamp(line?.created_at ?? line?.createdAt);
+    const updated = timestamp(line?.updated_at ?? line?.updatedAt);
+    if (created != null && updated != null && updated - created > 1000) return true;
+    if (born != null && created != null && created - born > 1000) return true;
+    return false;
+  });
+  if (linesChanged) return true;
+  const cobro = pedido.cobro_entrega || pedido.cobroEntrega || null;
+  const cobrado = cobro?.metodo;
+  const original = pedido.metodo_pago;
+  if (!cobrado || !original) return false;
+  if (cobrado === 'mixto') return true;
+  return cobrado !== original;
+}
+
 function toPedidoDia({ pedido, rutaPedido, ruta }) {
   return {
     id: pedido.id,
@@ -166,6 +193,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     numero_pedido: pedido.numero_pedido,
     estado: pedido.estado,
     estado_entrega: rutaPedido.estado_entrega,
+    modificado: fueModificado(pedido),
     cliente: pedido.cliente?.nombre_completo || null,
     telefono: phoneOf(pedido),
     direccion: pedido.direccion_entrega || null,
@@ -194,5 +222,6 @@ module.exports = {
   toSolicitudResumen,
   toSolicitudDetalle,
   toPedidoDia,
+  fueModificado,
   toRepartidorOpcion,
 };
