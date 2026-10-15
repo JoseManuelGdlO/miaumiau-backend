@@ -18,6 +18,17 @@ function hasBody(body) {
   return Object.keys(body).length > 0;
 }
 
+function loggedUrl(url) {
+  return String(url).replace(/([?&]token=)[^&\s]*/gi, "$1[redacted]");
+}
+
+function loggedQuery(query) {
+  if (!query || typeof query !== "object" || !Object.prototype.hasOwnProperty.call(query, "token")) {
+    return query;
+  }
+  return { ...query, token: "[redacted]" };
+}
+
 function requestLogger(req, res, next) {
   const start = Date.now();
 
@@ -25,10 +36,11 @@ function requestLogger(req, res, next) {
     const durationMs = Date.now() - start;
     const status = res.statusCode;
     const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
-    let message = `${req.method} ${req.originalUrl} ${paintStatus(status)} ${durationMs}ms`;
+    let message = `${req.method} ${loggedUrl(req.originalUrl)} ${paintStatus(status)} ${durationMs}ms`;
 
     if (shouldLog("debug")) {
-      if (hasQueryParams(req.query)) message += ` query=${formatPayload(req.query)}`;
+      const query = loggedQuery(req.query);
+      if (hasQueryParams(query)) message += ` query=${formatPayload(query)}`;
       if (isMultipart(req)) message += " body=[multipart]";
       else if (hasBody(req.body)) message += ` body=${formatPayload(req.body)}`;
     }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const notificacionController = require('./controller');
+const { openStream } = require('./stream');
 const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
@@ -164,6 +165,21 @@ router.get('/fecha/:fecha',
   requireSuperAdminOrPermission('ver_notificaciones'), 
   validateFecha, 
   notificacionController.getNotificacionesByFecha
+);
+
+function authenticateEventSource(req, res, next) {
+  if (!req.headers.authorization && typeof req.query.token === 'string') {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  return authenticateToken(req, res, next);
+}
+
+router.get('/stream',
+  authenticateEventSource,
+  requireSuperAdminOrPermission('ver_notificaciones'),
+  (req, res) => {
+    openStream(req, res);
+  }
 );
 
 router.get('/:id', 

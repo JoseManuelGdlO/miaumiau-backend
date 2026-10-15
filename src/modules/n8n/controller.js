@@ -11,6 +11,7 @@ const {
   toPedidoResumen,
 } = require('./pedidoActivo');
 const { sendPushForNotificacion } = require('../../services/pushService');
+const { publishNotificacion } = require('../notificaciones/stream');
 const { createConversationChatMessage } = require('../../services/conversacionChatService');
 const {
   resolveCityForConversation,
@@ -210,6 +211,8 @@ class N8nController {
       }
 
       await transaction.commit();
+
+      publishNotificacion(notificacion);
 
       try {
         await sendPushForNotificacion(notificacion);

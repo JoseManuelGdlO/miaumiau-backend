@@ -15,6 +15,7 @@ const {
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
+const { publishNotificacion } = require('../notificaciones/stream');
 const { phoneOf } = require('../call-center/domain');
 const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
@@ -281,6 +282,7 @@ async function solicitarValidacion(deps = {}) {
       });
     }
   }
+  publishNotificacion(notificacion);
   await jornada.update({
     estado: 'esperando_call_center',
     fkid_notificacion: notificacion.id,
@@ -990,6 +992,7 @@ async function crearSoporte(deps = {}) {
       motivo,
     },
   });
+  publishNotificacion(notificacion);
   return { id: notificacion.id, notificacion_id: notificacion.id };
 }
 
