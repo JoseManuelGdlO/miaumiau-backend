@@ -16,6 +16,28 @@ const KEY_QR_ACTIONS = 'qr_actions';
 const KEY_MAINTENANCE_PLACEHOLDER = 'maintenance_placeholder';
 
 const QR_ACTION_IDS = ['whatsapp', 'catalog', 'packages', 'promotions', 'mercadolibre', 'social', 'customLink'];
+const QR_CARD_ICONS = new Set(['whatsapp', 'pin', 'bag', 'instagram', 'facebook', 'tiktok', 'link', 'heart', 'star', 'package']);
+const QR_CARD_SIZES = new Set(['grande', 'mediana', 'chica']);
+const QR_ORDERED_BUILTIN_IDS = ['mercadolibre', 'instagram', 'facebook', 'tiktok'];
+
+function defaultCardPaint() {
+  return {
+    iconBackgroundColor: '#e5e5e5',
+    cardColor: '#ffffff',
+    iconColor: '#eb4699',
+  };
+}
+
+function defaultQrCards() {
+  const paint = defaultCardPaint();
+  return {
+    whatsapp: { ...paint, name: '¡Pedir por WhatsApp!', description: 'Realiza tu pedido directo en un clic.', icon: 'whatsapp', size: 'grande' },
+    mercadolibre: { ...paint, name: 'Mercado Libre', description: 'Compra con envío a todo el país.', icon: 'bag', size: 'mediana' },
+    instagram: { ...paint, name: 'Instagram', description: 'Fotos, tips y gatitos.', icon: 'instagram', size: 'chica' },
+    facebook: { ...paint, name: 'Facebook', description: 'Comunidad y avisos.', icon: 'facebook', size: 'chica' },
+    tiktok: { ...paint, name: 'TikTok', description: 'Demostraciones y videos.', icon: 'tiktok', size: 'chica' },
+  };
+}
 
 function defaultQrActions() {
   return {
@@ -29,12 +51,69 @@ function defaultQrActions() {
     customLinkUrl: '',
     customLinkLabel: '',
     links: [],
+    cards: defaultQrCards(),
+    cardOrder: [...QR_ORDERED_BUILTIN_IDS],
     linksHtml: '',
     linksPanelColor: '#fff7ed',
     linksBubbleColor: '#16a34a',
     linksBubbleTextColor: '#1c1917',
     linksTextColor: '#1c1917',
   };
+}
+
+function parseCardStyle(raw, fallback) {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const name = typeof source.name === 'string' && source.name.trim()
+    ? source.name.trim().slice(0, 80)
+    : fallback.name;
+  const description = typeof source.description === 'string'
+    ? source.description.trim().slice(0, 160)
+    : fallback.description;
+  return {
+    name,
+    description,
+    icon: QR_CARD_ICONS.has(source.icon) ? source.icon : fallback.icon,
+    size: QR_CARD_SIZES.has(source.size) ? source.size : fallback.size,
+    cardColor: parseHexColor(source.cardColor, fallback.cardColor),
+    hidden: source.hidden === true,
+    ...titleIconColors(
+      parseHexColor(source.iconBackgroundColor, fallback.iconBackgroundColor),
+      parseHexColor(source.iconColor, fallback.iconColor),
+    ),
+  };
+}
+
+function titleIconColors(background, icon) {
+  return { iconBackgroundColor: background, iconColor: icon };
+}
+
+function parseQrCards(raw) {
+  const defaults = defaultQrCards();
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  return {
+    whatsapp: parseCardStyle(source.whatsapp, defaults.whatsapp),
+    mercadolibre: parseCardStyle(source.mercadolibre, defaults.mercadolibre),
+    instagram: parseCardStyle(source.instagram, defaults.instagram),
+    facebook: parseCardStyle(source.facebook, defaults.facebook),
+    tiktok: parseCardStyle(source.tiktok, defaults.tiktok),
+  };
+}
+
+function parseCardOrder(raw, linkIds) {
+  const allowed = new Set([...QR_ORDERED_BUILTIN_IDS, ...linkIds]);
+  const order = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item !== 'string') continue;
+      const id = item.trim();
+      if (!allowed.has(id) || order.includes(id)) continue;
+      order.push(id);
+    }
+  }
+  for (const id of [...QR_ORDERED_BUILTIN_IDS, ...linkIds]) {
+    if (!order.includes(id)) order.push(id);
+  }
+  return order;
 }
 
 function parseHexColor(raw, fallback) {
@@ -96,15 +175,20 @@ function sanitizeBlockTag(tagName, attrs) {
   const align = ['left', 'center', 'right'].includes(alignRaw)
     ? alignRaw
     : (styleAlign ? styleAlign[1].toLowerCase() : '');
-  if (!align) return `<${tagName}>`;
-  return `<${tagName} style="text-align: ${align}">`;
+  const colorMatch = style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
+  const color = safeCssColor(colorMatch ? colorMatch[1] : '');
+  const declarations = [];
+  if (align) declarations.push(`text-align: ${align}`);
+  if (color) declarations.push(`color: ${color}`);
+  if (declarations.length === 0) return `<${tagName}>`;
+  return `<${tagName} style="${declarations.join('; ')}">`;
 }
 
 function isAllowedQrImageSrc(src) {
   if (typeof src !== 'string') return false;
   const value = src.trim();
   const pathOnly = (() => {
-    if (value.startsWith('/uploads/qr/')) return value;
+    if (value === '/miau-logo-mark.png' || value.startsWith('/uploads/qr/')) return value;
     try {
       const url = new URL(value);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
@@ -113,7 +197,7 @@ function isAllowedQrImageSrc(src) {
       return '';
     }
   })();
-  return /^\/uploads\/qr\/[a-zA-Z0-9._-]+$/.test(pathOnly);
+  return pathOnly === '/miau-logo-mark.png' || /^\/uploads\/qr\/[a-zA-Z0-9._-]+$/.test(pathOnly);
 }
 
 function sanitizeImgTag(attrs) {
@@ -165,7 +249,20 @@ function parseQrLinks(raw) {
     const id = typeof item.id === 'string' && item.id.trim()
       ? item.id.trim().slice(0, 40)
       : `link-${links.length + 1}`;
-    links.push({ id, name, url });
+    links.push({
+      id,
+      name,
+      url,
+      description: typeof item.description === 'string' ? item.description.trim().slice(0, 160) : '',
+      icon: QR_CARD_ICONS.has(item.icon) ? item.icon : 'link',
+      size: QR_CARD_SIZES.has(item.size) ? item.size : 'mediana',
+      hidden: item.hidden === true,
+      cardColor: parseHexColor(item.cardColor, '#ffffff'),
+      ...titleIconColors(
+        parseHexColor(item.iconBackgroundColor, '#e5e5e5'),
+        parseHexColor(item.iconColor, '#eb4699'),
+      ),
+    });
   }
   return links;
 }
@@ -201,8 +298,14 @@ function parseQrActions(raw) {
       id: 'legacy',
       name: result.customLinkLabel || 'Enlace',
       url: result.customLinkUrl,
+      description: '',
+      icon: 'link',
+      size: 'mediana',
+      ...defaultCardPaint(),
     }];
   }
+  result.cards = parseQrCards(parsed.cards);
+  result.cardOrder = parseCardOrder(parsed.cardOrder, result.links.map((link) => link.id));
   result.linksHtml = sanitizeLinksHtml(parsed.linksHtml);
   const defaults = defaultQrActions();
   result.linksPanelColor = parseHexColor(parsed.linksPanelColor, defaults.linksPanelColor);
