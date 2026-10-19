@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad']);
 
 function live(extra) {
   return {
@@ -105,6 +105,37 @@ function liberarSiguiente(req, res) {
   })), 'liberarSiguiente');
 }
 
+function comprobantes(req, res) {
+  return handle(res, () => service.listarComprobantes({}), 'comprobantes');
+}
+
+function subirComprobante(req, res) {
+  if (req.fileValidationError) {
+    return res.status(422).json({ success: false, message: req.fileValidationError });
+  }
+  return handle(res, () => service.subirComprobante({
+    pedidoId: req.params.id,
+    file: req.file,
+  }), 'subirComprobante');
+}
+
+function depositos(req, res) {
+  return handle(res, () => service.listarDepositos({}), 'depositos');
+}
+
+function actividades(req, res) {
+  return handle(res, () => service.listarActividadesDisponibles({
+    ciudadId: req.query.ciudadId || null,
+  }), 'actividades');
+}
+
+function asignarActividad(req, res) {
+  return handle(res, () => service.asignarActividad(live({
+    pedidoId: req.body?.pedido_id,
+    repartidorId: req.body?.fkid_repartidor,
+  })), 'asignarActividad');
+}
+
 function velocidad(req, res) {
   return handle(res, async () => {
     const { resumenVelocidad } = require('../app-repartidor/service');
@@ -153,4 +184,9 @@ module.exports = {
   moverParada,
   liberarSiguiente,
   velocidad,
+  comprobantes,
+  subirComprobante,
+  depositos,
+  actividades,
+  asignarActividad,
 };

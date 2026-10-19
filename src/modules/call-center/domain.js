@@ -133,7 +133,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
   };
 }
 
-function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado }) {
+function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado, deposito }) {
   const base = toSolicitudResumen(notificacion, repartidor, numeroPedido || pedido?.numero_pedido);
   const datos = notificacion.datos || {};
   if (datos.tipo === 'check_in') {
@@ -149,6 +149,13 @@ function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPe
         precio_unitario: c.precio_unitario,
         es_extra: Boolean(c.es_extra),
       })),
+    };
+  }
+  if (datos.tipo === 'cierre_dia') {
+    return {
+      ...base,
+      efectivo_a_depositar: Number(deposito?.efectivo_a_depositar) || 0,
+      comprobante_url: comprobantePublicPath(deposito?.comprobante_deposito_path),
     };
   }
   return {

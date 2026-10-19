@@ -1,4 +1,4 @@
-const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores } = require('./service');
+const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -1069,4 +1069,116 @@ test('reasignar avisa al repartidor que suelta y al que recibe', async () => {
   });
   expect(notify).toHaveBeenCalledWith(3, { type: 'ruta.actualizada', pedidoId: 4 });
   expect(notify).toHaveBeenCalledWith(9, { type: 'ruta.actualizada', pedidoId: 4 });
+});
+
+test('listar comprobantes incluye la foto y permite subirla si falta', async () => {
+  const rows = await listarComprobantes({
+    fecha: '2026-10-19',
+    models: {
+      RutaPedido: {
+        findAll: async () => [
+          {
+            pedido: { id: 4, numero_pedido: 'P-4', metodo_pago: 'transferencia', baja_logica: false, cobro_entrega: { metodo: 'transferencia', comprobante_path: 'comprobantes/a.jpg' } },
+            ruta: { repartidor: { nombre_completo: 'Ana' } },
+          },
+          {
+            pedido: { id: 5, numero_pedido: 'P-5', metodo_pago: 'mixto', baja_logica: false, cobro_entrega: null },
+            ruta: { repartidor: { nombre_completo: 'Ana' } },
+          },
+          {
+            pedido: { id: 6, numero_pedido: 'P-6', metodo_pago: 'efectivo', baja_logica: false, cobro_entrega: null },
+            ruta: { repartidor: { nombre_completo: 'Ana' } },
+          },
+        ],
+      },
+    },
+  });
+  expect(rows).toEqual([
+    expect.objectContaining({ pedido_id: 4, comprobante_url: '/uploads/comprobantes/a.jpg', puede_subir: false }),
+    expect.objectContaining({ pedido_id: 5, comprobante_url: null, puede_subir: true }),
+  ]);
+});
+
+test('subir comprobante crea el cobro si el pedido todavía no lo tiene', async () => {
+  const created = [];
+  const result = await subirComprobante({
+    fecha: '2026-10-19',
+    file: { filename: 'pago.jpg' },
+    pedido: { id: 5, baja_logica: false, metodo_pago: 'transferencia', total: 120 },
+    models: {
+      CobroEntrega: {
+        findOne: async () => null,
+        create: async (row) => { created.push(row); return row; },
+      },
+      RutaPedido: {
+        findOne: async () => ({ ruta: { fkid_repartidor: 8 } }),
+      },
+    },
+  });
+  expect(result.comprobante_url).toBe('/uploads/comprobantes/pago.jpg');
+  expect(created[0]).toEqual(expect.objectContaining({
+    fkid_pedido: 5,
+    fkid_repartidor: 8,
+    metodo: 'transferencia',
+    monto_transferencia: 120,
+  }));
+});
+
+test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', async () => {
+  const rows = await listarDepositos({
+    fecha: '2026-10-19',
+    models: {
+      JornadaRepartidor: {
+        findAll: async () => [{
+          id: 3,
+          efectivo_a_depositar: '80.50',
+          comprobante_deposito_path: 'comprobantes/dep.jpg',
+          estado: 'cerrada',
+          repartidor: { nombre_completo: 'Ana' },
+        }],
+      },
+    },
+  });
+  expect(rows).toEqual([{
+    jornada_id: 3,
+    repartidor: 'Ana',
+    efectivo_a_depositar: 80.5,
+    comprobante_url: '/uploads/comprobantes/dep.jpg',
+  }]);
+});
+
+test('asignar actividad extra queda oculta y se niega si falta el depósito', async () => {
+  const creadas = [];
+  const models = {
+    JornadaRepartidor: {
+      findOne: async () => ({ comprobante_deposito_path: null }),
+    },
+    Ruta: {
+      findAll: async () => [{ pedidos: [{ estado_entrega: 'entregado', pedido: { estado: 'entregado' } }] }],
+      findOne: async () => null,
+      create: async (row) => ({ id: 20, total_pedidos: 0, ...row, update: async () => {} }),
+    },
+    RutaPedido: {
+      findAll: async () => [],
+      max: async () => 2,
+      create: async (row) => { creadas.push(row); return row; },
+    },
+  };
+  await expect(asignarActividad({
+    fecha: '2026-10-19',
+    pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1, codigo_entrega: '123456' },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    models,
+  })).rejects.toMatchObject({ status: 409 });
+
+  models.JornadaRepartidor.findOne = async () => ({ comprobante_deposito_path: 'comprobantes/dep.jpg' });
+  const result = await asignarActividad({
+    fecha: '2026-10-19',
+    pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1, codigo_entrega: '123456' },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    models,
+    notify: jest.fn(),
+  });
+  expect(result).toEqual({ ruta_id: 20, pedido_id: 7 });
+  expect(creadas[0]).toEqual(expect.objectContaining({ liberado_en: null, estado_entrega: 'pendiente', orden_entrega: 3 }));
 });
