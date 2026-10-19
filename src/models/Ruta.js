@@ -49,6 +49,14 @@ module.exports = (sequelize, DataTypes) => {
         isIn: [['planificada', 'en_progreso', 'completada', 'cancelada']]
       }
     },
+    franja: {
+      type: DataTypes.ENUM('manana', 'tarde'),
+      allowNull: false,
+      defaultValue: 'manana',
+      validate: {
+        isIn: [['manana', 'tarde']]
+      }
+    },
     total_pedidos: {
       type: DataTypes.INTEGER,
       allowNull: false,

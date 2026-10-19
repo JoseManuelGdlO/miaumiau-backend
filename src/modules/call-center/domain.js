@@ -208,6 +208,8 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     telefono: phoneOf(pedido),
     direccion: pedido.direccion_entrega || null,
     notas: pedido.notas || null,
+    franja: rutaPedido.franja === 'tarde' ? 'tarde' : 'manana',
+    orden_entrega: rutaPedido.orden_entrega ?? null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
     comprobante_url: comprobantePublicPath(cobro?.comprobante_path),

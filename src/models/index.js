@@ -45,6 +45,7 @@ const MovimientoInventarioVehiculo = require('./MovimientoInventarioVehiculo');
 const RepartidorPuntosMovimiento = require('./RepartidorPuntosMovimiento');
 const RepartidorLogro = require('./RepartidorLogro');
 const CampanaEnvio = require('./CampanaEnvio');
+const LecturaKilometraje = require('./LecturaKilometraje');
 
 // Inicializar modelos
 const models = {
@@ -91,6 +92,7 @@ const models = {
   RepartidorPuntosMovimiento: RepartidorPuntosMovimiento(sequelize, DataTypes),
   RepartidorLogro: RepartidorLogro(sequelize, DataTypes),
   CampanaEnvio: CampanaEnvio(sequelize, DataTypes),
+  LecturaKilometraje: LecturaKilometraje(sequelize, DataTypes),
 };
 
 // Definir asociaciones
@@ -571,6 +573,10 @@ models.Pedido.hasOne(models.CobroEntrega, { foreignKey: 'fkid_pedido', as: 'cobr
 models.CobroEntrega.belongsTo(models.Pedido, { foreignKey: 'fkid_pedido', as: 'pedido' });
 models.Repartidor.hasMany(models.RepartidorPuntosMovimiento, { foreignKey: 'fkid_repartidor', as: 'puntos_movimientos' });
 models.Repartidor.hasMany(models.RepartidorLogro, { foreignKey: 'fkid_repartidor', as: 'logros' });
+models.Repartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_repartidor', as: 'lecturas_kilometraje' });
+models.LecturaKilometraje.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.JornadaRepartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_jornada', as: 'lecturas_kilometraje' });
+models.LecturaKilometraje.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
 
 models.sequelize = sequelize;
 models.Sequelize = require('sequelize');

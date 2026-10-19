@@ -156,7 +156,7 @@ async function leerSolicitud(req, res) {
 async function pedidos(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
-    return service.listarPedidos(depsFrom(req, { fecha, timezone }));
+    return service.listarPedidos(depsFrom(req, { fecha, timezone, franja: req.query.franja }));
   }, 'pedidos');
 }
 
@@ -269,6 +269,7 @@ async function soporte(req, res) {
       fecha,
       timezone,
       motivo: req.body.motivo,
+      nota: req.body.nota,
       pedidoId: req.body.pedido_id || req.body.pedidoId,
     }));
   }, 'soporte');

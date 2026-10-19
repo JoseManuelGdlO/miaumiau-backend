@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada']);
 
 function live(extra) {
   return {
@@ -99,6 +99,21 @@ function reagendar(req, res) {
   })), 'reagendar');
 }
 
+function cambiarFranja(req, res) {
+  return handle(res, () => service.cambiarFranja(live({
+    pedidoId: req.params.id,
+    franja: req.body?.franja,
+    alcance: req.body?.alcance,
+  })), 'cambiarFranja');
+}
+
+function moverParada(req, res) {
+  return handle(res, () => service.moverParada(live({
+    pedidoId: req.params.id,
+    direccion: req.body?.direccion,
+  })), 'moverParada');
+}
+
 function reasignar(req, res) {
   return handle(res, () => service.reasignar(live({
     pedidoId: req.params.id,
@@ -120,4 +135,6 @@ module.exports = {
   reasignar,
   liberarCierre,
   reagendar,
+  cambiarFranja,
+  moverParada,
 };

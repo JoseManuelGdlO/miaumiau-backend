@@ -21,9 +21,10 @@ const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
-const { nearestNeighbor, distanceMatrix } = require('./route-order');
+const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
-const { avisarSiguiente } = require('./aviso-siguiente');
+const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
+const { repartoBloqueado } = require('./deposito-pendiente');
 
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
 const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
@@ -47,8 +48,13 @@ function plain(row) {
   return typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
 }
 
+function franjaDe(value) {
+  return value === 'tarde' ? 'tarde' : 'manana';
+}
+
 function toPedidoDto(pedido, rutaPedido) {
   const raw = plain(pedido) || {};
+  const llamada = phoneOf(raw);
   const {
     codigo_entrega,
     telefono,
@@ -56,6 +62,7 @@ function toPedidoDto(pedido, rutaPedido) {
     ...rest
   } = raw;
   rest.cliente = stripPhone(rest.cliente);
+  if (llamada) rest.telefono_llamada = llamada;
   if (rutaPedido) {
     const rp = plain(rutaPedido);
     rest.llego_en = rp.llego_en;
@@ -65,6 +72,9 @@ function toPedidoDto(pedido, rutaPedido) {
     rest.lat = rp.lat;
     rest.lng = rp.lng;
     rest.link_ubicacion = rp.link_ubicacion;
+    rest.franja = franjaDe(rp.franja);
+    const minutos = Number(rp.tiempo_estimado_entrega);
+    if (minutos > 0) rest.minutos_transporte = minutos;
   }
   return rest;
 }
@@ -658,6 +668,18 @@ async function requireJornadaAbierta(deps) {
 
 const rutasOrdenadas = new Set();
 
+function olvidarOrdenRuta(repartidorId, fecha) {
+  if (repartidorId == null || !fecha) return;
+  rutasOrdenadas.delete(`${repartidorId}:${String(fecha).slice(0, 10)}`);
+}
+
+function puntoParada(parada) {
+  const lat = Number(parada?.lat);
+  const lng = Number(parada?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 async function ordenarParadasSiAplica(deps = {}) {
   if (process.env.NODE_ENV === 'test' && !deps.ordenarRutas) return;
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -675,28 +697,62 @@ async function ordenarParadasSiAplica(deps = {}) {
     include: [{ model: db.RutaPedido, as: 'pedidos' }],
   });
   for (const ruta of rutas) {
-    const paradas = (ruta.pedidos || [])
-      .map((rp) => ({
-        id: rp.id,
-        lat: rp.lat == null ? null : Number(rp.lat),
-        lng: rp.lng == null ? null : Number(rp.lng),
-      }))
-      .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
-    if (paradas.length < 2) continue;
-    let matrix;
-    try {
-      matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
-    } catch {
-      continue;
+    const grupos = new Map();
+    for (const row of ruta.pedidos || []) {
+      const franja = franjaDe(row.franja || ruta.franja);
+      const grupo = grupos.get(franja) || [];
+      grupo.push(row);
+      grupos.set(franja, grupo);
     }
-    if (!matrix) continue;
-    const ordered = nearestNeighbor(paradas.map((rp) => rp.id), matrix);
-    for (let index = 0; index < ordered.length; index += 1) {
-      const row = (ruta.pedidos || []).find((rp) => rp.id === ordered[index]);
-      if (row?.update) await row.update({ orden_entrega: index + 1 });
+    for (const grupo of grupos.values()) {
+      const paradas = grupo
+        .map((rp) => ({
+          id: rp.id,
+          lat: rp.lat == null ? null : Number(rp.lat),
+          lng: rp.lng == null ? null : Number(rp.lng),
+        }))
+        .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
+      if (paradas.length < 2) continue;
+      let matrix;
+      try {
+        matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
+      } catch {
+        continue;
+      }
+      if (!matrix) continue;
+      const ordered = nearestNeighbor(paradas.map((rp) => rp.id), matrix);
+      const asignaciones = ordenSinPisarManual(grupo, ordered);
+      for (const item of asignaciones) {
+        const row = grupo.find((rp) => rp.id === item.id);
+        if (row?.orden_manual) continue;
+        if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
+      }
     }
   }
   rutasOrdenadas.add(cacheKey);
+}
+
+async function anotarMinutos(deps, rutas) {
+  if (process.env.NODE_ENV === 'test' && !deps.calcularMinutos) return;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return;
+  const paradas = (rutas || [])
+    .flatMap((ruta) => ruta.pedidos || [])
+    .slice()
+    .sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
+  const index = paradas.findIndex((parada) => abierto(parada));
+  if (index < 0) return;
+  const destino = paradas[index];
+  if (Number(destino.tiempo_estimado_entrega) > 0) return;
+  const origen = paradas.slice(0, index).reverse().map(puntoParada).find(Boolean);
+  const hasta = puntoParada(destino);
+  if (!origen || !hasta) return;
+  const minutos = await minutosEntre(origen, hasta, apiKey, deps.distanceMatrixGet);
+  if (minutos == null) return;
+  destino.tiempo_estimado_entrega = minutos;
+  if (typeof destino.update === 'function') {
+    await destino.update({ tiempo_estimado_entrega: minutos });
+  }
 }
 
 async function listarPedidos(deps = {}) {
@@ -718,11 +774,15 @@ async function listarPedidos(deps = {}) {
     ],
     order: [[{ model: db.RutaPedido, as: 'pedidos' }, 'orden_entrega', 'ASC']],
   });
+  await anotarMinutos(deps, rutas);
+  const franja = deps.franja === 'tarde' || deps.franja === 'manana' ? deps.franja : null;
   const pedidos = [];
   for (const ruta of rutas) {
     for (const rp of ruta.pedidos || []) {
       if (!rp.pedido) continue;
-      pedidos.push(toPedidoDto(rp.pedido, rp));
+      const stopFranja = franjaDe(rp.franja || ruta.franja);
+      if (franja && stopFranja !== franja) continue;
+      pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
     }
   }
   return pedidos;
@@ -1291,6 +1351,9 @@ async function refrescarCorte(deps = {}) {
 
 async function iniciarRuta(deps = {}) {
   await requireJornadaAbierta(deps);
+  if (await repartoBloqueado(getModels(deps), deps.repartidorId, deps.fecha)) {
+    fail(409, 'Sube el comprobante del depósito antes de abrir otra ruta');
+  }
   await avisarSiguiente({
     ...deps,
     getModels,
@@ -1355,7 +1418,8 @@ async function crearSoporte(deps = {}) {
       repartidor_id: deps.repartidorId,
       ...(deps.pedidoId ? { pedido_id: Number(deps.pedidoId) } : {}),
       ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
-      motivo,
+      motivo: String(deps.nota || '').trim().slice(0, 500) || motivo,
+      ...(String(deps.nota || '').trim() ? { nota: String(deps.nota).trim().slice(0, 500) } : {}),
     },
   });
   publishNotificacion(notificacion);
@@ -1541,4 +1605,5 @@ module.exports = {
   estadisticas,
   logros,
   toPedidoDto,
+  olvidarOrdenRuta,
 };

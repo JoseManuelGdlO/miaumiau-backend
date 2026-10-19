@@ -258,6 +258,7 @@ test('reasignar refresca la foto de los dos repartidores antes de avisar', async
     notify,
   });
   expect(vistos).toEqual([
+    { fkid_repartidor: 8, fecha: '2026-10-07' },
     { fkid_repartidor: 3, fecha: '2026-10-07' },
     { fkid_repartidor: 8, fecha: '2026-10-07' },
   ]);

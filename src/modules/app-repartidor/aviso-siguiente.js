@@ -83,6 +83,10 @@ async function avisarSiguiente(deps, origen) {
   const desde = punto(origen);
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   const minutos = await minutosEntre(desde, destino, apiKey, deps.httpGet);
+  if (minutos != null && typeof siguiente.update === 'function') {
+    siguiente.tiempo_estimado_entrega = minutos;
+    await siguiente.update({ tiempo_estimado_entrega: minutos });
+  }
   if (minutos == null) {
     log.info('aviso omitido: sin ETA', { pedidoId: siguiente.fkid_pedido || siguiente.pedido?.id });
     return { enviado: false };

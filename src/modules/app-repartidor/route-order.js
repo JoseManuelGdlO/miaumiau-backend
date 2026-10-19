@@ -41,7 +41,24 @@ async function distanceMatrix(stops, apiKey, httpGet) {
   ));
 }
 
+function ordenSinPisarManual(rows, orderedIds) {
+  const manual = (rows || []).filter((row) => row.orden_manual);
+  const manualIds = new Set(manual.map((row) => row.id));
+  const autoOrdered = (orderedIds || []).filter((id) => !manualIds.has(id));
+  const occupied = new Set(
+    manual.map((row) => Number(row.orden_entrega)).filter((value) => value >= 1),
+  );
+  const slots = [];
+  let pos = 1;
+  while (slots.length < autoOrdered.length && pos < 10000) {
+    if (!occupied.has(pos)) slots.push(pos);
+    pos += 1;
+  }
+  return autoOrdered.map((id, index) => ({ id, orden_entrega: slots[index] }));
+}
+
 module.exports = {
   nearestNeighbor,
   distanceMatrix,
+  ordenSinPisarManual,
 };

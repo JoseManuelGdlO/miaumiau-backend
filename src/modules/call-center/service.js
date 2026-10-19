@@ -1,6 +1,7 @@
 const { Op, literal } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
-const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
+const { refrescarCargaEnValidacion, olvidarOrdenRuta } = require('../app-repartidor/service');
+const { repartoBloqueado } = require('../app-repartidor/deposito-pendiente');
 const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
   approveCheck,
@@ -446,6 +447,9 @@ async function reasignar(deps = {}) {
     bajaLogica: Boolean(driver?.baja_logica),
   });
   if (!check.ok) fail(check.statusCode, check.message);
+  if (await repartoBloqueado(db, driver.id, fechaKey(ruta.fecha_ruta))) {
+    fail(409, 'Ese repartidor debe subir el comprobante del depósito antes de recibir otra actividad');
+  }
 
   const anterior = ruta?.fkid_repartidor;
   const nuevo = driver?.id;
@@ -721,6 +725,53 @@ async function reagendar(deps = {}) {
   return { id: pedido.id, fecha_entrega_estimada: fecha, notas: note.notas };
 }
 
+async function cambiarFranja(deps = {}) {
+  const franja = deps.franja === 'tarde' ? 'tarde' : deps.franja === 'manana' ? 'manana' : null;
+  if (!franja) fail(422, 'La franja no es válida');
+  const db = getModels(deps);
+  const parada = await findRutaDeHoy(deps, deps.pedidoId);
+  if (!parada) fail(409, 'Ese pedido no está en una ruta de hoy');
+  await parada.update({ franja });
+  if (deps.alcance === 'ruta' && parada.ruta) {
+    if (typeof parada.ruta.update === 'function') await parada.ruta.update({ franja });
+    const hermanas = await db.RutaPedido.findAll({ where: { fkid_ruta: parada.fkid_ruta || parada.ruta.id } });
+    for (const row of hermanas) {
+      if (typeof row.update === 'function') await row.update({ franja });
+    }
+  }
+  olvidarOrdenRuta(parada.ruta?.fkid_repartidor, fechaKey(parada.ruta?.fecha_ruta));
+  await safeNotify(deps, parada.ruta?.fkid_repartidor, { type: 'ruta.actualizada', pedidoId: Number(deps.pedidoId) });
+  return { franja };
+}
+
+async function moverParada(deps = {}) {
+  const dir = deps.direccion === 'subir' ? -1 : deps.direccion === 'bajar' ? 1 : 0;
+  if (!dir) fail(422, 'La dirección no es válida');
+  const db = getModels(deps);
+  const parada = await findRutaDeHoy(deps, deps.pedidoId);
+  if (!parada) fail(409, 'Ese pedido no está en una ruta de hoy');
+  const hermanas = await db.RutaPedido.findAll({
+    where: { fkid_ruta: parada.fkid_ruta },
+    order: [['orden_entrega', 'ASC'], ['id', 'ASC']],
+  });
+  const franja = parada.franja === 'tarde' ? 'tarde' : 'manana';
+  const grupo = hermanas.filter((row) => (row.franja === 'tarde' ? 'tarde' : 'manana') === franja);
+  const index = grupo.findIndex((row) => Number(row.id) === Number(parada.id));
+  const vecino = grupo[index + dir];
+  if (index < 0 || !vecino) {
+    return { orden_entrega: parada.orden_entrega, orden_manual: true };
+  }
+  const ordenActual = parada.orden_entrega;
+  const ordenVecino = vecino.orden_entrega;
+  await parada.update({ orden_entrega: ordenVecino, orden_manual: true });
+  if (typeof vecino.update === 'function' && ordenActual !== ordenVecino) {
+    await vecino.update({ orden_entrega: ordenActual });
+  }
+  olvidarOrdenRuta(parada.ruta?.fkid_repartidor, fechaKey(parada.ruta?.fecha_ruta));
+  await safeNotify(deps, parada.ruta?.fkid_repartidor, { type: 'ruta.actualizada', pedidoId: Number(deps.pedidoId) });
+  return { orden_entrega: ordenVecino, orden_manual: true };
+}
+
 module.exports = {
   aprobar,
   guardarExtras,
@@ -736,4 +787,6 @@ module.exports = {
   fechaDeHoy,
   liberarCierre,
   reagendar,
+  cambiarFranja,
+  moverParada,
 };

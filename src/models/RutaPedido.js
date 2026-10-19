@@ -99,6 +99,19 @@ module.exports = (sequelize, DataTypes) => {
     aviso_siguiente_en: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    franja: {
+      type: DataTypes.ENUM('manana', 'tarde'),
+      allowNull: false,
+      defaultValue: 'manana',
+      validate: {
+        isIn: [['manana', 'tarde']]
+      }
+    },
+    orden_manual: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     tableName: 'rutas_pedidos',
