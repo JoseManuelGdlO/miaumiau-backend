@@ -212,6 +212,18 @@ const sendWhatsAppTemplate = (
   `Enviando plantilla ${templateName}`
 );
 
+const sendWhatsAppInteractive = (phone, phoneNumberId, interactive) => sendWhatsAppPayload(
+  phone,
+  phoneNumberId,
+  {
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'interactive',
+    interactive,
+  },
+  'Enviando mensaje interactivo'
+);
+
 const isValidPublicHttpsUrl = (url) => {
   if (!url || typeof url !== 'string') return false;
   try {
@@ -456,6 +468,7 @@ const downloadAndSaveConversationImage = async (mediaId, mimeTypeHint = null) =>
 module.exports = {
   sendWhatsAppMessage,
   sendWhatsAppTemplate,
+  sendWhatsAppInteractive,
   sendWhatsAppImage,
   uploadWhatsAppMedia,
   downloadAndSaveConversationImage,

@@ -95,6 +95,10 @@ module.exports = (sequelize, DataTypes) => {
     codigo_validado_en: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    aviso_siguiente_en: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'rutas_pedidos',

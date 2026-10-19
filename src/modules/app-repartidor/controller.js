@@ -128,6 +128,13 @@ async function quitarPaquete(req, res) {
   }, 'quitarPaquete');
 }
 
+async function iniciarRuta(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.iniciarRuta(depsFrom(req, { fecha, timezone }));
+  }, 'iniciarRuta');
+}
+
 async function solicitarValidacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -291,6 +298,7 @@ module.exports = {
   paquetes,
   agregarPaquete,
   quitarPaquete,
+  iniciarRuta,
   solicitarValidacion,
   leerSolicitud,
   pedidos,

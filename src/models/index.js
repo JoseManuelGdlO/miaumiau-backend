@@ -44,6 +44,7 @@ const InventarioVehiculo = require('./InventarioVehiculo');
 const MovimientoInventarioVehiculo = require('./MovimientoInventarioVehiculo');
 const RepartidorPuntosMovimiento = require('./RepartidorPuntosMovimiento');
 const RepartidorLogro = require('./RepartidorLogro');
+const CampanaEnvio = require('./CampanaEnvio');
 
 // Inicializar modelos
 const models = {
@@ -88,7 +89,8 @@ const models = {
   InventarioVehiculo: InventarioVehiculo(sequelize, DataTypes),
   MovimientoInventarioVehiculo: MovimientoInventarioVehiculo(sequelize, DataTypes),
   RepartidorPuntosMovimiento: RepartidorPuntosMovimiento(sequelize, DataTypes),
-  RepartidorLogro: RepartidorLogro(sequelize, DataTypes)
+  RepartidorLogro: RepartidorLogro(sequelize, DataTypes),
+  CampanaEnvio: CampanaEnvio(sequelize, DataTypes),
 };
 
 // Definir asociaciones

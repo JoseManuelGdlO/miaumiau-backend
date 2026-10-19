@@ -23,6 +23,7 @@ const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
 const { nearestNeighbor, distanceMatrix } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
+const { avisarSiguiente } = require('./aviso-siguiente');
 
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
 const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
@@ -1157,6 +1158,12 @@ async function entregar(deps = {}) {
   }
 
   await refrescarCorte(deps);
+  void avisarSiguiente({
+    ...deps,
+    getModels,
+    lineaDelCliente: lineaWhatsAppDelCliente,
+    avisarSiguiente: deps.avisarSiguiente,
+  }, rutaPedido).catch(() => {});
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -1235,6 +1242,12 @@ async function noEntregar(deps = {}) {
     fecha_entrega_real: now,
   });
   await pedido.update({ estado: 'no_entregado' });
+  void avisarSiguiente({
+    ...deps,
+    getModels,
+    lineaDelCliente: lineaWhatsAppDelCliente,
+    avisarSiguiente: deps.avisarSiguiente,
+  }, rutaPedido).catch(() => {});
   return toPedidoDto(pedido, rutaPedido);
 }
 
@@ -1274,6 +1287,17 @@ async function refrescarCorte(deps = {}) {
     virtual_cobrado: Math.round(virtual * 100) / 100,
     valor_carga: moneyOf(jornada.valor_carga) || moneyOf(jornada.dinero_esperado),
   });
+}
+
+async function iniciarRuta(deps = {}) {
+  await requireJornadaAbierta(deps);
+  await avisarSiguiente({
+    ...deps,
+    getModels,
+    lineaDelCliente: lineaWhatsAppDelCliente,
+    avisarSiguiente: deps.avisarSiguiente,
+  }, null);
+  return { iniciado: true };
 }
 
 async function registrarCaja(deps = {}) {
@@ -1500,6 +1524,7 @@ module.exports = {
   listarPaquetesDisponibles,
   agregarPaqueteParada,
   quitarPaqueteParada,
+  iniciarRuta,
   assertRutaDelRepartidor,
   llegada,
   validarCodigo,
