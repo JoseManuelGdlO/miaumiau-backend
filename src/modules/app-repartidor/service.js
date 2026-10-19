@@ -22,6 +22,7 @@ const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../util
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
 const { nearestNeighbor, distanceMatrix } = require('./route-order');
+const jornadaPaquetes = require('./jornada-paquetes');
 
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
 const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
@@ -155,7 +156,8 @@ function resumirRutas(rutas) {
             : Number(prod.producto?.precio_venta) || 0,
         });
       }
-      for (const pp of pedido.paquetes || []) {
+      const paradaExtra = String(pedido.numero_pedido || '').startsWith('EXTRA-');
+      if (!paradaExtra) for (const pp of pedido.paquetes || []) {
         const factor = Number(pp.cantidad) || 0;
         for (const item of pp.paquete?.productos || []) {
           const nombre = item.producto?.nombre || '';
@@ -1284,10 +1286,35 @@ async function registrarCaja(deps = {}) {
   await jornada.update({
     efectivo_a_depositar: Number(deps.efectivo) || 0,
     comprobante_deposito_path: comprobantePath(deps.file),
-    cerrada_en: new Date(),
-    estado: 'cerrada',
   });
+  const aviso = await defaultCrearNotificacion(deps, {
+    nombre: 'Cierre de día',
+    prioridad: 'alta',
+    datos: {
+      tipo: 'cierre_dia',
+      estado_solicitud: 'abierta',
+      repartidor_id: deps.repartidorId,
+      jornada_id: jornada.id,
+    },
+  });
+  publishNotificacion(aviso);
   return obtenerJornada({ ...deps, jornada });
+}
+
+function paqueteHooks() {
+  return { loadJornada, loadRepartidor, getModels, obtenerJornada };
+}
+
+async function listarPaquetesDisponibles(deps = {}) {
+  return jornadaPaquetes.listarPaquetesDisponibles(deps, paqueteHooks());
+}
+
+async function agregarPaqueteParada(deps = {}) {
+  return jornadaPaquetes.agregarPaqueteParada(deps, paqueteHooks());
+}
+
+async function quitarPaqueteParada(deps = {}) {
+  return jornadaPaquetes.quitarPaqueteParada(deps, paqueteHooks());
 }
 
 async function crearSoporte(deps = {}) {
@@ -1470,6 +1497,9 @@ module.exports = {
   obtenerJornada,
   buscarBodega,
   agregarExtra,
+  listarPaquetesDisponibles,
+  agregarPaqueteParada,
+  quitarPaqueteParada,
   assertRutaDelRepartidor,
   llegada,
   validarCodigo,

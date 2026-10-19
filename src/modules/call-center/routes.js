@@ -17,5 +17,7 @@ router.get('/pedidos', ...guard, controller.pedidos);
 router.patch('/pedidos/:id/estado', ...guard, controller.estado);
 router.get('/repartidores', ...guard, controller.repartidores);
 router.post('/pedidos/:id/reasignar', ...guard, controller.reasignar);
+router.post('/pedidos/:id/reagendar', ...guard, controller.reagendar);
+router.post('/solicitudes/:id/liberar-cierre', ...guard, controller.liberarCierre);
 
 module.exports = router;

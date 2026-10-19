@@ -98,6 +98,36 @@ async function extras(req, res) {
   }, 'extras');
 }
 
+async function paquetes(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.listarPaquetesDisponibles(depsFrom(req, { fecha, timezone }));
+  }, 'paquetes');
+}
+
+async function agregarPaquete(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.agregarPaqueteParada(depsFrom(req, {
+      fecha,
+      timezone,
+      fkid_paquete: req.body.fkid_paquete,
+      cantidad: req.body.cantidad,
+    }));
+  }, 'agregarPaquete');
+}
+
+async function quitarPaquete(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.quitarPaqueteParada(depsFrom(req, {
+      fecha,
+      timezone,
+      pedidoId: req.params.pedidoId,
+    }));
+  }, 'quitarPaquete');
+}
+
 async function solicitarValidacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -258,6 +288,9 @@ module.exports = {
   inventario,
   bodega,
   extras,
+  paquetes,
+  agregarPaquete,
+  quitarPaquete,
   solicitarValidacion,
   leerSolicitud,
   pedidos,

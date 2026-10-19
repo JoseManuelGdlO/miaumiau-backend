@@ -1,7 +1,7 @@
 const { dayKey } = require('../app-repartidor/domain');
 
 const NOTE_LIMIT = 1000;
-const TIPOS = ['check_in', 'llamada_cliente', 'soporte'];
+const TIPOS = ['check_in', 'llamada_cliente', 'soporte', 'cierre_dia'];
 const ACTIVE = ['activo', 'disponible', 'ocupado', 'en_ruta'];
 const CLOSED = ['entregado', 'no_entregado', 'cancelado'];
 const TRANSITIONS = {
@@ -207,6 +207,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     cliente: pedido.cliente?.nombre_completo || null,
     telefono: phoneOf(pedido),
     direccion: pedido.direccion_entrega || null,
+    notas: pedido.notas || null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
     comprobante_url: comprobantePublicPath(cobro?.comprobante_path),

@@ -73,6 +73,17 @@ module.exports = (sequelize, DataTypes) => {
       validado_por_nombre: {
         type: DataTypes.STRING(150),
         allowNull: true
+      },
+      cerrado_por_usuario_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'users', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      cerrado_por_nombre: {
+        type: DataTypes.STRING(150),
+        allowNull: true
       }
     },
     {

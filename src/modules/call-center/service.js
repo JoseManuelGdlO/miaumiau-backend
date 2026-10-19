@@ -123,7 +123,7 @@ function openSolicitudWhere() {
     leida: false,
     [Op.and]: [
       literal(
-        "JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.tipo')) IN ('check_in', 'llamada_cliente', 'soporte')"
+        "JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.tipo')) IN ('check_in', 'llamada_cliente', 'soporte', 'cierre_dia')"
       ),
       literal(
         "(JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) <> 'cancelada')"
@@ -663,6 +663,64 @@ async function listarRepartidores(deps = {}) {
   return rows.map(toRepartidorOpcion);
 }
 
+async function liberarCierre(deps = {}) {
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion) fail(404, 'Solicitud no encontrada');
+  const datos = notificacion.datos || {};
+  if (datos.tipo !== 'cierre_dia' || notificacion.leida || datos.estado_solicitud === 'cancelada') {
+    fail(409, 'Ese cierre ya no se puede liberar');
+  }
+  const jornada = deps.jornada || await db.JornadaRepartidor.findByPk(datos.jornada_id);
+  if (!jornada || jornada.estado !== 'validada' || !jornada.comprobante_deposito_path) {
+    fail(409, 'El repartidor todavía no envió el cierre');
+  }
+  const quien = await nombreAprobador(deps);
+  await notificacion.update({ leida: true });
+  await jornada.update({
+    estado: 'cerrada',
+    cerrada_en: new Date(),
+    cerrado_por_usuario_id: quien.id,
+    cerrado_por_nombre: quien.nombre,
+  });
+  await safeNotify(deps, jornada.fkid_repartidor, { type: 'jornada.actualizada' });
+  return { cerrada: true, cerrado_por_nombre: quien.nombre };
+}
+
+async function reagendar(deps = {}) {
+  const fecha = String(deps.fecha || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fail(422, 'La fecha no es válida');
+  const motivo = String(deps.motivo || '').trim();
+  if (!motivo) fail(422, 'El motivo es obligatorio');
+  const db = getModels(deps);
+  const pedido = deps.pedido || await db.Pedido.findByPk(deps.pedidoId);
+  if (!pedido || pedido.baja_logica) fail(404, 'Pedido no encontrado');
+  if (['entregado', 'cancelado'].includes(pedido.estado)) fail(409, 'Ese pedido ya no se puede reagendar');
+  const quien = await nombreAprobador(deps);
+  const note = appendNota(
+    pedido.notas,
+    `Reagendado al ${fecha} por ${quien.nombre || 'Call Center'}: ${motivo}`,
+    stamp(deps.now || new Date())
+  );
+  if (!note.ok) fail(note.statusCode, note.message);
+  const estado = pedido.estado === 'no_entregado' || pedido.estado === 'en_camino' ? 'confirmado' : pedido.estado;
+  await pedido.update({ fecha_entrega_estimada: fecha, estado, notas: note.notas });
+  const hoy = await fechaDeHoy(deps);
+  const paradas = await db.RutaPedido.findAll({
+    where: { fkid_pedido: pedido.id },
+    include: [{
+      model: db.Ruta,
+      as: 'ruta',
+      required: true,
+      where: { fecha_ruta: hoy, baja_logica: false },
+    }],
+  });
+  for (const parada of paradas) {
+    if (typeof parada.destroy === 'function') await parada.destroy();
+  }
+  return { id: pedido.id, fecha_entrega_estimada: fecha, notas: note.notas };
+}
+
 module.exports = {
   aprobar,
   guardarExtras,
@@ -676,4 +734,6 @@ module.exports = {
   listarPedidos,
   listarRepartidores,
   fechaDeHoy,
+  liberarCierre,
+  reagendar,
 };
