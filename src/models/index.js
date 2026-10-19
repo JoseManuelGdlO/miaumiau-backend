@@ -46,6 +46,7 @@ const RepartidorPuntosMovimiento = require('./RepartidorPuntosMovimiento');
 const RepartidorLogro = require('./RepartidorLogro');
 const CampanaEnvio = require('./CampanaEnvio');
 const LecturaKilometraje = require('./LecturaKilometraje');
+const LecturaVelocidad = require('./LecturaVelocidad');
 
 // Inicializar modelos
 const models = {
@@ -93,6 +94,7 @@ const models = {
   RepartidorLogro: RepartidorLogro(sequelize, DataTypes),
   CampanaEnvio: CampanaEnvio(sequelize, DataTypes),
   LecturaKilometraje: LecturaKilometraje(sequelize, DataTypes),
+  LecturaVelocidad: LecturaVelocidad(sequelize, DataTypes),
 };
 
 // Definir asociaciones
@@ -577,6 +579,10 @@ models.Repartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_reparti
 models.LecturaKilometraje.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_jornada', as: 'lecturas_kilometraje' });
 models.LecturaKilometraje.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
+models.Repartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_repartidor', as: 'lecturas_velocidad' });
+models.LecturaVelocidad.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.JornadaRepartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_jornada', as: 'lecturas_velocidad' });
+models.LecturaVelocidad.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
 
 models.sequelize = sequelize;
 models.Sequelize = require('sequelize');

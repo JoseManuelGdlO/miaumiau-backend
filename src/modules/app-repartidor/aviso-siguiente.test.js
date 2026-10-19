@@ -22,6 +22,14 @@ test('minutosEntre lee la duración y no inventa si falta', async () => {
   expect(await minutosEntre({ lat: 1, lng: 1 }, { lat: 2, lng: 2 }, '', httpGet)).toBeNull();
 });
 
+test('el menú ofrece Ok listo y No puedo, con minutos solo si existen', () => {
+  const { menuDeSiguiente } = require('./aviso-siguiente');
+  const conMinutos = menuDeSiguiente('Ana', 8);
+  expect(conMinutos.body.text).toMatch(/8 min/);
+  expect(conMinutos.action.buttons.map((item) => item.reply.id)).toEqual(['ok_listo', 'no_puedo']);
+  expect(menuDeSiguiente('Ana', null).body.text).not.toMatch(/\d+ min/);
+});
+
 test('quiereReagendar reconoce que el cliente no puede recibir', () => {
   expect(quiereReagendar('No puedo recibir hoy')).toBe(true);
   expect(quiereReagendar('quiero reagendar')).toBe(true);

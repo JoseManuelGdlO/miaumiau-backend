@@ -19,6 +19,8 @@ router.get('/repartidores', ...guard, controller.repartidores);
 router.post('/pedidos/:id/reasignar', ...guard, controller.reasignar);
 router.post('/pedidos/:id/franja', ...guard, controller.cambiarFranja);
 router.post('/pedidos/:id/orden', ...guard, controller.moverParada);
+router.post('/pedidos/:id/liberar-siguiente', ...guard, controller.liberarSiguiente);
+router.get('/velocidad', ...guard, controller.velocidad);
 router.post('/pedidos/:id/reagendar', ...guard, controller.reagendar);
 router.post('/solicitudes/:id/liberar-cierre', ...guard, controller.liberarCierre);
 

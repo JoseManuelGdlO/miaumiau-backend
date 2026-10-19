@@ -1,6 +1,6 @@
 const { Op, literal } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
-const { refrescarCargaEnValidacion, olvidarOrdenRuta } = require('../app-repartidor/service');
+const { refrescarCargaEnValidacion, olvidarOrdenRuta, liberarSiguienteParada } = require('../app-repartidor/service');
 const { repartoBloqueado } = require('../app-repartidor/deposito-pendiente');
 const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
@@ -725,6 +725,24 @@ async function reagendar(deps = {}) {
   return { id: pedido.id, fecha_entrega_estimada: fecha, notas: note.notas };
 }
 
+async function liberarSiguiente(deps = {}) {
+  const parada = await findRutaDeHoy(deps, deps.pedidoId);
+  if (!parada?.ruta) fail(409, 'Ese pedido no está en una ruta de hoy');
+  const franja = parada.franja === 'tarde' ? 'tarde' : 'manana';
+  const result = await liberarSiguienteParada({
+    models: deps.models,
+    repartidorId: parada.ruta.fkid_repartidor,
+    fecha: fechaKey(parada.ruta.fecha_ruta),
+    franja,
+    avisarSiguiente: deps.avisarSiguiente,
+  });
+  await safeNotify(deps, parada.ruta.fkid_repartidor, {
+    type: 'ruta.actualizada',
+    pedidoId: result.pedido_id,
+  });
+  return result;
+}
+
 async function cambiarFranja(deps = {}) {
   const franja = deps.franja === 'tarde' ? 'tarde' : deps.franja === 'manana' ? 'manana' : null;
   if (!franja) fail(422, 'La franja no es válida');
@@ -789,4 +807,5 @@ module.exports = {
   reagendar,
   cambiarFranja,
   moverParada,
+  liberarSiguiente,
 };

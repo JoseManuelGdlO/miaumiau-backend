@@ -164,6 +164,19 @@ async function inventario(req, res) {
   return handle(req, res, async () => service.inventarioVehiculo(depsFrom(req)), 'inventario');
 }
 
+async function velocidad(req, res) {
+  return handle(req, res, async () => {
+    const { fecha } = await fechaDeHoy(req);
+    if (req.method === 'GET') return service.resumenVelocidad(depsFrom(req, { fecha }));
+    return service.registrarVelocidad(depsFrom(req, {
+      fecha,
+      velocidad_kmh: req.body?.velocidad_kmh,
+      lat: req.body?.lat,
+      lng: req.body?.lng,
+    }));
+  }, 'velocidad');
+}
+
 async function ubicacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -294,6 +307,7 @@ module.exports = {
   jornada,
   replaceCarga,
   inventario,
+  velocidad,
   bodega,
   extras,
   paquetes,

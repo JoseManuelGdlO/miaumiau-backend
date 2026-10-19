@@ -112,6 +112,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    liberado_en: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'rutas_pedidos',

@@ -16,6 +16,8 @@ router.post('/jornada/paquetes', controller.agregarPaquete);
 router.delete('/jornada/paquetes/:pedidoId', controller.quitarPaquete);
 router.get('/solicitudes/:notificacionId', controller.leerSolicitud);
 router.get('/inventario', controller.inventario);
+router.get('/velocidad', controller.velocidad);
+router.post('/velocidad', controller.velocidad);
 router.get('/pedidos', controller.pedidos);
 router.get('/pedidos/:id/ubicacion', controller.ubicacion);
 router.get('/pedidos/:id', controller.pedido);

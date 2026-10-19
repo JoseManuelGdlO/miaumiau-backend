@@ -3,7 +3,7 @@ const { Logger } = require('../../utils/logger');
 const { dayKey } = require('./domain');
 const { phoneOf } = require('../call-center/domain');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
-const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
+const { sendWhatsAppTemplate, sendWhatsAppInteractive, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 
 const log = new Logger('AvisoSiguiente');
 const TEMPLATE = 'pedido_siguiente';
@@ -52,6 +52,23 @@ function componentes(nombre, minutos) {
   }];
 }
 
+function menuDeSiguiente(nombre, minutos) {
+  const quien = String(nombre || 'cliente').slice(0, 40);
+  const texto = minutos
+    ? `${quien}, tu pedido llega en ${minutos} min. ¿Puedes recibirlo?`
+    : `${quien}, tu pedido va en camino. ¿Puedes recibirlo?`;
+  return {
+    type: 'button',
+    body: { text: texto },
+    action: {
+      buttons: [
+        { type: 'reply', reply: { id: 'ok_listo', title: 'Ok, listo' } },
+        { type: 'reply', reply: { id: 'no_puedo', title: 'No puedo' } },
+      ],
+    },
+  };
+}
+
 async function avisarSiguiente(deps, origen) {
   if (process.env.NODE_ENV === 'test' && !deps.avisarSiguiente) return { enviado: false };
   const db = deps.getModels(deps);
@@ -75,9 +92,11 @@ async function avisarSiguiente(deps, origen) {
     }],
   });
   const paradas = rutas.flatMap((ruta) => ruta.pedidos || [])
-    .filter(abierto)
+    .filter((parada) => abierto(parada) && parada.liberado_en)
     .sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
-  const siguiente = paradas[0];
+  const siguiente = (deps.paradaId
+    ? paradas.find((parada) => Number(parada.id) === Number(deps.paradaId))
+    : null) || paradas.find((parada) => !parada.aviso_siguiente_en);
   if (!siguiente || siguiente.aviso_siguiente_en) return { enviado: false };
   const destino = punto(siguiente);
   const desde = punto(origen);
@@ -87,10 +106,6 @@ async function avisarSiguiente(deps, origen) {
     siguiente.tiempo_estimado_entrega = minutos;
     await siguiente.update({ tiempo_estimado_entrega: minutos });
   }
-  if (minutos == null) {
-    log.info('aviso omitido: sin ETA', { pedidoId: siguiente.fkid_pedido || siguiente.pedido?.id });
-    return { enviado: false };
-  }
   const pedido = siguiente.pedido;
   const telefono = formatPhoneForWhatsApp(phoneOf(pedido));
   if (!telefono) {
@@ -98,20 +113,26 @@ async function avisarSiguiente(deps, origen) {
     return { enviado: false };
   }
   const nombre = pedido.cliente?.nombre_completo || 'cliente';
-  const send = deps.sendWhatsAppTemplate || sendWhatsAppTemplate;
   const linea = deps.lineaWhatsApp || (await deps.lineaDelCliente?.(deps, pedido));
-  const result = await send(telefono, linea, TEMPLATE, {
-    languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
-    components: componentes(nombre, minutos),
-  });
-  if (!result?.success) {
+  const sendMenu = deps.sendWhatsAppInteractive || sendWhatsAppInteractive;
+  const menu = await sendMenu(telefono, linea, menuDeSiguiente(nombre, minutos));
+  let enviado = Boolean(menu?.success);
+  if (!enviado && minutos != null) {
+    const send = deps.sendWhatsAppTemplate || sendWhatsAppTemplate;
+    const plantilla = await send(telefono, linea, TEMPLATE, {
+      languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
+      components: componentes(nombre, minutos),
+    });
+    enviado = Boolean(plantilla?.success);
+  }
+  if (!enviado) {
     log.warn('aviso no enviado', { pedidoId: pedido.id });
-    return { enviado: false };
+    return { enviado: false, minutos: minutos || null };
   }
   if (typeof siguiente.update === 'function') {
     await siguiente.update({ aviso_siguiente_en: new Date() });
   }
-  return { enviado: true, minutos };
+  return { enviado: true, minutos: minutos || null };
 }
 
 function quiereReagendar(texto) {
@@ -136,6 +157,7 @@ module.exports = {
   abierto,
   minutosEntre,
   avisarSiguiente,
+  menuDeSiguiente,
   quiereReagendar,
   proximosDias,
   componentes,

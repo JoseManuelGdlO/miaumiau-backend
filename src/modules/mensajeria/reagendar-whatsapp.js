@@ -83,6 +83,10 @@ async function atenderMensaje(message, phoneNumberId) {
   if (!telefono) return;
   const linea = phoneNumberId || LINEA;
   const fechaElegida = texto.startsWith('reagendar:') ? texto.slice('reagendar:'.length) : '';
+  if (texto === 'ok_listo') {
+    await sendWhatsAppMessage(telefono, 'Perfecto. Te esperamos con el pedido.', linea);
+    return;
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(fechaElegida)) {
     const pedido = await pedidoAbierto(telefono);
     if (!pedido) return;
@@ -97,7 +101,7 @@ async function atenderMensaje(message, phoneNumberId) {
     await sendWhatsAppMessage(telefono, `Listo. Tu pedido quedó para el ${fechaElegida}.`, linea);
     return;
   }
-  if (!quiereReagendar(texto)) return;
+  if (texto !== 'no_puedo' && !quiereReagendar(texto)) return;
   const pedido = await pedidoAbierto(telefono);
   if (!pedido) return;
   await sendWhatsAppInteractive(telefono, linea, listaDeFechas(proximosDias()));
