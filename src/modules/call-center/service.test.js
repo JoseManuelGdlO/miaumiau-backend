@@ -31,6 +31,41 @@ test('aprobar marca leída, guarda quién aprobó y no valida la jornada', async
   expect(jornada.validado_por_nombre).toBe('Mariana G.');
 });
 
+test('aprobar carga el inventario de la camioneta y no toca la bodega', async () => {
+  const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
+  const saldos = [];
+  const movimientos = [];
+  const bodega = { stock: 8, reducirStock: jest.fn() };
+  const models = {
+    InventarioVehiculo: {
+      destroy: async () => { saldos.length = 0; },
+      create: async (row) => { saldos.push(row); return row; },
+    },
+    MovimientoInventarioVehiculo: {
+      create: async (row) => { movimientos.push(row); return row; },
+    },
+    Inventario: bodega,
+  };
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 7,
+    estado: 'esperando_call_center',
+    fkid_notificacion: 9,
+    cargas: [{ nombre: 'Arena', cantidad: 3, fkid_producto: 4 }],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await aprobar({
+    notificacion: notificacion(),
+    jornada,
+    usuario: { id: 12, nombre_completo: 'Mariana G.' },
+    models,
+  });
+  expect(saldos).toEqual([expect.objectContaining({ nombre: 'Arena', cantidad: 3, fkid_repartidor: 7 })]);
+  expect(movimientos[0]).toEqual(expect.objectContaining({ tipo: 'carga', cantidad: 3 }));
+  expect(bodega.reducirStock).not.toHaveBeenCalled();
+  expect(reemplazarSaldo).toEqual(expect.any(Function));
+});
+
 test('aprobar un check-in cancelado responde 409', async () => {
   const n = notificacion({ datos: { tipo: 'check_in', estado_solicitud: 'cancelada' } });
   await expect(aprobar({

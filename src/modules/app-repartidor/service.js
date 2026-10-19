@@ -20,6 +20,8 @@ const { phoneOf } = require('../call-center/domain');
 const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
+const { reemplazarSaldo, descontarEntrega } = require('./inventario-vehiculo');
+const { nearestNeighbor, distanceMatrix } = require('./route-order');
 
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
 const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
@@ -31,6 +33,11 @@ function fail(status, message) {
 
 function getModels(deps = {}) {
   return deps.models || require('../../models');
+}
+
+function moneyOf(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 function plain(row) {
@@ -283,10 +290,12 @@ async function solicitarValidacion(deps = {}) {
     }
   }
   publishNotificacion(notificacion);
+  const dinero = dineroConExtras(calculo.dinero_esperado, extras);
   await jornada.update({
     estado: 'esperando_call_center',
     fkid_notificacion: notificacion.id,
-    dinero_esperado: dineroConExtras(calculo.dinero_esperado, extras),
+    dinero_esperado: dinero,
+    valor_carga: dinero,
   });
   return { id: notificacion.id, notificacion_id: notificacion.id, jornada_id: jornada.id };
 }
@@ -331,7 +340,11 @@ async function leerSolicitud(deps = {}) {
     })
     && vigente
   ) {
-    await jornada.update({ estado: 'validada' });
+    await jornada.update({
+      estado: 'validada',
+      valor_carga: Number(jornada.dinero_esperado) || Number(jornada.valor_carga) || 0,
+    });
+    void ordenarParadasSiAplica({ ...deps, repartidorId: jornada.fkid_repartidor || deps.repartidorId });
   }
   return {
     atendida,
@@ -443,6 +456,9 @@ async function obtenerJornada(deps = {}) {
       fecha: raw.fecha,
       fkid_notificacion: raw.fkid_notificacion,
       efectivo_a_depositar: raw.efectivo_a_depositar,
+      efectivo_cobrado: moneyOf(raw.efectivo_cobrado),
+      virtual_cobrado: moneyOf(raw.virtual_cobrado),
+      valor_carga: moneyOf(raw.valor_carga),
       comprobante_deposito_path: raw.comprobante_deposito_path,
       cerrada_en: raw.cerrada_en,
     };
@@ -454,6 +470,9 @@ async function obtenerJornada(deps = {}) {
     estado: raw.estado,
     fkid_notificacion: raw.fkid_notificacion,
     efectivo_a_depositar: raw.efectivo_a_depositar,
+    efectivo_cobrado: moneyOf(raw.efectivo_cobrado),
+    virtual_cobrado: moneyOf(raw.virtual_cobrado),
+    valor_carga: moneyOf(raw.valor_carga) || moneyOf(raw.dinero_esperado),
     comprobante_deposito_path: raw.comprobante_deposito_path,
     cerrada_en: raw.cerrada_en,
     dinero_esperado: raw.dinero_esperado == null ? 0 : Number(raw.dinero_esperado),
@@ -515,8 +534,52 @@ async function requireJornadaAbierta(deps) {
   return jornada;
 }
 
+const rutasOrdenadas = new Set();
+
+async function ordenarParadasSiAplica(deps = {}) {
+  if (process.env.NODE_ENV === 'test' && !deps.ordenarRutas) return;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || deps.repartidorId == null || !deps.fecha) return;
+  const cacheKey = `${deps.repartidorId}:${deps.fecha}`;
+  if (rutasOrdenadas.has(cacheKey)) return;
+  const db = getModels(deps);
+  if (typeof db.Ruta?.findAll !== 'function') return;
+  const rutas = await db.Ruta.findAll({
+    where: {
+      fkid_repartidor: deps.repartidorId,
+      fecha_ruta: deps.fecha,
+      estado: { [Op.ne]: 'cancelada' },
+    },
+    include: [{ model: db.RutaPedido, as: 'pedidos' }],
+  });
+  for (const ruta of rutas) {
+    const paradas = (ruta.pedidos || [])
+      .map((rp) => ({
+        id: rp.id,
+        lat: rp.lat == null ? null : Number(rp.lat),
+        lng: rp.lng == null ? null : Number(rp.lng),
+      }))
+      .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
+    if (paradas.length < 2) continue;
+    let matrix;
+    try {
+      matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
+    } catch {
+      continue;
+    }
+    if (!matrix) continue;
+    const ordered = nearestNeighbor(paradas.map((rp) => rp.id), matrix);
+    for (let index = 0; index < ordered.length; index += 1) {
+      const row = (ruta.pedidos || []).find((rp) => rp.id === ordered[index]);
+      if (row?.update) await row.update({ orden_entrega: index + 1 });
+    }
+  }
+  rutasOrdenadas.add(cacheKey);
+}
+
 async function listarPedidos(deps = {}) {
   await requireJornadaAbierta(deps);
+  await ordenarParadasSiAplica(deps);
   const db = getModels(deps);
   const rutas = await db.Ruta.findAll({
     where: {
@@ -868,6 +931,22 @@ async function entregar(deps = {}) {
       }, { transaction: t });
       await pedido.update({ estado: 'entregado', fecha_entrega_real: now }, { transaction: t });
 
+      if (db.InventarioVehiculo) {
+        const jornada = await loadJornada(deps, { findOrCreate: false });
+        const items = (pedido.productos || []).map((prod) => ({
+          nombre: prod.producto?.nombre || prod.nombre,
+          fkid_producto: prod.fkid_producto,
+          cantidad: Number(prod.cantidad) || 0,
+        }));
+        await descontarEntrega(db, {
+          repartidorId: deps.repartidorId,
+          jornadaId: jornada?.id,
+          pedidoId: pedido.id,
+          items,
+          transaction: t,
+        });
+      }
+
       const last = await db.RepartidorPuntosMovimiento.findOne({
         where: { fkid_repartidor: deps.repartidorId },
         order: [['created_at', 'DESC'], ['id', 'DESC']],
@@ -890,6 +969,8 @@ async function entregar(deps = {}) {
   if (alreadyRecorded) {
     return loadPedidoDto(db, pedido, rutaPedido);
   }
+
+  await refrescarCorte(deps);
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -962,12 +1043,51 @@ async function noEntregar(deps = {}) {
   return toPedidoDto(pedido, rutaPedido);
 }
 
+async function refrescarCorte(deps = {}) {
+  if (process.env.NODE_ENV === 'test' && !deps.models) return;
+  const db = getModels(deps);
+  if (typeof db.CobroEntrega?.findAll !== 'function') return;
+  const jornada = deps.jornada || await loadJornada(deps, { findOrCreate: false });
+  if (!jornada?.update || !deps.fecha) return;
+  const cobros = await db.CobroEntrega.findAll({
+    where: { fkid_repartidor: deps.repartidorId },
+    include: [{
+      model: db.Pedido,
+      as: 'pedido',
+      required: true,
+      include: [{
+        model: db.RutaPedido,
+        as: 'rutas',
+        required: true,
+        include: [{
+          model: db.Ruta,
+          as: 'ruta',
+          required: true,
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+        }],
+      }],
+    }],
+  });
+  let efectivo = 0;
+  let virtual = 0;
+  for (const cobro of cobros) {
+    efectivo += Number(cobro.monto_efectivo) || 0;
+    virtual += Number(cobro.monto_transferencia) || 0;
+  }
+  await jornada.update({
+    efectivo_cobrado: Math.round(efectivo * 100) / 100,
+    virtual_cobrado: Math.round(virtual * 100) / 100,
+    valor_carga: moneyOf(jornada.valor_carga) || moneyOf(jornada.dinero_esperado),
+  });
+}
+
 async function registrarCaja(deps = {}) {
   const jornada = await loadJornada(deps, { findOrCreate: false });
   if (!jornada || !canListOrders(jornada.estado)) {
     fail(403, 'Falta la validación del Call Center');
   }
   if (!deps.file) fail(422, 'La caja requiere foto del comprobante');
+  await refrescarCorte({ ...deps, jornada });
   await jornada.update({
     efectivo_a_depositar: Number(deps.efectivo) || 0,
     comprobante_deposito_path: comprobantePath(deps.file),
@@ -1078,6 +1198,59 @@ async function estadisticas(deps = {}) {
   };
 }
 
+async function inventarioVehiculo(deps = {}) {
+  const db = getModels(deps);
+  const rows = await db.InventarioVehiculo.findAll({
+    where: { fkid_repartidor: deps.repartidorId },
+    order: [['nombre', 'ASC']],
+  });
+  return rows.map((row) => {
+    const raw = plain(row);
+    return {
+      id: raw.id,
+      nombre: raw.nombre,
+      fkid_producto: raw.fkid_producto,
+      cantidad: Number(raw.cantidad) || 0,
+    };
+  });
+}
+
+async function ubicacionPedido(deps = {}) {
+  const rutaPedido = await assertRutaDelRepartidor(deps);
+  let lat = rutaPedido.lat == null ? null : Number(rutaPedido.lat);
+  let lng = rutaPedido.lng == null ? null : Number(rutaPedido.lng);
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const address = rutaPedido.pedido?.direccion_entrega;
+  if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && apiKey && address) {
+    try {
+      const httpGet = deps.geocodeGet || require('axios').get;
+      const response = await httpGet('https://maps.googleapis.com/maps/api/geocode/json', {
+        params: { address, key: apiKey, region: 'mx' },
+      });
+      const location = response.data?.results?.[0]?.geometry?.location;
+      if (response.data?.status === 'OK' && location) {
+        lat = Number(location.lat);
+        lng = Number(location.lng);
+        if (typeof rutaPedido.update === 'function') {
+          await rutaPedido.update({
+            lat,
+            lng,
+            link_ubicacion: `https://maps.google.com/?q=${lat},${lng}`,
+          });
+        }
+      }
+    } catch {
+      lat = null;
+      lng = null;
+    }
+  }
+  return {
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    link_ubicacion: rutaPedido.link_ubicacion || null,
+  };
+}
+
 async function logros(deps = {}) {
   const db = getModels(deps);
   const rows = await db.RepartidorLogro.findAll({
@@ -1105,6 +1278,8 @@ module.exports = {
   registrarCaja,
   crearSoporte,
   listarPedidos,
+  inventarioVehiculo,
+  ubicacionPedido,
   detallePedido,
   perfil,
   estadisticas,

@@ -40,6 +40,8 @@ const PushSubscription = require('./PushSubscription');
 const JornadaRepartidor = require('./JornadaRepartidor');
 const JornadaCarga = require('./JornadaCarga');
 const CobroEntrega = require('./CobroEntrega');
+const InventarioVehiculo = require('./InventarioVehiculo');
+const MovimientoInventarioVehiculo = require('./MovimientoInventarioVehiculo');
 const RepartidorPuntosMovimiento = require('./RepartidorPuntosMovimiento');
 const RepartidorLogro = require('./RepartidorLogro');
 
@@ -83,6 +85,8 @@ const models = {
   JornadaRepartidor: JornadaRepartidor(sequelize, DataTypes),
   JornadaCarga: JornadaCarga(sequelize, DataTypes),
   CobroEntrega: CobroEntrega(sequelize, DataTypes),
+  InventarioVehiculo: InventarioVehiculo(sequelize, DataTypes),
+  MovimientoInventarioVehiculo: MovimientoInventarioVehiculo(sequelize, DataTypes),
   RepartidorPuntosMovimiento: RepartidorPuntosMovimiento(sequelize, DataTypes),
   RepartidorLogro: RepartidorLogro(sequelize, DataTypes)
 };
@@ -552,6 +556,11 @@ models.Paquete.hasMany(models.PaquetePedido, {
 });
 
 models.Repartidor.hasMany(models.JornadaRepartidor, { foreignKey: 'fkid_repartidor', as: 'jornadas' });
+models.Repartidor.hasMany(models.InventarioVehiculo, { foreignKey: 'fkid_repartidor', as: 'inventario_vehiculo' });
+models.InventarioVehiculo.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.InventarioVehiculo.belongsTo(models.Inventario, { foreignKey: 'fkid_producto', as: 'producto' });
+models.Repartidor.hasMany(models.MovimientoInventarioVehiculo, { foreignKey: 'fkid_repartidor', as: 'movimientos_vehiculo' });
+models.MovimientoInventarioVehiculo.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.belongsTo(models.Notificacion, { foreignKey: 'fkid_notificacion', as: 'notificacion_check_in' });
 models.JornadaRepartidor.hasMany(models.JornadaCarga, { foreignKey: 'fkid_jornada', as: 'cargas' });

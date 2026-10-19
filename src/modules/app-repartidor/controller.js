@@ -107,6 +107,17 @@ async function pedidos(req, res) {
   }, 'pedidos');
 }
 
+async function inventario(req, res) {
+  return handle(req, res, async () => service.inventarioVehiculo(depsFrom(req)), 'inventario');
+}
+
+async function ubicacion(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.ubicacionPedido(depsFrom(req, { fecha, timezone }));
+  }, 'ubicacion');
+}
+
 async function pedido(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -228,9 +239,11 @@ module.exports = {
   me,
   jornada,
   replaceCarga,
+  inventario,
   solicitarValidacion,
   leerSolicitud,
   pedidos,
+  ubicacion,
   pedido,
   llegada,
   solicitarLlamada,

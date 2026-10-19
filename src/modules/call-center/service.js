@@ -1,6 +1,7 @@
 const { Op, literal } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
 const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
+const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
   approveCheck,
   attendCheck,
@@ -212,7 +213,26 @@ async function aprobar(deps = {}) {
     });
   }
   await safeNotify(deps, jornada?.fkid_repartidor, { type: 'solicitud.atendida' });
+  await cargarCamioneta(deps, jornada);
   return { atendida: true };
+}
+
+async function cargarCamioneta(deps, jornada) {
+  if (!jornada || (process.env.NODE_ENV === 'test' && !deps.models)) return;
+  const db = getModels(deps);
+  if (typeof db.InventarioVehiculo?.destroy !== 'function') return;
+  let cargas = jornada.cargas;
+  if (!Array.isArray(cargas) && typeof db.JornadaCarga?.findAll === 'function') {
+    cargas = await db.JornadaCarga.findAll({ where: { fkid_jornada: jornada.id } });
+  }
+  if (!Array.isArray(cargas)) return;
+  const repartidorId = jornada.fkid_repartidor || (jornada.datos && jornada.datos.repartidor_id);
+  if (repartidorId == null) return;
+  await reemplazarSaldo(db, {
+    repartidorId,
+    jornadaId: jornada.id,
+    lineas: cargas,
+  });
 }
 
 async function nombreAprobador(deps) {
