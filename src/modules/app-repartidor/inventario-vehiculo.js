@@ -74,8 +74,37 @@ async function descontarEntrega(db, { repartidorId, jornadaId, pedidoId, items, 
   }
 }
 
+async function anotarAjuste(db, { repartidorId, jornadaId, pedidoId, nombre, fkid_producto, cantidad }) {
+  const qty = Number(cantidad) || 0;
+  const label = String(nombre || '').trim();
+  if (!label || qty < 1 || typeof db.InventarioVehiculo?.findOne !== 'function') return;
+  const saldo = await db.InventarioVehiculo.findOne({
+    where: { fkid_repartidor: repartidorId, nombre: label },
+  });
+  // La carga del día ya está en el saldo y la entrega solo descuenta lo confirmado.
+  // Sumar aquí contaría dos veces las piezas que se quedan en la camioneta.
+  if (saldo) return;
+  await db.InventarioVehiculo.create({
+    fkid_repartidor: repartidorId,
+    fkid_producto: fkid_producto ?? null,
+    nombre: label,
+    cantidad: qty,
+  });
+  if (typeof db.MovimientoInventarioVehiculo?.create !== 'function') return;
+  await db.MovimientoInventarioVehiculo.create({
+    fkid_repartidor: repartidorId,
+    fkid_producto: fkid_producto ?? null,
+    nombre: label,
+    tipo: 'ajuste',
+    cantidad: qty,
+    fkid_jornada: jornadaId ?? null,
+    fkid_pedido: pedidoId ?? null,
+  });
+}
+
 module.exports = {
   agregarLineas,
   reemplazarSaldo,
   descontarEntrega,
+  anotarAjuste,
 };

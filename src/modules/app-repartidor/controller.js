@@ -82,6 +82,22 @@ async function replaceCarga(req, res) {
   }, 'replaceCarga');
 }
 
+async function bodega(req, res) {
+  return handle(req, res, async () => service.buscarBodega(depsFrom(req, { q: req.query.q })), 'bodega');
+}
+
+async function extras(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.agregarExtra(depsFrom(req, {
+      fecha,
+      timezone,
+      fkid_producto: req.body.fkid_producto,
+      cantidad: req.body.cantidad,
+    }));
+  }, 'extras');
+}
+
 async function solicitarValidacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -240,6 +256,8 @@ module.exports = {
   jornada,
   replaceCarga,
   inventario,
+  bodega,
+  extras,
   solicitarValidacion,
   leerSolicitud,
   pedidos,
