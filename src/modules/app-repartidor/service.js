@@ -1437,16 +1437,25 @@ async function registrarCaja(deps = {}) {
     efectivo_a_depositar: Number(deps.efectivo) || 0,
     comprobante_deposito_path: comprobantePath(deps.file),
   });
+  const repartidorNombre = await nombreDelRepartidor(deps);
   const aviso = await defaultCrearNotificacion(deps, {
     nombre: 'Cierre de día',
+    descripcion: repartidorNombre ? `Viene de ${repartidorNombre}` : 'Viene de la cola de Call Center',
     prioridad: 'alta',
     datos: {
       tipo: 'cierre_dia',
       estado_solicitud: 'abierta',
       repartidor_id: deps.repartidorId,
       jornada_id: jornada.id,
+      ...(repartidorNombre ? { repartidor_nombre: repartidorNombre } : {}),
     },
   });
+  const datosCierre = {
+    ...(aviso.datos || {}),
+    actionUrl: `/dashboard/call-center?tab=operacion&aviso=${aviso.id}`,
+  };
+  if (typeof aviso.update === 'function') await aviso.update({ datos: datosCierre });
+  else aviso.datos = datosCierre;
   publishNotificacion(aviso);
   return obtenerJornada({ ...deps, jornada });
 }
@@ -1472,19 +1481,29 @@ async function crearSoporte(deps = {}) {
   const esLlamada = motivo === 'llamada';
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
   const esperaDesde = esLlamada ? new Date().toISOString() : null;
+  const repartidorNombre = await nombreDelRepartidor(deps);
+  const tipo = esLlamada ? 'llamada_cliente' : 'soporte';
   const notificacion = await crearNotificacion({
     nombre: esLlamada ? 'Llamada al cliente' : 'Soporte del repartidor',
+    descripcion: repartidorNombre ? `Viene de ${repartidorNombre}` : 'Viene de la cola de Call Center',
     prioridad: esLlamada ? 'alta' : 'media',
     datos: {
-      tipo: esLlamada ? 'llamada_cliente' : 'soporte',
+      tipo,
       estado_solicitud: 'abierta',
       repartidor_id: deps.repartidorId,
+      ...(repartidorNombre ? { repartidor_nombre: repartidorNombre } : {}),
       ...(deps.pedidoId ? { pedido_id: Number(deps.pedidoId) } : {}),
       ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
       motivo: String(deps.nota || '').trim().slice(0, 500) || motivo,
       ...(String(deps.nota || '').trim() ? { nota: String(deps.nota).trim().slice(0, 500) } : {}),
     },
   });
+  const datos = {
+    ...(notificacion.datos || {}),
+    actionUrl: `/dashboard/call-center?tab=operacion&aviso=${notificacion.id}`,
+  };
+  if (typeof notificacion.update === 'function') await notificacion.update({ datos });
+  else notificacion.datos = datos;
   publishNotificacion(notificacion);
   return {
     id: notificacion.id,
