@@ -9,6 +9,7 @@ router.get('/me', controller.me);
 router.get('/jornada', controller.jornada);
 router.put('/jornada/carga', controller.replaceCarga);
 router.post('/jornada/iniciar', controller.iniciarRuta);
+router.post('/jornada/solicitar-validacion', controller.solicitarValidacion);
 router.get('/jornada/bodega', controller.bodega);
 router.post('/jornada/extras', controller.extras);
 router.get('/jornada/paquetes', controller.paquetes);

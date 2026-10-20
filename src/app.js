@@ -107,7 +107,10 @@ function getAllowedCorsOriginsSet() {
 app.set('trust proxy', true);
 
 // Middlewares de seguridad
-app.use(helmet());
+app.use(helmet({
+  // El portal y la app del repartidor viven en otro origen. same-origin bloquea esas respuestas.
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(compression({
   filter: (req, res) => {
     const accept = req.headers.accept || '';
@@ -116,15 +119,12 @@ app.use(compression({
   },
 }));
 
-// Rate limiting (más permisivo en desarrollo)
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // más permisivo en desarrollo
-  message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.',
-  standardHeaders: true,
-  legacyHeaders: false
+// CORS va antes del límite: si no, el 429 sale sin Access-Control-Allow-Origin
+// y el navegador lo muestra como un fallo de CORS en cada reintento.
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
 });
-app.use(limiter);
 
 // CORS — el Origin es la URL de la página (no la del API). Añade dominios en
 // PUBLIC_WEB_URL / FRONTEND_URL o CORS_EXTRA_ORIGINS (coma-separado, sin espacios extra).
@@ -159,12 +159,29 @@ app.use(cors({
 
 // Manejar preflight requests explícitamente
 app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const origin = req.headers.origin;
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  if (origin) res.header('Vary', 'Origin');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Private-Network', 'true');
   res.sendStatus(200);
 });
+
+// Rate limiting (más permisivo en desarrollo). Call Center refresca varias
+// listas cada pocos segundos; 1000 por IP se agota y el resto falla en bloque.
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: process.env.NODE_ENV === 'development' ? 10000 : 300,
+  message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  // trust proxy está activo por el proxy de producción. Sin esto el límite
+  // tira en cada request y la respuesta sale sin cabeceras de CORS.
+  validate: { trustProxy: false },
+});
+app.use(limiter);
 
 app.use(requestLogger);
 
