@@ -984,9 +984,10 @@ async function asignarActividad(deps = {}) {
     fkid_ruta: ruta.id,
     fkid_pedido: pedido.id,
     orden_entrega: (Number(maximo) || 0) + 1,
+    orden_manual: true,
     estado_entrega: 'pendiente',
-    franja: 'manana',
-    liberado_en: null,
+    franja: ruta.franja === 'tarde' ? 'tarde' : 'manana',
+    liberado_en: deps.now || new Date(),
   });
   await ruta.update({ total_pedidos: (Number(ruta.total_pedidos) || 0) + 1 });
   try {

@@ -1147,7 +1147,7 @@ test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', 
   }]);
 });
 
-test('asignar actividad extra queda oculta y se niega si falta el depósito', async () => {
+test('asignar actividad extra la libera y se niega si falta el depósito', async () => {
   const creadas = [];
   const models = {
     JornadaRepartidor: {
@@ -1172,13 +1172,21 @@ test('asignar actividad extra queda oculta y se niega si falta el depósito', as
   })).rejects.toMatchObject({ status: 409 });
 
   models.JornadaRepartidor.findOne = async () => ({ comprobante_deposito_path: 'comprobantes/dep.jpg' });
+  const ahora = new Date('2026-10-19T18:00:00.000Z');
   const result = await asignarActividad({
     fecha: '2026-10-19',
+    now: ahora,
     pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1, codigo_entrega: '123456' },
     repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
     models,
     notify: jest.fn(),
   });
   expect(result).toEqual({ ruta_id: 20, pedido_id: 7 });
-  expect(creadas[0]).toEqual(expect.objectContaining({ liberado_en: null, estado_entrega: 'pendiente', orden_entrega: 3 }));
+  expect(creadas[0]).toEqual(expect.objectContaining({
+    liberado_en: ahora,
+    orden_manual: true,
+    franja: 'manana',
+    estado_entrega: 'pendiente',
+    orden_entrega: 3,
+  }));
 });
