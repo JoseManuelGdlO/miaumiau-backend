@@ -1,7 +1,7 @@
 const { dayKey } = require('../app-repartidor/domain');
 
 const NOTE_LIMIT = 1000;
-const TIPOS = ['check_in', 'llamada_cliente', 'soporte'];
+const TIPOS = ['check_in', 'llamada_cliente', 'soporte', 'cierre_dia'];
 const ACTIVE = ['activo', 'disponible', 'ocupado', 'en_ruta'];
 const CLOSED = ['entregado', 'no_entregado', 'cancelado'];
 const TRANSITIONS = {
@@ -133,7 +133,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
   };
 }
 
-function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado }) {
+function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado, deposito }) {
   const base = toSolicitudResumen(notificacion, repartidor, numeroPedido || pedido?.numero_pedido);
   const datos = notificacion.datos || {};
   if (datos.tipo === 'check_in') {
@@ -149,6 +149,13 @@ function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPe
         precio_unitario: c.precio_unitario,
         es_extra: Boolean(c.es_extra),
       })),
+    };
+  }
+  if (datos.tipo === 'cierre_dia') {
+    return {
+      ...base,
+      efectivo_a_depositar: Number(deposito?.efectivo_a_depositar) || 0,
+      comprobante_url: comprobantePublicPath(deposito?.comprobante_deposito_path),
     };
   }
   return {
@@ -207,6 +214,9 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     cliente: pedido.cliente?.nombre_completo || null,
     telefono: phoneOf(pedido),
     direccion: pedido.direccion_entrega || null,
+    notas: pedido.notas || null,
+    franja: rutaPedido.franja === 'tarde' ? 'tarde' : 'manana',
+    orden_entrega: rutaPedido.orden_entrega ?? null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
     comprobante_url: comprobantePublicPath(cobro?.comprobante_path),

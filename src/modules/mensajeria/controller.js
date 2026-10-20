@@ -17,6 +17,9 @@ const moment = require('moment-timezone');
 const { getTimezoneForConversationId } = require('../../utils/conversationTimezone');
 const { Logger } = require('../../utils/logger');
 
+const { atenderEntrada } = require('./reagendar-whatsapp');
+const { recordatorioMes } = require('./recordatorio');
+
 const log = new Logger('Mensajeria');
 
 /**
@@ -540,10 +543,8 @@ class MensajeriaController {
             }
           }
 
-          // También procesar mensajes entrantes si es necesario (opcional)
-          // if (value?.messages && Array.isArray(value.messages)) {
-          //   // Procesar mensajes entrantes aquí si es necesario
-          // }
+          // Imágenes las sigue atendiendo n8n. Aquí solo el menú de reagendar.
+          await atenderEntrada(value);
         }
       }
 
@@ -660,6 +661,19 @@ class MensajeriaController {
   /**
    * Endpoint para actualizar múltiples estados a la vez (útil para n8n)
    */
+  async recordatorio(req, res, next) {
+    try {
+      const data = await recordatorioMes({
+        solo_test: req.body?.solo_test === true,
+        soloTest: req.body?.soloTest === true,
+      });
+      res.json({ success: true, data });
+    } catch (error) {
+      log.error('Error en recordatorio', { message: error.message });
+      next(error);
+    }
+  }
+
   async updateMultipleMessageStatuses(req, res, next) {
     try {
       const { updates } = req.body;

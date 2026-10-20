@@ -82,6 +82,59 @@ async function replaceCarga(req, res) {
   }, 'replaceCarga');
 }
 
+async function bodega(req, res) {
+  return handle(req, res, async () => service.buscarBodega(depsFrom(req, { q: req.query.q })), 'bodega');
+}
+
+async function extras(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.agregarExtra(depsFrom(req, {
+      fecha,
+      timezone,
+      fkid_producto: req.body.fkid_producto,
+      cantidad: req.body.cantidad,
+    }));
+  }, 'extras');
+}
+
+async function paquetes(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.listarPaquetesDisponibles(depsFrom(req, { fecha, timezone }));
+  }, 'paquetes');
+}
+
+async function agregarPaquete(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.agregarPaqueteParada(depsFrom(req, {
+      fecha,
+      timezone,
+      fkid_paquete: req.body.fkid_paquete,
+      cantidad: req.body.cantidad,
+    }));
+  }, 'agregarPaquete');
+}
+
+async function quitarPaquete(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.quitarPaqueteParada(depsFrom(req, {
+      fecha,
+      timezone,
+      pedidoId: req.params.pedidoId,
+    }));
+  }, 'quitarPaquete');
+}
+
+async function iniciarRuta(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.iniciarRuta(depsFrom(req, { fecha, timezone }));
+  }, 'iniciarRuta');
+}
+
 async function solicitarValidacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -103,8 +156,32 @@ async function leerSolicitud(req, res) {
 async function pedidos(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
-    return service.listarPedidos(depsFrom(req, { fecha, timezone }));
+    return service.listarPedidos(depsFrom(req, { fecha, timezone, franja: req.query.franja }));
   }, 'pedidos');
+}
+
+async function inventario(req, res) {
+  return handle(req, res, async () => service.inventarioVehiculo(depsFrom(req)), 'inventario');
+}
+
+async function velocidad(req, res) {
+  return handle(req, res, async () => {
+    const { fecha } = await fechaDeHoy(req);
+    if (req.method === 'GET') return service.resumenVelocidad(depsFrom(req, { fecha }));
+    return service.registrarVelocidad(depsFrom(req, {
+      fecha,
+      velocidad_kmh: req.body?.velocidad_kmh,
+      lat: req.body?.lat,
+      lng: req.body?.lng,
+    }));
+  }, 'velocidad');
+}
+
+async function ubicacion(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.ubicacionPedido(depsFrom(req, { fecha, timezone }));
+  }, 'ubicacion');
 }
 
 async function pedido(req, res) {
@@ -205,6 +282,7 @@ async function soporte(req, res) {
       fecha,
       timezone,
       motivo: req.body.motivo,
+      nota: req.body.nota,
       pedidoId: req.body.pedido_id || req.body.pedidoId,
     }));
   }, 'soporte');
@@ -228,9 +306,18 @@ module.exports = {
   me,
   jornada,
   replaceCarga,
+  inventario,
+  velocidad,
+  bodega,
+  extras,
+  paquetes,
+  agregarPaquete,
+  quitarPaquete,
+  iniciarRuta,
   solicitarValidacion,
   leerSolicitud,
   pedidos,
+  ubicacion,
   pedido,
   llegada,
   solicitarLlamada,

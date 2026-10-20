@@ -97,6 +97,13 @@ router.post(
   mensajeriaController.sendWhatsAppImageMessage
 );
 
+router.post(
+  '/campanas/recordatorio',
+  authenticateToken,
+  requireSuperAdminOrPermission('operar_call_center'),
+  (req, res, next) => mensajeriaController.recordatorio(req, res, next)
+);
+
 // Webhook de WhatsApp (sin autenticación, usa verify token)
 // GET para verificación inicial de Meta/Facebook
 // POST para recibir actualizaciones de estado

@@ -20,6 +20,11 @@ const { phoneOf } = require('../call-center/domain');
 const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
+const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
+const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
+const jornadaPaquetes = require('./jornada-paquetes');
+const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
+const { repartoBloqueado } = require('./deposito-pendiente');
 
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
 const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
@@ -33,13 +38,23 @@ function getModels(deps = {}) {
   return deps.models || require('../../models');
 }
 
+function moneyOf(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 function plain(row) {
   if (!row) return row;
   return typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
 }
 
+function franjaDe(value) {
+  return value === 'tarde' ? 'tarde' : 'manana';
+}
+
 function toPedidoDto(pedido, rutaPedido) {
   const raw = plain(pedido) || {};
+  const llamada = phoneOf(raw);
   const {
     codigo_entrega,
     telefono,
@@ -47,6 +62,7 @@ function toPedidoDto(pedido, rutaPedido) {
     ...rest
   } = raw;
   rest.cliente = stripPhone(rest.cliente);
+  if (llamada) rest.telefono_llamada = llamada;
   if (rutaPedido) {
     const rp = plain(rutaPedido);
     rest.llego_en = rp.llego_en;
@@ -56,6 +72,9 @@ function toPedidoDto(pedido, rutaPedido) {
     rest.lat = rp.lat;
     rest.lng = rp.lng;
     rest.link_ubicacion = rp.link_ubicacion;
+    rest.franja = franjaDe(rp.franja);
+    const minutos = Number(rp.tiempo_estimado_entrega);
+    if (minutos > 0) rest.minutos_transporte = minutos;
   }
   return rest;
 }
@@ -148,7 +167,8 @@ function resumirRutas(rutas) {
             : Number(prod.producto?.precio_venta) || 0,
         });
       }
-      for (const pp of pedido.paquetes || []) {
+      const paradaExtra = String(pedido.numero_pedido || '').startsWith('EXTRA-');
+      if (!paradaExtra) for (const pp of pedido.paquetes || []) {
         const factor = Number(pp.cantidad) || 0;
         for (const item of pp.paquete?.productos || []) {
           const nombre = item.producto?.nombre || '';
@@ -221,6 +241,64 @@ async function calcularCargaDelDia(deps = {}) {
   return resumirRutas(rutas);
 }
 
+function resumenDesdeRutas(rutas) {
+  const pedidos = [];
+  for (const ruta of rutas || []) {
+    if (ruta.estado === 'cancelada') continue;
+    for (const rp of ruta.pedidos || []) {
+      const pedido = rp.pedido;
+      if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
+      const productos = [];
+      for (const prod of pedido.productos || []) {
+        if (prod.baja_logica) continue;
+        const nombre = prod.producto?.nombre || prod.nombre;
+        if (!nombre) continue;
+        productos.push({ nombre, cantidad: Number(prod.cantidad) || 0 });
+      }
+      pedidos.push({
+        id: pedido.id ?? null,
+        numero_pedido: pedido.numero_pedido || (pedido.id != null ? String(pedido.id) : ''),
+        cliente: pedido.cliente?.nombre_completo || '',
+        direccion: pedido.direccion_entrega || '',
+        productos,
+      });
+    }
+  }
+  return pedidos;
+}
+
+async function resumenPedidosDelDia(deps = {}) {
+  const db = getModels(deps);
+  if (typeof db.Ruta?.findAll !== 'function') return [];
+  const rutas = await db.Ruta.findAll({
+    where: {
+      fkid_repartidor: deps.repartidorId,
+      fecha_ruta: deps.fecha,
+      estado: { [Op.ne]: 'cancelada' },
+    },
+    include: [{
+      model: db.RutaPedido,
+      as: 'pedidos',
+      required: false,
+      include: [{
+        model: db.Pedido,
+        as: 'pedido',
+        required: false,
+        include: [
+          { model: db.Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'], required: false },
+          {
+            model: db.ProductoPedido,
+            as: 'productos',
+            required: false,
+            include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'] }],
+          },
+        ],
+      }],
+    }],
+  });
+  return resumenDesdeRutas(rutas);
+}
+
 async function replaceCarga() {
   fail(403, 'La carga la calcula el sistema');
 }
@@ -283,10 +361,12 @@ async function solicitarValidacion(deps = {}) {
     }
   }
   publishNotificacion(notificacion);
+  const dinero = dineroConExtras(calculo.dinero_esperado, extras);
   await jornada.update({
     estado: 'esperando_call_center',
     fkid_notificacion: notificacion.id,
-    dinero_esperado: dineroConExtras(calculo.dinero_esperado, extras),
+    dinero_esperado: dinero,
+    valor_carga: dinero,
   });
   return { id: notificacion.id, notificacion_id: notificacion.id, jornada_id: jornada.id };
 }
@@ -331,11 +411,16 @@ async function leerSolicitud(deps = {}) {
     })
     && vigente
   ) {
-    await jornada.update({ estado: 'validada' });
+    await jornada.update({
+      estado: 'validada',
+      valor_carga: Number(jornada.dinero_esperado) || Number(jornada.valor_carga) || 0,
+    });
+    void ordenarParadasSiAplica({ ...deps, repartidorId: jornada.fkid_repartidor || deps.repartidorId });
   }
   return {
     atendida,
     reenvio: Boolean(!atendida && (datos.estado_solicitud === 'cancelada' || datos.espera_reenvio)),
+    espera_desde: datos.espera_desde || null,
   };
 }
 
@@ -426,6 +511,7 @@ async function refrescarCargaEnValidacion(deps = {}) {
 
 async function obtenerJornada(deps = {}) {
   const jornada = await loadJornada(deps, { findOrCreate: false });
+  const pedidos = await resumenPedidosDelDia(deps);
   if (!jornada || jornada.estado === 'borrador') {
     const calculo = await calcularCargaDelDia(deps);
     const extras = lineasExtra(jornada).map(cargaDto);
@@ -434,6 +520,7 @@ async function obtenerJornada(deps = {}) {
       dinero_esperado: dineroConExtras(calculo.dinero_esperado, extras),
       validado_por_nombre: null,
       cargas: [...calculo.lineas, ...extras],
+      pedidos,
     };
     if (!jornada) return base;
     const raw = plain(jornada);
@@ -443,6 +530,9 @@ async function obtenerJornada(deps = {}) {
       fecha: raw.fecha,
       fkid_notificacion: raw.fkid_notificacion,
       efectivo_a_depositar: raw.efectivo_a_depositar,
+      efectivo_cobrado: moneyOf(raw.efectivo_cobrado),
+      virtual_cobrado: moneyOf(raw.virtual_cobrado),
+      valor_carga: moneyOf(raw.valor_carga),
       comprobante_deposito_path: raw.comprobante_deposito_path,
       cerrada_en: raw.cerrada_en,
     };
@@ -454,12 +544,73 @@ async function obtenerJornada(deps = {}) {
     estado: raw.estado,
     fkid_notificacion: raw.fkid_notificacion,
     efectivo_a_depositar: raw.efectivo_a_depositar,
+    efectivo_cobrado: moneyOf(raw.efectivo_cobrado),
+    virtual_cobrado: moneyOf(raw.virtual_cobrado),
+    valor_carga: moneyOf(raw.valor_carga) || moneyOf(raw.dinero_esperado),
     comprobante_deposito_path: raw.comprobante_deposito_path,
     cerrada_en: raw.cerrada_en,
     dinero_esperado: raw.dinero_esperado == null ? 0 : Number(raw.dinero_esperado),
     validado_por_nombre: raw.validado_por_nombre || null,
     cargas: (raw.cargas || []).map(cargaDto),
+    pedidos,
   };
+}
+
+async function buscarBodega(deps = {}) {
+  const db = getModels(deps);
+  const repartidor = await loadRepartidor(deps);
+  const ciudadId = repartidor?.fkid_ciudad || repartidor?.ciudad?.id;
+  const q = String(deps.q || '').trim();
+  const where = { baja_logica: false };
+  if (ciudadId) where.fkid_ciudad = ciudadId;
+  if (q) where.nombre = { [Op.like]: `%${q.replace(/[\\%_]/g, '\\$&')}%` };
+  const rows = await db.Inventario.findAll({
+    where,
+    attributes: ['id', 'nombre', 'precio_venta'],
+    limit: 20,
+    order: [['nombre', 'ASC']],
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    nombre: row.nombre,
+    precio_venta: Number(row.precio_venta) || 0,
+  }));
+}
+
+async function agregarExtra(deps = {}) {
+  const cantidad = Number(deps.cantidad);
+  if (!Number.isInteger(cantidad) || cantidad < 1) fail(422, 'La cantidad del extra no es válida');
+  const jornada = await loadJornada(deps, { findOrCreate: true });
+  if (!jornada) fail(404, 'Jornada no encontrada');
+  if (jornada.estado && jornada.estado !== 'borrador') {
+    fail(409, 'La carga ya no admite producto extra');
+  }
+  const db = getModels(deps);
+  const repartidor = await loadRepartidor(deps);
+  const ciudadId = repartidor?.fkid_ciudad || repartidor?.ciudad?.id;
+  const where = { id: deps.fkid_producto, baja_logica: false };
+  if (ciudadId) where.fkid_ciudad = ciudadId;
+  const producto = await db.Inventario.findOne({ where });
+  if (!producto || producto.baja_logica) fail(422, 'Ese producto no está en la bodega');
+  const precio = Number(producto.precio_venta);
+  if (!Number.isFinite(precio) || precio < 0) fail(422, 'El producto no tiene precio de venta');
+  const extras = (jornada.cargas || []).filter(
+    (line) => line && line.es_extra && Number(line.fkid_producto) === Number(producto.id)
+  );
+  if (extras[0] && typeof extras[0].update === 'function') {
+    await extras[0].update({ cantidad: (Number(extras[0].cantidad) || 0) + cantidad });
+  } else if (typeof db.JornadaCarga?.create === 'function') {
+    const row = await db.JornadaCarga.create({
+      fkid_jornada: jornada.id,
+      nombre: producto.nombre,
+      fkid_producto: producto.id,
+      cantidad,
+      precio_unitario: precio,
+      es_extra: true,
+    });
+    jornada.cargas = [...(jornada.cargas || []), row];
+  }
+  return obtenerJornada({ ...deps, jornada });
 }
 
 function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
@@ -515,8 +666,98 @@ async function requireJornadaAbierta(deps) {
   return jornada;
 }
 
+const rutasOrdenadas = new Set();
+
+function olvidarOrdenRuta(repartidorId, fecha) {
+  if (repartidorId == null || !fecha) return;
+  rutasOrdenadas.delete(`${repartidorId}:${String(fecha).slice(0, 10)}`);
+}
+
+function puntoParada(parada) {
+  const lat = Number(parada?.lat);
+  const lng = Number(parada?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+async function ordenarParadasSiAplica(deps = {}) {
+  if (process.env.NODE_ENV === 'test' && !deps.ordenarRutas) return;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || deps.repartidorId == null || !deps.fecha) return;
+  const cacheKey = `${deps.repartidorId}:${deps.fecha}`;
+  if (rutasOrdenadas.has(cacheKey)) return;
+  const db = getModels(deps);
+  if (typeof db.Ruta?.findAll !== 'function') return;
+  const rutas = await db.Ruta.findAll({
+    where: {
+      fkid_repartidor: deps.repartidorId,
+      fecha_ruta: deps.fecha,
+      estado: { [Op.ne]: 'cancelada' },
+    },
+    include: [{ model: db.RutaPedido, as: 'pedidos' }],
+  });
+  for (const ruta of rutas) {
+    const grupos = new Map();
+    for (const row of ruta.pedidos || []) {
+      const franja = franjaDe(row.franja || ruta.franja);
+      const grupo = grupos.get(franja) || [];
+      grupo.push(row);
+      grupos.set(franja, grupo);
+    }
+    for (const grupo of grupos.values()) {
+      const paradas = grupo
+        .map((rp) => ({
+          id: rp.id,
+          lat: rp.lat == null ? null : Number(rp.lat),
+          lng: rp.lng == null ? null : Number(rp.lng),
+        }))
+        .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
+      if (paradas.length < 2) continue;
+      let matrix;
+      try {
+        matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
+      } catch {
+        continue;
+      }
+      if (!matrix) continue;
+      const ordered = nearestNeighbor(paradas.map((rp) => rp.id), matrix);
+      const asignaciones = ordenSinPisarManual(grupo, ordered);
+      for (const item of asignaciones) {
+        const row = grupo.find((rp) => rp.id === item.id);
+        if (row?.orden_manual) continue;
+        if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
+      }
+    }
+  }
+  rutasOrdenadas.add(cacheKey);
+}
+
+async function anotarMinutos(deps, rutas) {
+  if (process.env.NODE_ENV === 'test' && !deps.calcularMinutos) return;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return;
+  const paradas = (rutas || [])
+    .flatMap((ruta) => ruta.pedidos || [])
+    .slice()
+    .sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
+  const index = paradas.findIndex((parada) => abierto(parada));
+  if (index < 0) return;
+  const destino = paradas[index];
+  if (Number(destino.tiempo_estimado_entrega) > 0) return;
+  const origen = paradas.slice(0, index).reverse().map(puntoParada).find(Boolean);
+  const hasta = puntoParada(destino);
+  if (!origen || !hasta) return;
+  const minutos = await minutosEntre(origen, hasta, apiKey, deps.distanceMatrixGet);
+  if (minutos == null) return;
+  destino.tiempo_estimado_entrega = minutos;
+  if (typeof destino.update === 'function') {
+    await destino.update({ tiempo_estimado_entrega: minutos });
+  }
+}
+
 async function listarPedidos(deps = {}) {
   await requireJornadaAbierta(deps);
+  await ordenarParadasSiAplica(deps);
   const db = getModels(deps);
   const rutas = await db.Ruta.findAll({
     where: {
@@ -533,20 +774,32 @@ async function listarPedidos(deps = {}) {
     ],
     order: [[{ model: db.RutaPedido, as: 'pedidos' }, 'orden_entrega', 'ASC']],
   });
+  await anotarMinutos(deps, rutas);
+  const franja = deps.franja === 'tarde' || deps.franja === 'manana' ? deps.franja : null;
   const pedidos = [];
+  let esperandoLiberacion = false;
   for (const ruta of rutas) {
     for (const rp of ruta.pedidos || []) {
       if (!rp.pedido) continue;
-      pedidos.push(toPedidoDto(rp.pedido, rp));
+      const stopFranja = franjaDe(rp.franja || ruta.franja);
+      if (franja && stopFranja !== franja) continue;
+      if (abierto(rp) && !rp.liberado_en) {
+        esperandoLiberacion = true;
+        continue;
+      }
+      pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
     }
   }
-  return pedidos;
+  return { pedidos, esperando_liberacion: esperandoLiberacion };
 }
 
 async function detallePedido(deps = {}) {
   await requireJornadaAbierta(deps);
   const rutaPedido = await assertRutaDelRepartidor(deps);
-  return toPedidoDto(rutaPedido.pedido, rutaPedido);
+  const dto = toPedidoDto(rutaPedido.pedido, rutaPedido);
+  const llamada = await findLlamadaCliente(deps);
+  if (llamada?.datos?.espera_desde) dto.espera_desde = llamada.datos.espera_desde;
+  return dto;
 }
 
 async function lineaWhatsAppDelCliente(deps, pedido) {
@@ -665,6 +918,48 @@ async function resolveItem(item, db) {
   };
 }
 
+async function saldoCamioneta(deps) {
+  const db = getModels(deps);
+  if (typeof db.InventarioVehiculo?.findAll !== 'function') return null;
+  if (process.env.NODE_ENV === 'test' && !deps.models?.InventarioVehiculo) return null;
+  const rows = await db.InventarioVehiculo.findAll({
+    where: { fkid_repartidor: deps.repartidorId },
+  });
+  if (!rows.length) return null;
+  return rows.map((row) => ({ nombre: row.nombre, cantidad: Number(row.cantidad) || 0 }));
+}
+
+async function registrarExtraNoEntregado(deps, jornada, pedidoId, lineas) {
+  const db = getModels(deps);
+  for (const line of lineas) {
+    if (!line?.nombre || line.cantidad < 1) continue;
+    const extras = (jornada?.cargas || []).filter(
+      (row) => row && row.es_extra && Number(row.fkid_producto) === Number(line.fkid_producto)
+    );
+    if (extras[0] && typeof extras[0].update === 'function') {
+      await extras[0].update({ cantidad: (Number(extras[0].cantidad) || 0) + line.cantidad });
+    } else if (typeof db.JornadaCarga?.create === 'function' && jornada?.id) {
+      const row = await db.JornadaCarga.create({
+        fkid_jornada: jornada.id,
+        nombre: line.nombre,
+        fkid_producto: line.fkid_producto ?? null,
+        cantidad: line.cantidad,
+        precio_unitario: line.precio_unitario,
+        es_extra: true,
+      });
+      jornada.cargas = [...(jornada.cargas || []), row];
+    }
+    await anotarAjuste(db, {
+      repartidorId: deps.repartidorId,
+      jornadaId: jornada?.id,
+      pedidoId,
+      nombre: line.nombre,
+      fkid_producto: line.fkid_producto,
+      cantidad: line.cantidad,
+    });
+  }
+}
+
 async function ajustarProductos(deps = {}) {
   await requireJornadaAbierta(deps);
   const rutaPedido = await assertRutaDelRepartidor(deps);
@@ -674,27 +969,46 @@ async function ajustarProductos(deps = {}) {
   const rawItems = deps.items || deps.productos || deps.lineas || [];
   const items = [];
   for (const item of rawItems) {
-    items.push(await resolveItem(item, db));
+    const resolved = await resolveItem(item, db);
+    if (!Number.isInteger(resolved.cantidad) || resolved.cantidad < 0) {
+      fail(422, 'La cantidad no es válida');
+    }
+    items.push(resolved);
   }
-  const entregado = await cantidadesEntregadasHoy(deps, deps.pedidoId);
-  const stock = validateStock({
-    carga: (jornada.cargas || []).map((c) => ({ nombre: c.nombre, cantidad: c.cantidad })),
-    entregado,
-    items,
-  });
+  const activos = items.filter((item) => item.cantidad > 0);
+  const saldo = await saldoCamioneta(deps);
+  const stock = saldo
+    ? validateStock({ carga: saldo, entregado: [], items: activos })
+    : validateStock({
+      carga: (jornada.cargas || []).map((c) => ({ nombre: c.nombre, cantidad: c.cantidad })),
+      entregado: await cantidadesEntregadasHoy(deps, deps.pedidoId),
+      items: activos,
+    });
   if (!stock.ok) fail(422, stock.message);
 
   const pedido = rutaPedido.pedido;
-  for (const item of items) {
-    if (item.cantidad < 1) fail(422, 'La cantidad debe ser al menos 1');
-  }
-
   const lineasPedido = await db.ProductoPedido.findAll({
     where: { fkid_pedido: pedido.id },
+    include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'], required: false }],
   });
-  const listedIds = new Set(items.map((item) => Number(item.fkid_producto)));
+  const listedIds = new Set(activos.map((item) => Number(item.fkid_producto)));
+  const devuelto = [];
+  for (const row of lineasPedido) {
+    if (row.baja_logica) continue;
+    const next = activos.find((item) => Number(item.fkid_producto) === Number(row.fkid_producto));
+    const left = next ? next.cantidad : 0;
+    const returned = (Number(row.cantidad) || 0) - left;
+    if (returned > 0) {
+      devuelto.push({
+        nombre: next?.nombre || row.producto?.nombre || row.nombre,
+        fkid_producto: row.fkid_producto,
+        cantidad: returned,
+        precio_unitario: Number(row.precio_unidad) || next?.precio_unidad || 0,
+      });
+    }
+  }
 
-  for (const item of items) {
+  for (const item of activos) {
     const existing = lineasPedido.find(
       (row) => Number(row.fkid_producto) === Number(item.fkid_producto)
     );
@@ -723,6 +1037,7 @@ async function ajustarProductos(deps = {}) {
       await row.update({ baja_logica: true });
     }
   }
+  await registrarExtraNoEntregado(deps, jornada, pedido.id, devuelto);
 
   const productos = await db.ProductoPedido.findAll({
     where: { fkid_pedido: pedido.id, baja_logica: false },
@@ -868,6 +1183,22 @@ async function entregar(deps = {}) {
       }, { transaction: t });
       await pedido.update({ estado: 'entregado', fecha_entrega_real: now }, { transaction: t });
 
+      if (db.InventarioVehiculo) {
+        const jornada = await loadJornada(deps, { findOrCreate: false });
+        const items = (pedido.productos || []).map((prod) => ({
+          nombre: prod.producto?.nombre || prod.nombre,
+          fkid_producto: prod.fkid_producto,
+          cantidad: Number(prod.cantidad) || 0,
+        }));
+        await descontarEntrega(db, {
+          repartidorId: deps.repartidorId,
+          jornadaId: jornada?.id,
+          pedidoId: pedido.id,
+          items,
+          transaction: t,
+        });
+      }
+
       const last = await db.RepartidorPuntosMovimiento.findOne({
         where: { fkid_repartidor: deps.repartidorId },
         order: [['created_at', 'DESC'], ['id', 'DESC']],
@@ -891,6 +1222,8 @@ async function entregar(deps = {}) {
     return loadPedidoDto(db, pedido, rutaPedido);
   }
 
+  await refrescarCorte(deps);
+
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
   const unlocked = evaluateLogros(stats);
@@ -904,14 +1237,21 @@ async function entregar(deps = {}) {
   return loadPedidoDto(db, pedido, rutaPedido);
 }
 
-function esLlamadaClienteAtendida(n, pedidoId) {
+const ESPERA_CLIENTE_MS = 5 * 60 * 1000;
+
+function esLlamadaCliente(n, pedidoId) {
   const d = n.datos || {};
   return (
     d.tipo === 'llamada_cliente'
     && Number(d.pedido_id) === Number(pedidoId)
     && d.estado_solicitud === 'abierta'
-    && n.leida === true
   );
+}
+
+function esperaCumplida(datos, now) {
+  const start = Date.parse(datos?.espera_desde || '');
+  if (!Number.isFinite(start)) return false;
+  return now.getTime() - start >= ESPERA_CLIENTE_MS;
 }
 
 function whereDatosRepartidor(repartidorId) {
@@ -928,25 +1268,27 @@ function whereDatosRepartidor(repartidorId) {
   };
 }
 
-async function findLlamadaClienteAtendida(deps) {
+async function findLlamadaCliente(deps) {
   if (deps.notificaciones) {
-    return deps.notificaciones.find((n) => esLlamadaClienteAtendida(n, deps.pedidoId));
+    return deps.notificaciones.find((n) => esLlamadaCliente(n, deps.pedidoId)) || null;
   }
   const db = getModels(deps);
+  if (typeof db.Notificacion?.findAll !== 'function') return null;
   const rows = await db.Notificacion.findAll({
-    where: {
-      leida: true,
-      ...whereDatosRepartidor(deps.repartidorId),
-    },
+    where: whereDatosRepartidor(deps.repartidorId),
     order: [['id', 'DESC']],
   });
-  return rows.find((n) => esLlamadaClienteAtendida(n, deps.pedidoId));
+  return rows.find((n) => esLlamadaCliente(n, deps.pedidoId)) || null;
 }
 
 async function noEntregar(deps = {}) {
   await requireJornadaAbierta(deps);
-  const llamada = await findLlamadaClienteAtendida(deps);
-  if (!llamada) fail(403, 'Falta la atención de la llamada al cliente');
+  const llamada = await findLlamadaCliente(deps);
+  if (!llamada) fail(403, 'Falta avisar a Call Center');
+  const ahora = deps.now ? new Date(deps.now) : new Date();
+  if (!esperaCumplida(llamada.datos, ahora)) {
+    fail(403, 'Debes esperar 5 minutos antes de avanzar');
+  }
 
   const rutaPedido = await assertRutaDelRepartidor(deps);
   const pedido = rutaPedido.pedido;
@@ -959,7 +1301,129 @@ async function noEntregar(deps = {}) {
     fecha_entrega_real: now,
   });
   await pedido.update({ estado: 'no_entregado' });
+  const jornada = await loadJornada(deps, { findOrCreate: false });
+  const lineas = (pedido.productos || []).map((prod) => ({
+    nombre: prod.producto?.nombre || prod.nombre,
+    fkid_producto: prod.fkid_producto,
+    cantidad: Number(prod.cantidad) || 0,
+    precio_unitario: Number(prod.precio_unidad) || 0,
+  })).filter((line) => line.nombre && line.cantidad > 0);
+  await registrarExtraNoEntregado(deps, jornada, pedido.id, lineas);
   return toPedidoDto(pedido, rutaPedido);
+}
+
+async function refrescarCorte(deps = {}) {
+  if (process.env.NODE_ENV === 'test' && !deps.models) return;
+  const db = getModels(deps);
+  if (typeof db.CobroEntrega?.findAll !== 'function') return;
+  const jornada = deps.jornada || await loadJornada(deps, { findOrCreate: false });
+  if (!jornada?.update || !deps.fecha) return;
+  const cobros = await db.CobroEntrega.findAll({
+    where: { fkid_repartidor: deps.repartidorId },
+    include: [{
+      model: db.Pedido,
+      as: 'pedido',
+      required: true,
+      include: [{
+        model: db.RutaPedido,
+        as: 'rutas',
+        required: true,
+        include: [{
+          model: db.Ruta,
+          as: 'ruta',
+          required: true,
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+        }],
+      }],
+    }],
+  });
+  let efectivo = 0;
+  let virtual = 0;
+  for (const cobro of cobros) {
+    efectivo += Number(cobro.monto_efectivo) || 0;
+    virtual += Number(cobro.monto_transferencia) || 0;
+  }
+  await jornada.update({
+    efectivo_cobrado: Math.round(efectivo * 100) / 100,
+    virtual_cobrado: Math.round(virtual * 100) / 100,
+    valor_carga: moneyOf(jornada.valor_carga) || moneyOf(jornada.dinero_esperado),
+  });
+}
+
+async function paradasAbiertas(deps) {
+  const db = getModels(deps);
+  if (typeof db.Ruta?.findAll !== 'function') return [];
+  const rutas = await db.Ruta.findAll({
+    where: {
+      fkid_repartidor: deps.repartidorId,
+      fecha_ruta: deps.fecha,
+      baja_logica: false,
+      estado: { [Op.ne]: 'cancelada' },
+    },
+    include: [{
+      model: db.RutaPedido,
+      as: 'pedidos',
+      include: [pedidoInclude(db, { withPhone: true })],
+    }],
+  });
+  return rutas.flatMap((ruta) => (ruta.pedidos || []).filter((parada) => {
+    if (!abierto(parada)) return false;
+    if (!deps.franja) return true;
+    return franjaDe(parada.franja || ruta.franja) === deps.franja;
+  }))
+    .sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
+}
+
+async function iniciarRuta(deps = {}) {
+  await requireJornadaAbierta(deps);
+  if (await repartoBloqueado(getModels(deps), deps.repartidorId, deps.fecha)) {
+    fail(409, 'Sube el comprobante del depósito antes de abrir otra ruta');
+  }
+  const paradas = await paradasAbiertas(deps);
+  const primera = paradas[0];
+  if (primera && !primera.liberado_en && typeof primera.update === 'function') {
+    const ahora = new Date();
+    await primera.update({ liberado_en: ahora });
+    primera.liberado_en = ahora;
+  }
+  if (primera) {
+    await avisarSiguiente({
+      ...deps,
+      paradaId: primera.id,
+      getModels,
+      lineaDelCliente: lineaWhatsAppDelCliente,
+      avisarSiguiente: deps.avisarSiguiente,
+    }, null);
+  }
+  return { iniciado: true };
+}
+
+async function liberarSiguienteParada(deps = {}) {
+  const paradas = await paradasAbiertas(deps);
+  const siguiente = paradas.find((parada) => !parada.liberado_en);
+  if (!siguiente) fail(409, 'No hay una parada pendiente de liberar');
+  const anteriores = paradas.filter((parada) => Number(parada.orden_entrega) < Number(siguiente.orden_entrega));
+  const origen = [...anteriores].reverse().find((parada) => {
+    const lat = Number(parada.lat);
+    const lng = Number(parada.lng);
+    return Number.isFinite(lat) && Number.isFinite(lng);
+  }) || null;
+  const ahora = new Date();
+  if (typeof siguiente.update === 'function') {
+    await siguiente.update({ liberado_en: ahora });
+  }
+  siguiente.liberado_en = ahora;
+  const aviso = await avisarSiguiente({
+    ...deps,
+    paradaId: siguiente.id,
+    getModels,
+    lineaDelCliente: lineaWhatsAppDelCliente,
+    avisarSiguiente: deps.avisarSiguiente,
+  }, origen);
+  return {
+    pedido_id: siguiente.fkid_pedido || siguiente.pedido?.id,
+    minutos: aviso?.minutos || null,
+  };
 }
 
 async function registrarCaja(deps = {}) {
@@ -968,19 +1432,46 @@ async function registrarCaja(deps = {}) {
     fail(403, 'Falta la validación del Call Center');
   }
   if (!deps.file) fail(422, 'La caja requiere foto del comprobante');
+  await refrescarCorte({ ...deps, jornada });
   await jornada.update({
     efectivo_a_depositar: Number(deps.efectivo) || 0,
     comprobante_deposito_path: comprobantePath(deps.file),
-    cerrada_en: new Date(),
-    estado: 'cerrada',
   });
+  const aviso = await defaultCrearNotificacion(deps, {
+    nombre: 'Cierre de día',
+    prioridad: 'alta',
+    datos: {
+      tipo: 'cierre_dia',
+      estado_solicitud: 'abierta',
+      repartidor_id: deps.repartidorId,
+      jornada_id: jornada.id,
+    },
+  });
+  publishNotificacion(aviso);
   return obtenerJornada({ ...deps, jornada });
+}
+
+function paqueteHooks() {
+  return { loadJornada, loadRepartidor, getModels, obtenerJornada };
+}
+
+async function listarPaquetesDisponibles(deps = {}) {
+  return jornadaPaquetes.listarPaquetesDisponibles(deps, paqueteHooks());
+}
+
+async function agregarPaqueteParada(deps = {}) {
+  return jornadaPaquetes.agregarPaqueteParada(deps, paqueteHooks());
+}
+
+async function quitarPaqueteParada(deps = {}) {
+  return jornadaPaquetes.quitarPaqueteParada(deps, paqueteHooks());
 }
 
 async function crearSoporte(deps = {}) {
   const motivo = deps.motivo;
   const esLlamada = motivo === 'llamada';
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
+  const esperaDesde = esLlamada ? new Date().toISOString() : null;
   const notificacion = await crearNotificacion({
     nombre: esLlamada ? 'Llamada al cliente' : 'Soporte del repartidor',
     prioridad: esLlamada ? 'alta' : 'media',
@@ -989,11 +1480,17 @@ async function crearSoporte(deps = {}) {
       estado_solicitud: 'abierta',
       repartidor_id: deps.repartidorId,
       ...(deps.pedidoId ? { pedido_id: Number(deps.pedidoId) } : {}),
-      motivo,
+      ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
+      motivo: String(deps.nota || '').trim().slice(0, 500) || motivo,
+      ...(String(deps.nota || '').trim() ? { nota: String(deps.nota).trim().slice(0, 500) } : {}),
     },
   });
   publishNotificacion(notificacion);
-  return { id: notificacion.id, notificacion_id: notificacion.id };
+  return {
+    id: notificacion.id,
+    notificacion_id: notificacion.id,
+    ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
+  };
 }
 
 async function loadRepartidor(deps) {
@@ -1078,6 +1575,104 @@ async function estadisticas(deps = {}) {
   };
 }
 
+async function registrarVelocidad(deps = {}) {
+  const kmh = Number(deps.velocidad_kmh ?? deps.velocidad);
+  if (!Number.isFinite(kmh) || kmh < 0 || kmh > 180) fail(422, 'La velocidad no es válida');
+  const db = getModels(deps);
+  if (typeof db.LecturaVelocidad?.create !== 'function') return { promedio: null, lecturas: 0 };
+  const jornada = await loadJornada(deps, { findOrCreate: false });
+  await db.LecturaVelocidad.create({
+    fkid_repartidor: deps.repartidorId,
+    fkid_jornada: jornada?.id ?? null,
+    velocidad_kmh: Math.round(kmh * 10) / 10,
+    lat: Number.isFinite(Number(deps.lat)) ? Number(deps.lat) : null,
+    lng: Number.isFinite(Number(deps.lng)) ? Number(deps.lng) : null,
+    fecha: deps.fecha,
+  });
+  return resumenVelocidad(deps);
+}
+
+async function resumenVelocidad(deps = {}) {
+  const db = getModels(deps);
+  if (typeof db.LecturaVelocidad?.findAll !== 'function') return [];
+  const where = {};
+  if (deps.fecha) where.fecha = deps.fecha;
+  if (deps.repartidorId != null) where.fkid_repartidor = deps.repartidorId;
+  const rows = await db.LecturaVelocidad.findAll({
+    where,
+    include: db.Repartidor ? [{ model: db.Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo'], required: false }] : [],
+  });
+  const grupos = new Map();
+  for (const row of rows) {
+    const id = row.fkid_repartidor;
+    const grupo = grupos.get(id) || { repartidor_id: id, nombre: row.repartidor?.nombre_completo || null, suma: 0, lecturas: 0 };
+    grupo.suma += Number(row.velocidad_kmh) || 0;
+    grupo.lecturas += 1;
+    grupos.set(id, grupo);
+  }
+  const lista = [...grupos.values()].map((grupo) => ({
+    repartidor_id: grupo.repartidor_id,
+    nombre: grupo.nombre,
+    promedio: Math.round((grupo.suma / grupo.lecturas) * 10) / 10,
+    lecturas: grupo.lecturas,
+  }));
+  if (deps.repartidorId != null) return lista[0] || { promedio: null, lecturas: 0 };
+  return lista;
+}
+
+async function inventarioVehiculo(deps = {}) {
+  const db = getModels(deps);
+  const rows = await db.InventarioVehiculo.findAll({
+    where: { fkid_repartidor: deps.repartidorId },
+    order: [['nombre', 'ASC']],
+  });
+  return rows.map((row) => {
+    const raw = plain(row);
+    return {
+      id: raw.id,
+      nombre: raw.nombre,
+      fkid_producto: raw.fkid_producto,
+      cantidad: Number(raw.cantidad) || 0,
+    };
+  });
+}
+
+async function ubicacionPedido(deps = {}) {
+  const rutaPedido = await assertRutaDelRepartidor(deps);
+  let lat = rutaPedido.lat == null ? null : Number(rutaPedido.lat);
+  let lng = rutaPedido.lng == null ? null : Number(rutaPedido.lng);
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const address = rutaPedido.pedido?.direccion_entrega;
+  if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && apiKey && address) {
+    try {
+      const httpGet = deps.geocodeGet || require('axios').get;
+      const response = await httpGet('https://maps.googleapis.com/maps/api/geocode/json', {
+        params: { address, key: apiKey, region: 'mx' },
+      });
+      const location = response.data?.results?.[0]?.geometry?.location;
+      if (response.data?.status === 'OK' && location) {
+        lat = Number(location.lat);
+        lng = Number(location.lng);
+        if (typeof rutaPedido.update === 'function') {
+          await rutaPedido.update({
+            lat,
+            lng,
+            link_ubicacion: `https://maps.google.com/?q=${lat},${lng}`,
+          });
+        }
+      }
+    } catch {
+      lat = null;
+      lng = null;
+    }
+  }
+  return {
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    link_ubicacion: rutaPedido.link_ubicacion || null,
+  };
+}
+
 async function logros(deps = {}) {
   const db = getModels(deps);
   const rows = await db.RepartidorLogro.findAll({
@@ -1096,6 +1691,13 @@ module.exports = {
   refrescarCargaEnValidacion,
   leerSolicitud,
   obtenerJornada,
+  buscarBodega,
+  agregarExtra,
+  listarPaquetesDisponibles,
+  agregarPaqueteParada,
+  quitarPaqueteParada,
+  iniciarRuta,
+  liberarSiguienteParada,
   assertRutaDelRepartidor,
   llegada,
   validarCodigo,
@@ -1105,9 +1707,14 @@ module.exports = {
   registrarCaja,
   crearSoporte,
   listarPedidos,
+  inventarioVehiculo,
+  registrarVelocidad,
+  resumenVelocidad,
+  ubicacionPedido,
   detallePedido,
   perfil,
   estadisticas,
   logros,
   toPedidoDto,
+  olvidarOrdenRuta,
 };

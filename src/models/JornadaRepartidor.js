@@ -48,6 +48,21 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 0
       },
+      efectivo_cobrado: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0
+      },
+      virtual_cobrado: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0
+      },
+      valor_carga: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0
+      },
       validado_por_usuario_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -56,6 +71,17 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'SET NULL'
       },
       validado_por_nombre: {
+        type: DataTypes.STRING(150),
+        allowNull: true
+      },
+      cerrado_por_usuario_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'users', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      cerrado_por_nombre: {
         type: DataTypes.STRING(150),
         allowNull: true
       }

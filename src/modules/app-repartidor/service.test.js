@@ -309,7 +309,12 @@ test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
     queries.push(query);
     return {
       leida: true,
-      datos: { tipo: 'llamada_cliente', pedido_id: 5, estado_solicitud: 'abierta' },
+      datos: {
+        tipo: 'llamada_cliente',
+        pedido_id: 5,
+        estado_solicitud: 'abierta',
+        espera_desde: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+      },
     };
   };
   const pedido = { id: 5, estado: 'en_camino', update: async (data) => Object.assign(pedido, data) };
@@ -328,7 +333,7 @@ test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
   });
   expect(queries).toHaveLength(1);
   expect(queries[0].limit).toBeUndefined();
-  expect(queries[0].where.leida).toBe(true);
+  expect(queries[0].where.leida).toBeUndefined();
   expect(pedido.estado).toBe('no_entregado');
 });
 

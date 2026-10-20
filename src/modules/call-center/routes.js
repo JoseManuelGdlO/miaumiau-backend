@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
+const { uploadComprobantes } = require('../../utils/uploadImages');
 const controller = require('./controller');
 
 const router = express.Router();
@@ -17,5 +18,16 @@ router.get('/pedidos', ...guard, controller.pedidos);
 router.patch('/pedidos/:id/estado', ...guard, controller.estado);
 router.get('/repartidores', ...guard, controller.repartidores);
 router.post('/pedidos/:id/reasignar', ...guard, controller.reasignar);
+router.post('/pedidos/:id/franja', ...guard, controller.cambiarFranja);
+router.post('/pedidos/:id/orden', ...guard, controller.moverParada);
+router.post('/pedidos/:id/liberar-siguiente', ...guard, controller.liberarSiguiente);
+router.get('/velocidad', ...guard, controller.velocidad);
+router.get('/comprobantes', ...guard, controller.comprobantes);
+router.post('/pedidos/:id/comprobante', ...guard, uploadComprobantes.single('comprobante'), controller.subirComprobante);
+router.get('/depositos', ...guard, controller.depositos);
+router.get('/actividades', ...guard, controller.actividades);
+router.post('/actividades', ...guard, controller.asignarActividad);
+router.post('/pedidos/:id/reagendar', ...guard, controller.reagendar);
+router.post('/solicitudes/:id/liberar-cierre', ...guard, controller.liberarCierre);
 
 module.exports = router;

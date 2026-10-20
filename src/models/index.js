@@ -40,8 +40,13 @@ const PushSubscription = require('./PushSubscription');
 const JornadaRepartidor = require('./JornadaRepartidor');
 const JornadaCarga = require('./JornadaCarga');
 const CobroEntrega = require('./CobroEntrega');
+const InventarioVehiculo = require('./InventarioVehiculo');
+const MovimientoInventarioVehiculo = require('./MovimientoInventarioVehiculo');
 const RepartidorPuntosMovimiento = require('./RepartidorPuntosMovimiento');
 const RepartidorLogro = require('./RepartidorLogro');
+const CampanaEnvio = require('./CampanaEnvio');
+const LecturaKilometraje = require('./LecturaKilometraje');
+const LecturaVelocidad = require('./LecturaVelocidad');
 
 // Inicializar modelos
 const models = {
@@ -83,8 +88,13 @@ const models = {
   JornadaRepartidor: JornadaRepartidor(sequelize, DataTypes),
   JornadaCarga: JornadaCarga(sequelize, DataTypes),
   CobroEntrega: CobroEntrega(sequelize, DataTypes),
+  InventarioVehiculo: InventarioVehiculo(sequelize, DataTypes),
+  MovimientoInventarioVehiculo: MovimientoInventarioVehiculo(sequelize, DataTypes),
   RepartidorPuntosMovimiento: RepartidorPuntosMovimiento(sequelize, DataTypes),
-  RepartidorLogro: RepartidorLogro(sequelize, DataTypes)
+  RepartidorLogro: RepartidorLogro(sequelize, DataTypes),
+  CampanaEnvio: CampanaEnvio(sequelize, DataTypes),
+  LecturaKilometraje: LecturaKilometraje(sequelize, DataTypes),
+  LecturaVelocidad: LecturaVelocidad(sequelize, DataTypes),
 };
 
 // Definir asociaciones
@@ -552,6 +562,11 @@ models.Paquete.hasMany(models.PaquetePedido, {
 });
 
 models.Repartidor.hasMany(models.JornadaRepartidor, { foreignKey: 'fkid_repartidor', as: 'jornadas' });
+models.Repartidor.hasMany(models.InventarioVehiculo, { foreignKey: 'fkid_repartidor', as: 'inventario_vehiculo' });
+models.InventarioVehiculo.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.InventarioVehiculo.belongsTo(models.Inventario, { foreignKey: 'fkid_producto', as: 'producto' });
+models.Repartidor.hasMany(models.MovimientoInventarioVehiculo, { foreignKey: 'fkid_repartidor', as: 'movimientos_vehiculo' });
+models.MovimientoInventarioVehiculo.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.belongsTo(models.Notificacion, { foreignKey: 'fkid_notificacion', as: 'notificacion_check_in' });
 models.JornadaRepartidor.hasMany(models.JornadaCarga, { foreignKey: 'fkid_jornada', as: 'cargas' });
@@ -560,6 +575,14 @@ models.Pedido.hasOne(models.CobroEntrega, { foreignKey: 'fkid_pedido', as: 'cobr
 models.CobroEntrega.belongsTo(models.Pedido, { foreignKey: 'fkid_pedido', as: 'pedido' });
 models.Repartidor.hasMany(models.RepartidorPuntosMovimiento, { foreignKey: 'fkid_repartidor', as: 'puntos_movimientos' });
 models.Repartidor.hasMany(models.RepartidorLogro, { foreignKey: 'fkid_repartidor', as: 'logros' });
+models.Repartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_repartidor', as: 'lecturas_kilometraje' });
+models.LecturaKilometraje.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.JornadaRepartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_jornada', as: 'lecturas_kilometraje' });
+models.LecturaKilometraje.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
+models.Repartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_repartidor', as: 'lecturas_velocidad' });
+models.LecturaVelocidad.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.JornadaRepartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_jornada', as: 'lecturas_velocidad' });
+models.LecturaVelocidad.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
 
 models.sequelize = sequelize;
 models.Sequelize = require('sequelize');

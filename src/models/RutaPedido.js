@@ -95,6 +95,27 @@ module.exports = (sequelize, DataTypes) => {
     codigo_validado_en: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    aviso_siguiente_en: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    franja: {
+      type: DataTypes.ENUM('manana', 'tarde'),
+      allowNull: false,
+      defaultValue: 'manana',
+      validate: {
+        isIn: [['manana', 'tarde']]
+      }
+    },
+    orden_manual: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    liberado_en: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'rutas_pedidos',

@@ -12,6 +12,7 @@
     "seed": "npx sequelize-cli db:seed:all",
     "seed:undo": "npx sequelize-cli db:seed:undo:all",
     "seed:admin": "node scripts/seed-admin.js",
+    "seed:repartidor-test": "node scripts/seed-repartidor-test.js",
     "job:auto-entregar": "node scripts/auto-entregar-pedidos.js"
   },
   "keywords": [

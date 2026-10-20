@@ -5,6 +5,8 @@ const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
+const { repartoBloqueado } = require('../app-repartidor/deposito-pendiente');
+const db = require('../../models');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
@@ -691,6 +693,12 @@ class RutaController {
         return res.status(404).json({
           success: false,
           message: 'Ruta no encontrada'
+        });
+      }
+      if (await repartoBloqueado(db, ruta.fkid_repartidor, ruta.fecha_ruta)) {
+        return res.status(409).json({
+          success: false,
+          message: 'Ese repartidor debe subir el comprobante del depósito antes de recibir otra actividad'
         });
       }
 
