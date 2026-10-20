@@ -53,6 +53,10 @@ try {
       'ver_conversaciones_chat', 'crear_conversaciones_chat', 'editar_conversaciones_chat', 'eliminar_conversaciones_chat', 'marcar_leido_chat',
       // Conversaciones Logs
       'ver_conversaciones_logs', 'crear_conversaciones_logs', 'editar_conversaciones_logs', 'eliminar_conversaciones_logs',
+      // Call Center, paquetes y notificaciones
+      'operar_call_center',
+      'ver_paquetes', 'crear_paquetes', 'editar_paquetes', 'eliminar_paquetes',
+      'ver_notificaciones',
       // Sistema
       'ver_logs', 'configurar_sistema', 'configurar_qr',
       // Reportes
@@ -87,6 +91,10 @@ try {
       'ver_conversaciones_chat', 'crear_conversaciones_chat', 'editar_conversaciones_chat', 'marcar_leido_chat',
       // Conversaciones Logs
       'ver_conversaciones_logs', 'crear_conversaciones_logs', 'editar_conversaciones_logs',
+      // Call Center, paquetes y notificaciones
+      'operar_call_center',
+      'ver_paquetes', 'editar_paquetes',
+      'ver_notificaciones',
       // Reportes
       'ver_reportes', 'generar_reportes'
     ],
@@ -118,7 +126,11 @@ try {
       // Conversaciones Chat
       'ver_conversaciones_chat', 'crear_conversaciones_chat', 'marcar_leido_chat',
       // Conversaciones Logs
-      'ver_conversaciones_logs', 'crear_conversaciones_logs'
+      'ver_conversaciones_logs', 'crear_conversaciones_logs',
+      // Call Center, paquetes y notificaciones
+      'operar_call_center',
+      'ver_paquetes',
+      'ver_notificaciones'
     ],
     'user': [
       // Clientes
@@ -175,7 +187,9 @@ try {
       'ver_conversaciones_chat',
       'ver_conversaciones_logs',
       'ver_logs',
-      'ver_reportes'
+      'ver_reportes',
+      'ver_paquetes',
+      'ver_notificaciones'
     ]
   };
 
