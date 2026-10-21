@@ -611,7 +611,9 @@ async function listarCargasValidadas(deps = {}) {
 async function detalleSolicitud(deps = {}) {
   const db = getModels(deps);
   const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
-  if (!notificacion || !isOpenSolicitud(notificacion)) fail(404, 'Solicitud no encontrada');
+  const abierta = isOpenSolicitud(notificacion);
+  const yaValidada = isValidatedCheckIn(notificacion);
+  if (!notificacion || (!abierta && !yaValidada)) fail(404, 'Solicitud no encontrada');
   const datos = notificacion.datos || {};
   const repartidor = datos.repartidor_id
     ? await db.Repartidor.findByPk(datos.repartidor_id, { attributes: ['id', 'nombre_completo'] })
@@ -634,7 +636,10 @@ async function detalleSolicitud(deps = {}) {
       include: [{ association: 'cliente', attributes: ['id', 'nombre_completo', 'telefono'] }],
     });
   }
-  return toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, dineroEsperado, deposito });
+  return {
+    ...toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, dineroEsperado, deposito }),
+    ya_validada: yaValidada,
+  };
 }
 
 async function listarPedidos(deps = {}) {
