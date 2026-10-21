@@ -435,6 +435,36 @@ test('la lista deja fuera lo leído y arma el detalle sin código', async () => 
   expect(detail.cargas[0]).toMatchObject({ id: 2, fkid_producto: 4, nombre: 'Arena', es_extra: false });
   expect(detail.dinero_esperado).toBe(40);
   expect(detail.codigo_entrega).toBeUndefined();
+  expect(detail.ya_validada).toBe(false);
+});
+
+test('el detalle de un check-in ya aprobado no responde como si no existiera', async () => {
+  const aprobada = {
+    id: 8,
+    leida: true,
+    prioridad: 'alta',
+    fecha_creacion: '2026-10-21',
+    hora_creacion: '16:07:03',
+    datos: { tipo: 'check_in', estado_solicitud: 'abierta', repartidor_id: 3, jornada_id: 5 },
+  };
+  const models = {
+    Notificacion: { findByPk: async () => aprobada },
+    Repartidor: { findByPk: async () => ({ id: 3, nombre_completo: 'Repartidor Test' }) },
+    JornadaRepartidor: {
+      findOne: async () => null,
+      findByPk: async () => ({
+        id: 5,
+        dinero_esperado: 120,
+        validado_por_nombre: 'Administrador del Sistema',
+        cargas: [],
+      }),
+    },
+    Pedido: { findByPk: async () => null },
+  };
+  const detail = await detalleSolicitud({ models, notificacionId: 8 });
+  expect(detail.ya_validada).toBe(true);
+  expect(detail.repartidor.nombre_completo).toBe('Repartidor Test');
+  expect(detail.dinero_esperado).toBe(120);
 });
 
 test('los pedidos del día salen con teléfono y sin código', async () => {
