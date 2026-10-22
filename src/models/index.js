@@ -47,6 +47,7 @@ const RepartidorLogro = require('./RepartidorLogro');
 const CampanaEnvio = require('./CampanaEnvio');
 const LecturaKilometraje = require('./LecturaKilometraje');
 const LecturaVelocidad = require('./LecturaVelocidad');
+const HistorialCambio = require('./HistorialCambio');
 
 // Inicializar modelos
 const models = {
@@ -95,6 +96,7 @@ const models = {
   CampanaEnvio: CampanaEnvio(sequelize, DataTypes),
   LecturaKilometraje: LecturaKilometraje(sequelize, DataTypes),
   LecturaVelocidad: LecturaVelocidad(sequelize, DataTypes),
+  HistorialCambio: HistorialCambio(sequelize, DataTypes),
 };
 
 // Definir asociaciones
@@ -583,6 +585,8 @@ models.Repartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_repartido
 models.LecturaVelocidad.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_jornada', as: 'lecturas_velocidad' });
 models.LecturaVelocidad.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
+models.HistorialCambio.belongsTo(models.User, { foreignKey: 'fkid_usuario', as: 'usuario' });
+models.User.hasMany(models.HistorialCambio, { foreignKey: 'fkid_usuario', as: 'cambios' });
 
 models.sequelize = sequelize;
 models.Sequelize = require('sequelize');

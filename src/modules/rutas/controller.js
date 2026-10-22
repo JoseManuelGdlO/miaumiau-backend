@@ -5,8 +5,6 @@ const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
-const { repartoBloqueado } = require('../app-repartidor/deposito-pendiente');
-const db = require('../../models');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
@@ -42,23 +40,25 @@ class RutaController {
         notas
       } = req.body;
 
-      // Verificar que el repartidor existe y está disponible
-      const repartidor = await Repartidor.findByPk(fkid_repartidor, {
-        include: ['ciudad']
-      });
-
-      if (!repartidor) {
-        return res.status(404).json({
-          success: false,
-          message: 'Repartidor no encontrado'
+      let repartidorId = fkid_repartidor || null;
+      if (repartidorId) {
+        const repartidor = await Repartidor.findByPk(repartidorId, {
+          include: ['ciudad']
         });
-      }
 
-      if (repartidor.estado !== 'disponible' && repartidor.estado !== 'activo') {
-        return res.status(400).json({
-          success: false,
-          message: 'El repartidor no está disponible para asignar rutas'
-        });
+        if (!repartidor) {
+          return res.status(404).json({
+            success: false,
+            message: 'Repartidor no encontrado'
+          });
+        }
+
+        if (repartidor.estado !== 'disponible' && repartidor.estado !== 'activo') {
+          return res.status(400).json({
+            success: false,
+            message: 'El repartidor no está disponible para asignar rutas'
+          });
+        }
       }
 
       // Verificar que la ciudad existe
@@ -75,7 +75,7 @@ class RutaController {
         nombre_ruta,
         fecha_ruta,
         fkid_ciudad,
-        fkid_repartidor,
+        fkid_repartidor: repartidorId,
         estado,
         notas,
         total_pedidos: 0,
@@ -607,6 +607,7 @@ class RutaController {
       }
 
       // Si se está cambiando el repartidor, verificar disponibilidad
+      const repartidorAnterior = ruta.fkid_repartidor;
       if (updateData.fkid_repartidor && updateData.fkid_repartidor !== ruta.fkid_repartidor) {
         const repartidor = await Repartidor.findByPk(updateData.fkid_repartidor);
         if (!repartidor) {
@@ -657,6 +658,19 @@ class RutaController {
         ]
       });
 
+      if (updateData.fkid_repartidor && Number(updateData.fkid_repartidor) !== Number(repartidorAnterior)) {
+        const pedidoId = Number(rutaActualizada?.pedidos?.[0]?.fkid_pedido);
+        try {
+          getHub().notify(updateData.fkid_repartidor, Number.isFinite(pedidoId)
+            ? { type: 'ruta.actualizada', pedidoId }
+            : { type: 'jornada.actualizada' });
+        } catch (notifyError) {
+          log.warn('[RUTAS] No se pudo avisar al repartidor de la ruta asignada', {
+            message: notifyError.message,
+          });
+        }
+      }
+
       res.json({
         success: true,
         message: 'Ruta actualizada exitosamente',
@@ -695,13 +709,6 @@ class RutaController {
           message: 'Ruta no encontrada'
         });
       }
-      if (await repartoBloqueado(db, ruta.fkid_repartidor, ruta.fecha_ruta)) {
-        return res.status(409).json({
-          success: false,
-          message: 'Ese repartidor debe subir el comprobante del depósito antes de recibir otra actividad'
-        });
-      }
-
       // Verificar que los pedidos existen y no están asignados
       const pedidoIds = pedidos.map(p => p.fkid_pedido);
       const pedidosExistentes = await Pedido.findAll({
@@ -799,7 +806,11 @@ class RutaController {
       if (rutaPedidos.length > 0 && ruta.fkid_repartidor) {
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
-          getHub().notify(ruta.fkid_repartidor, { type: 'jornada.actualizada' });
+          const pedidoNuevo = Number(rutaPedidos[0].fkid_pedido);
+          getHub().notify(ruta.fkid_repartidor, {
+            type: 'ruta.actualizada',
+            pedidoId: Number.isFinite(pedidoNuevo) ? pedidoNuevo : rutaPedidos[0].fkid_pedido,
+          });
         } catch (notifyError) {
           log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
             message: notifyError.message,

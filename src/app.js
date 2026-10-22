@@ -48,6 +48,8 @@ const repartidorRoutes = require('./modules/repartidores/routes');
 const rutaRoutes = require('./modules/rutas/routes');
 const notificacionRoutes = require('./modules/notificaciones/routes');
 const paqueteRoutes = require('./modules/paquetes/routes');
+const historialRoutes = require('./modules/historial/routes');
+const { registrarCambio, describirCambio } = require('./modules/historial/service');
 const mensajeriaRoutes = require('./modules/mensajeria/routes');
 const mapsRoutes = require('./modules/maps/routes');
 const pagosRoutes = require('./modules/pagos/routes');
@@ -222,6 +224,26 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+const SIN_HISTORIAL = ['/api/auth', '/api/app-repartidor', '/api/portal', '/api/public', '/api/n8n', '/api/push', '/api/conversaciones-chat'];
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (!req.user?.id || res.statusCode >= 400) return;
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return;
+    const ruta = req.originalUrl.split('?')[0];
+    if (SIN_HISTORIAL.some((prefix) => ruta.startsWith(prefix))) return;
+    if (ruta.includes('/cerrar-sin-codigo')) return;
+    const escrito = describirCambio(req.method, ruta);
+    void registrarCambio({
+      usuarioId: req.user.id,
+      accion: escrito.accion,
+      entidad: escrito.entidad,
+      entidadId: req.params?.id || null,
+      detalle: escrito.detalle,
+    });
+  });
+  next();
+});
+
 // Carpeta de uploads (imágenes de productos y combos) y ruta estática
 // CORS explícito para /uploads: el frontend puede estar en otro origen (puerto) y cargar imágenes
 ensureUploadsDirs();
@@ -241,6 +263,7 @@ app.use('/api/portal', portalClienteRoutes);
 // Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/historial', historialRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/cities', cityRoutes);

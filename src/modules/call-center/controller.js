@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo']);
 
 function live(extra) {
   return {
@@ -159,6 +159,14 @@ function moverParada(req, res) {
   })), 'moverParada');
 }
 
+function cerrarSinCodigo(req, res) {
+  return handle(res, () => service.cerrarSinCodigo(live({
+    pedidoId: req.params.id,
+    motivo: req.body?.motivo,
+    usuario: req.user,
+  })), 'cerrarSinCodigo');
+}
+
 function reasignar(req, res) {
   return handle(res, () => service.reasignar(live({
     pedidoId: req.params.id,
@@ -189,4 +197,5 @@ module.exports = {
   depositos,
   actividades,
   asignarActividad,
+  cerrarSinCodigo,
 };
