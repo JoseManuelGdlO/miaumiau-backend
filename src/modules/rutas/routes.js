@@ -40,8 +40,7 @@ const createRutaValidation = [
     .withMessage('La ciudad debe ser un ID válido'),
   
   body('fkid_repartidor')
-    .notEmpty()
-    .withMessage('El repartidor es requerido')
+    .optional({ nullable: true, checkFalsy: true })
     .isInt({ min: 1 })
     .withMessage('El repartidor debe ser un ID válido'),
   
@@ -78,7 +77,7 @@ const updateRutaValidation = [
     .withMessage('La ciudad debe ser un ID válido'),
   
   body('fkid_repartidor')
-    .optional()
+    .optional({ nullable: true })
     .isInt({ min: 1 })
     .withMessage('El repartidor debe ser un ID válido'),
   

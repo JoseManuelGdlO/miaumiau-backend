@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { Op, Sequelize } = require('sequelize');
 const {
   checkInOpens,
@@ -1433,10 +1435,16 @@ async function registrarCaja(deps = {}) {
   }
   if (!deps.file) fail(422, 'La caja requiere foto del comprobante');
   await refrescarCorte({ ...deps, jornada });
+  const anterior = jornada.comprobante_deposito_path;
+  const nuevo = comprobantePath(deps.file);
   await jornada.update({
     efectivo_a_depositar: Number(deps.efectivo) || 0,
-    comprobante_deposito_path: comprobantePath(deps.file),
+    comprobante_deposito_path: nuevo,
   });
+  if (anterior && anterior !== nuevo) {
+    const archivo = path.join(__dirname, '..', '..', 'uploads', 'comprobantes', path.basename(String(anterior)));
+    fs.unlink(archivo, () => {});
+  }
   const repartidorNombre = await nombreDelRepartidor(deps);
   const aviso = await defaultCrearNotificacion(deps, {
     nombre: 'Cierre de día',

@@ -258,7 +258,6 @@ test('reasignar refresca la foto de los dos repartidores antes de avisar', async
     notify,
   });
   expect(vistos).toEqual([
-    { fkid_repartidor: 8, fecha: '2026-10-07' },
     { fkid_repartidor: 3, fecha: '2026-10-07' },
     { fkid_repartidor: 8, fecha: '2026-10-07' },
   ]);
@@ -1177,7 +1176,7 @@ test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', 
   }]);
 });
 
-test('asignar actividad extra la libera y se niega si falta el depósito', async () => {
+test('asignar actividad extra la libera aunque falte el depósito', async () => {
   const creadas = [];
   const models = {
     JornadaRepartidor: {
@@ -1194,14 +1193,6 @@ test('asignar actividad extra la libera y se niega si falta el depósito', async
       create: async (row) => { creadas.push(row); return row; },
     },
   };
-  await expect(asignarActividad({
-    fecha: '2026-10-19',
-    pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1, codigo_entrega: '123456' },
-    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
-    models,
-  })).rejects.toMatchObject({ status: 409 });
-
-  models.JornadaRepartidor.findOne = async () => ({ comprobante_deposito_path: 'comprobantes/dep.jpg' });
   const ahora = new Date('2026-10-19T18:00:00.000Z');
   const result = await asignarActividad({
     fecha: '2026-10-19',

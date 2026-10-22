@@ -33,7 +33,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     fkid_repartidor: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'users',
         key: 'id'

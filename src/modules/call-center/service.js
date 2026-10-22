@@ -1,7 +1,6 @@
 const { Op, literal } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
 const { refrescarCargaEnValidacion, olvidarOrdenRuta, liberarSiguienteParada } = require('../app-repartidor/service');
-const { repartoBloqueado } = require('../app-repartidor/deposito-pendiente');
 const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
   approveCheck,
@@ -449,9 +448,6 @@ async function reasignar(deps = {}) {
     bajaLogica: Boolean(driver?.baja_logica),
   });
   if (!check.ok) fail(check.statusCode, check.message);
-  if (await repartoBloqueado(db, driver.id, fechaKey(ruta.fecha_ruta))) {
-    fail(409, 'Ese repartidor debe subir el comprobante del depósito antes de recibir otra actividad');
-  }
 
   const anterior = ruta?.fkid_repartidor;
   const nuevo = driver?.id;
@@ -950,9 +946,6 @@ async function asignarActividad(deps = {}) {
     fail(422, 'El repartidor no es de la ciudad del pedido');
   }
   const fecha = deps.fecha || await fechaDeHoy(deps);
-  if (await repartoBloqueado(db, driver.id, fecha)) {
-    fail(409, 'Ese repartidor debe subir el comprobante del depósito antes de recibir otra actividad');
-  }
   const ya = await db.RutaPedido.findAll({
     where: { fkid_pedido: pedido.id },
     include: [{
@@ -1004,6 +997,37 @@ async function asignarActividad(deps = {}) {
   return { ruta_id: ruta.id, pedido_id: pedido.id };
 }
 
+async function cerrarSinCodigo(deps = {}) {
+  const motivo = String(deps.motivo || '').trim();
+  if (motivo.length < 5) fail(422, 'Escribe por qué se cierra el pedido sin el código del cliente');
+  const db = getModels(deps);
+  const pedido = await db.Pedido.findByPk(deps.pedidoId);
+  if (!pedido || pedido.baja_logica) fail(404, 'Pedido no encontrado');
+  if (['entregado', 'cancelado', 'no_entregado'].includes(pedido.estado)) {
+    fail(409, 'Ese pedido ya está cerrado');
+  }
+  const parada = await findRutaDeHoy(deps, pedido.id);
+  const ahora = new Date();
+  await pedido.update({ estado: 'no_entregado' });
+  if (parada && typeof parada.update === 'function') {
+    await parada.update({ estado_entrega: 'fallido', fecha_entrega_real: ahora });
+  }
+  const { registrarCambio } = require('../historial/service');
+  const numero = pedido.numero_pedido || pedido.id;
+  await registrarCambio({
+    usuarioId: deps.usuario?.id,
+    accion: 'Cierre sin código',
+    entidad: 'pedido',
+    entidadId: pedido.id,
+    detalle: `Pedido ${numero} cerrado sin código del cliente. Motivo: ${motivo}`,
+  });
+  await safeNotify(deps, parada?.ruta?.fkid_repartidor, {
+    type: 'ruta.actualizada',
+    pedidoId: Number(pedido.id),
+  });
+  return { id: pedido.id, estado: 'no_entregado' };
+}
+
 module.exports = {
   aprobar,
   guardarExtras,
@@ -1027,4 +1051,5 @@ module.exports = {
   listarDepositos,
   listarActividadesDisponibles,
   asignarActividad,
+  cerrarSinCodigo,
 };
