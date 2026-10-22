@@ -56,23 +56,6 @@ const ACCION_FILTRO = {
   cierre_sin_codigo: ['cerrar_sin_codigo', 'Cierre sin código'],
 };
 
-const ROLES = {
-  super_admin: 'Super administrador',
-  admin: 'Administrador',
-  moderator: 'Moderador',
-  user: 'Usuario',
-  guest: 'Invitado',
-  auditor: 'Auditor',
-  repartidor: 'Repartidor',
-  finanzas_marcela: 'Finanzas',
-};
-
-function rolLegible(nombre) {
-  if (!nombre) return null;
-  if (ROLES[nombre]) return ROLES[nombre];
-  return String(nombre).replace(/_/g, ' ').replace(/\b\w/g, (letra) => letra.toUpperCase());
-}
-
 function describirCambio(method, ruta) {
   const verbo = VERBO[String(method || '').toUpperCase()] || 'Cambio';
   const partes = String(ruta || '').split('?')[0].split('/').filter(Boolean);
@@ -159,7 +142,7 @@ async function listar(deps = {}) {
       id: row.usuario.id,
       nombre: row.usuario.nombre_completo,
       correo: row.usuario.correo_electronico,
-      rol: rolLegible(row.usuario.rol?.nombre),
+      rol: row.usuario.rol?.nombre || null,
     } : null,
   }));
 }
