@@ -21,6 +21,8 @@ const {
   ACTIVE,
 } = require('./domain');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
+const { franjaDeHorario } = require('../pedidos/horario');
+const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
@@ -618,8 +620,9 @@ async function detalleSolicitud(deps = {}) {
   let pedido = null;
   let dineroEsperado = null;
   let deposito = null;
+  let jornada = null;
   if (datos.tipo === 'check_in' && datos.jornada_id) {
-    const jornada = await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] });
+    jornada = await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] });
     cargas = jornada?.cargas || [];
     dineroEsperado = jornada?.dinero_esperado;
   }
@@ -632,10 +635,65 @@ async function detalleSolicitud(deps = {}) {
       include: [{ association: 'cliente', attributes: ['id', 'nombre_completo', 'telefono'] }],
     });
   }
-  return {
+  const detalle = {
     ...toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, dineroEsperado, deposito }),
     ya_validada: yaValidada,
   };
+  if (datos.tipo === 'check_in') detalle.pedidos = await pedidosDeLaCarga(deps, jornada);
+  return detalle;
+}
+
+function pedidosDeRutas(rutas) {
+  const pedidos = [];
+  for (const ruta of rutas || []) {
+    if (ruta.baja_logica || ruta.estado === 'cancelada') continue;
+    for (const parada of ruta.pedidos || []) {
+      const pedido = parada.pedido;
+      if (!pedido || pedido.baja_logica || pedido.estado === 'cancelado') continue;
+      pedidos.push({
+        numero_pedido: pedido.numero_pedido || String(pedido.id || ''),
+        cliente: pedido.cliente?.nombre_completo || '',
+        productos: (pedido.productos || [])
+          .filter((linea) => linea && !linea.baja_logica)
+          .map((linea) => ({
+            nombre: linea.producto?.nombre || linea.nombre || '',
+            cantidad: Number(linea.cantidad) || 0,
+          }))
+          .filter((linea) => linea.nombre),
+      });
+    }
+  }
+  return pedidos;
+}
+
+async function pedidosDeLaCarga(deps, jornada) {
+  if (!jornada?.fkid_repartidor || !jornada.fecha) return [];
+  const db = getModels(deps);
+  if (typeof db.Ruta?.findAll !== 'function') return [];
+  const rutas = await db.Ruta.findAll({
+    where: {
+      fkid_repartidor: jornada.fkid_repartidor,
+      fecha_ruta: jornada.fecha,
+      baja_logica: false,
+    },
+    include: [{
+      association: 'pedidos',
+      required: false,
+      include: [{
+        association: 'pedido',
+        required: false,
+        include: [
+          { association: 'cliente', attributes: ['nombre_completo'], required: false },
+          {
+            association: 'productos',
+            required: false,
+            include: [{ association: 'producto', attributes: ['nombre'], required: false }],
+          },
+        ],
+      }],
+    }],
+  });
+  return pedidosDeRutas(rutas);
 }
 
 async function listarPedidos(deps = {}) {
@@ -756,6 +814,10 @@ async function cambiarFranja(deps = {}) {
   const db = getModels(deps);
   const parada = await findRutaDeHoy(deps, deps.pedidoId);
   if (!parada) fail(409, 'Ese pedido no está en una ruta de hoy');
+  const paradas = deps.alcance === 'ruta' && parada.ruta
+    ? await db.RutaPedido.findAll({ where: { fkid_ruta: parada.fkid_ruta || parada.ruta.id }, include: [{ association: 'pedido', required: false }] })
+    : [parada];
+  await exigirFranja(db, paradas.length ? paradas : [parada], franja);
   await parada.update({ franja });
   if (deps.alcance === 'ruta' && parada.ruta) {
     if (typeof parada.ruta.update === 'function') await parada.ruta.update({ franja });
@@ -899,9 +961,27 @@ async function listarDepositos(deps = {}) {
     }));
 }
 
+async function exigirFranja(db, paradas, franja) {
+  let pedidos = paradas.map((row) => row.pedido).filter(Boolean);
+  const faltan = paradas.filter((row) => !row.pedido && row.fkid_pedido);
+  if (faltan.length && typeof db.Pedido?.findAll === 'function') {
+    pedidos = pedidos.concat(await db.Pedido.findAll({
+      where: { id: faltan.map((row) => row.fkid_pedido) },
+      attributes: ['id', 'horario_preferente'],
+    }));
+  }
+  for (const pedido of pedidos) {
+    const esperada = franjaDeHorario(pedido.horario_preferente);
+    if (!esperada || esperada === franja) continue;
+    const hora = String(pedido.horario_preferente).slice(0, 5);
+    fail(422, `A partir de las ${hora} corresponde a ${esperada === 'tarde' ? 'Tarde' : 'Mañana'}`);
+  }
+}
+
 async function listarActividadesDisponibles(deps = {}) {
   const db = getModels(deps);
   const fecha = deps.fecha || await fechaDeHoy(deps);
+  await reencolarNoEntregados({ Pedido: db.Pedido, fecha });
   const where = {
     baja_logica: false,
     fecha_entrega_estimada: diaEntre(fecha),
@@ -984,7 +1064,7 @@ async function asignarActividad(deps = {}) {
     orden_entrega: (Number(maximo) || 0) + 1,
     orden_manual: true,
     estado_entrega: 'pendiente',
-    franja: ruta.franja === 'tarde' ? 'tarde' : 'manana',
+    franja: franjaDeHorario(pedido.horario_preferente) || (ruta.franja === 'tarde' ? 'tarde' : 'manana'),
     liberado_en: deps.now || new Date(),
   });
   await ruta.update({ total_pedidos: (Number(ruta.total_pedidos) || 0) + 1 });
@@ -995,6 +1075,37 @@ async function asignarActividad(deps = {}) {
   }
   await safeNotify(deps, driver.id, { type: 'ruta.actualizada', pedidoId: Number(pedido.id) });
   return { ruta_id: ruta.id, pedido_id: pedido.id };
+}
+
+async function resolverAyuda(deps = {}) {
+  const accion = deps.accion;
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion) fail(404, 'Solicitud no encontrada');
+  const datos = notificacion.datos || {};
+  const pedidoId = Number(datos.pedido_id);
+  if (!pedidoId) fail(422, 'Esta solicitud no tiene pedido');
+  const parada = await findRutaDeHoy(deps, pedidoId);
+  if (!parada) fail(409, 'Ese pedido no está en una ruta de hoy');
+  const repartidorId = parada.ruta?.fkid_repartidor;
+  if (accion === 'ver_codigo') {
+    if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
+    const pedido = await db.Pedido.findByPk(pedidoId, { attributes: ['codigo_entrega'] });
+    if (!pedido?.codigo_entrega) fail(404, 'Ese pedido no tiene código');
+    return { codigo: pedido.codigo_entrega };
+  }
+  if (accion === 'aprobar_codigo') {
+    if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
+    await parada.update({ codigo_validado_en: new Date() });
+    await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
+    return { aprobado: true };
+  }
+  if (accion === 'autorizar_tercero') {
+    await parada.update({ entrega_tercero_en: new Date() });
+    await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
+    return { autorizado: true };
+  }
+  fail(422, 'Esa acción no existe');
 }
 
 async function cerrarSinCodigo(deps = {}) {
@@ -1052,4 +1163,5 @@ module.exports = {
   listarActividadesDisponibles,
   asignarActividad,
   cerrarSinCodigo,
+  resolverAyuda,
 };

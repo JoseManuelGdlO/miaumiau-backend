@@ -4,6 +4,7 @@ const { Op, Sequelize } = require('sequelize');
 const {
   checkInOpens,
   canListOrders,
+  ayudaCodigoVencida,
   codesMatch,
   packageCodeComponents,
   validatePayment,
@@ -75,6 +76,7 @@ function toPedidoDto(pedido, rutaPedido) {
     rest.lng = rp.lng;
     rest.link_ubicacion = rp.link_ubicacion;
     rest.franja = franjaDe(rp.franja);
+    rest.entrega_tercero = Boolean(rp.entrega_tercero_en);
     const minutos = Number(rp.tiempo_estimado_entrega);
     if (minutos > 0) rest.minutos_transporte = minutos;
   }
@@ -1148,6 +1150,13 @@ async function entregar(deps = {}) {
     fail(409, 'El pedido ya fue cerrado');
   }
   if (!rutaPedido.codigo_validado_en) fail(422, 'Valida el código antes de entregar');
+  let notaTercero = '';
+  if (rutaPedido.entrega_tercero_en) {
+    const receptor = String(deps.receptorNombre || '').trim();
+    if (receptor.length < 2) fail(422, 'Escribe el nombre de quien recibe');
+    if (!deps.receptorFile) fail(422, 'Toma la foto de quien recibe');
+    notaTercero = `Entregado a ${receptor}. Foto: ${comprobantePath(deps.receptorFile)}`;
+  }
 
   const metodo = deps.metodo;
   const efectivo = Number(deps.monto_efectivo ?? deps.efectivo) || 0;
@@ -1170,6 +1179,7 @@ async function entregar(deps = {}) {
 
   try {
     await sequelize.transaction(async (t) => {
+      if (notaTercero) await rutaPedido.update({ notas_entrega: notaTercero }, { transaction: t });
       await db.CobroEntrega.create({
         fkid_pedido: pedido.id,
         fkid_repartidor: deps.repartidorId,
@@ -1241,6 +1251,11 @@ async function entregar(deps = {}) {
 
 const ESPERA_CLIENTE_MS = 5 * 60 * 1000;
 
+function esAyudaCodigo(n, pedidoId) {
+  const d = n.datos || {};
+  return d.tipo === 'soporte' && d.ayuda === 'codigo' && Number(d.pedido_id) === Number(pedidoId);
+}
+
 function esLlamadaCliente(n, pedidoId) {
   const d = n.datos || {};
   return (
@@ -1270,26 +1285,32 @@ function whereDatosRepartidor(repartidorId) {
   };
 }
 
-async function findLlamadaCliente(deps) {
-  if (deps.notificaciones) {
-    return deps.notificaciones.find((n) => esLlamadaCliente(n, deps.pedidoId)) || null;
-  }
+async function avisosDelRepartidor(deps) {
+  if (deps.notificaciones) return deps.notificaciones;
   const db = getModels(deps);
-  if (typeof db.Notificacion?.findAll !== 'function') return null;
-  const rows = await db.Notificacion.findAll({
+  if (typeof db.Notificacion?.findAll !== 'function') return [];
+  return db.Notificacion.findAll({
     where: whereDatosRepartidor(deps.repartidorId),
     order: [['id', 'DESC']],
   });
+}
+
+async function findLlamadaCliente(deps) {
+  const rows = await avisosDelRepartidor(deps);
   return rows.find((n) => esLlamadaCliente(n, deps.pedidoId)) || null;
 }
 
 async function noEntregar(deps = {}) {
   await requireJornadaAbierta(deps);
-  const llamada = await findLlamadaCliente(deps);
-  if (!llamada) fail(403, 'Falta avisar a Call Center');
+  const avisos = await avisosDelRepartidor(deps);
+  const llamada = avisos.find((n) => esLlamadaCliente(n, deps.pedidoId));
+  const ayuda = avisos.find((n) => esAyudaCodigo(n, deps.pedidoId));
   const ahora = deps.now ? new Date(deps.now) : new Date();
-  if (!esperaCumplida(llamada.datos, ahora)) {
-    fail(403, 'Debes esperar 5 minutos antes de avanzar');
+  const porLlamada = Boolean(llamada) && esperaCumplida(llamada.datos, ahora);
+  const porAyuda = Boolean(ayuda) && ayudaCodigoVencida(ayuda.datos?.espera_desde, ahora);
+  if (!porLlamada && !porAyuda) {
+    if (!llamada && !ayuda) fail(403, 'Falta avisar a Call Center');
+    fail(403, 'Debes esperar antes de avanzar');
   }
 
   const rutaPedido = await assertRutaDelRepartidor(deps);
@@ -1487,8 +1508,9 @@ async function quitarPaqueteParada(deps = {}) {
 async function crearSoporte(deps = {}) {
   const motivo = deps.motivo;
   const esLlamada = motivo === 'llamada';
+  const esAyudaCodigo = motivo === 'ayuda_codigo';
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
-  const esperaDesde = esLlamada ? new Date().toISOString() : null;
+  const esperaDesde = esLlamada || esAyudaCodigo ? new Date().toISOString() : null;
   const repartidorNombre = await nombreDelRepartidor(deps);
   const tipo = esLlamada ? 'llamada_cliente' : 'soporte';
   const notificacion = await crearNotificacion({
@@ -1503,6 +1525,7 @@ async function crearSoporte(deps = {}) {
       ...(deps.pedidoId ? { pedido_id: Number(deps.pedidoId) } : {}),
       ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
       motivo: String(deps.nota || '').trim().slice(0, 500) || motivo,
+      ...(esAyudaCodigo ? { ayuda: 'codigo' } : {}),
       ...(String(deps.nota || '').trim() ? { nota: String(deps.nota).trim().slice(0, 500) } : {}),
     },
   });

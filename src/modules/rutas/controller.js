@@ -3,6 +3,9 @@ const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
+const { dayKey } = require('../app-repartidor/domain');
+const { franjaDeHorario } = require('../pedidos/horario');
+const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
 const { Logger } = require('../../utils/logger');
@@ -367,6 +370,14 @@ class RutaController {
       const { fkid_ciudad, page = 1, limit = 50 } = req.query;
 
       const offset = (page - 1) * limit;
+
+      if (fecha === dayKey(new Date(), 'America/Mexico_City')) {
+        try {
+          await reencolarNoEntregados({ Pedido, fecha });
+        } catch (error) {
+          log.warn('No se reencolaron los no entregados', { message: error.message });
+        }
+      }
 
       // Crear rango de fechas para buscar todo el día
       const fechaInicio = new Date(fecha + 'T00:00:00.000Z');
@@ -782,6 +793,8 @@ class RutaController {
           rutaPedidos.push(rutaPedido);
           try {
             const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido);
+            const franja = franjaDeHorario(pedidoAsignado?.horario_preferente);
+            if (franja) await rutaPedido.update({ franja });
             await ensureDeliveryCode(pedidoAsignado);
           } catch (codeError) {
             log.error(`[RUTAS] Error generando código de entrega para pedido ${pedido.fkid_pedido}:`, codeError);

@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { parseFechaEntregaEstimada } = require('../../utils/date');
+const { horarioNormalizado } = require('./horario');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Pedidos');
@@ -668,6 +669,7 @@ class PedidoController {
         direccion_entrega,
         fkid_ciudad,
         fecha_entrega_estimada,
+        horario_preferente,
         metodo_pago,
         notas,
         productos = [],
@@ -811,6 +813,7 @@ class PedidoController {
         numero_pedido: numeroPedido,
         estado: 'pendiente', // Estado inicial siempre pendiente
         fecha_entrega_estimada: parseFechaEntregaEstimada(fecha_entrega_estimada) ?? null,
+        horario_preferente: horarioNormalizado(horario_preferente),
         metodo_pago: metodo_pago || null,
         notas: notas || null,
         codigo_promocion: codigoPromocionNormalizado,

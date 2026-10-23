@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda']);
 
 function live(extra) {
   return {
@@ -159,6 +159,13 @@ function moverParada(req, res) {
   })), 'moverParada');
 }
 
+function resolverAyuda(req, res) {
+  return handle(res, () => service.resolverAyuda(live({
+    notificacionId: req.params.id,
+    accion: req.body?.accion,
+  })), 'resolverAyuda');
+}
+
 function cerrarSinCodigo(req, res) {
   return handle(res, () => service.cerrarSinCodigo(live({
     pedidoId: req.params.id,
@@ -198,4 +205,5 @@ module.exports = {
   actividades,
   asignarActividad,
   cerrarSinCodigo,
+  resolverAyuda,
 };

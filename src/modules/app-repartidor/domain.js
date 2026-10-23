@@ -140,6 +140,15 @@ function agruparCarga(lineas) {
   }));
 }
 
+const AYUDA_CODIGO_MS = 15 * 60 * 1000;
+
+function ayudaCodigoVencida(esperaDesde, now) {
+  const start = Date.parse(esperaDesde || '');
+  if (!Number.isFinite(start)) return false;
+  const moment = now instanceof Date ? now.getTime() : Number(now);
+  return moment - start >= AYUDA_CODIGO_MS;
+}
+
 function dayKey(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timeZone || 'America/Mexico_City',
@@ -167,4 +176,5 @@ module.exports = {
   stripPhone,
   dayKey,
   agruparCarga,
+  ayudaCodigoVencida,
 };

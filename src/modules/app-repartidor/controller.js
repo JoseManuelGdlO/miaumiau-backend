@@ -254,7 +254,9 @@ async function entregar(req, res) {
       monto_transferencia: req.body.monto_transferencia,
       efectivo: req.body.efectivo,
       transferencia: req.body.transferencia,
-      file: req.file,
+      file: req.file || req.files?.comprobante?.[0],
+      receptorNombre: req.body.receptor_nombre,
+      receptorFile: req.files?.receptor?.[0],
     }));
   }, 'entregar');
 }

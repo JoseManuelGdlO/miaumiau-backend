@@ -80,6 +80,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATE,
       allowNull: true
     },
+    horario_preferente: {
+      type: DataTypes.TIME,
+      allowNull: true
+    },
     subtotal: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,

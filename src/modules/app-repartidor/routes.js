@@ -27,7 +27,10 @@ router.post('/pedidos/:id/solicitar-llamada', controller.solicitarLlamada);
 router.post('/pedidos/:id/no-entregado', controller.noEntregar);
 router.post('/pedidos/:id/codigo', controller.codigo);
 router.put('/pedidos/:id/productos', controller.productos);
-router.post('/pedidos/:id/entregar', uploadComprobantes.single('comprobante'), controller.entregar);
+router.post('/pedidos/:id/entregar', uploadComprobantes.fields([
+  { name: 'comprobante', maxCount: 1 },
+  { name: 'receptor', maxCount: 1 },
+]), controller.entregar);
 router.post('/caja', uploadComprobantes.single('comprobante'), controller.caja);
 router.post('/soporte', controller.soporte);
 router.get('/estadisticas', controller.estadisticas);
