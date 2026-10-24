@@ -92,6 +92,7 @@ function guardarContacto(req, res) {
     usuarioId: req.params.usuarioId,
     telefono: req.body?.telefono,
     repartidorIds: req.body?.repartidor_ids,
+    usuario: req.user,
   }), 'guardarContacto');
 }
 

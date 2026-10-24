@@ -231,6 +231,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     orden_entrega: rutaPedido.orden_entrega ?? null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
+    total: Number(pedido.total) || 0,
     comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
   };
 }
@@ -252,6 +253,11 @@ function quitarRepartidores(rows, usuarioId, ids) {
       ? ids
       : row.repartidorIds.filter((id) => !tomados.has(id)),
   }));
+}
+
+function puedeEditarContacto(actorId, usuarioId) {
+  const actor = Number(actorId);
+  return Number.isInteger(actor) && actor > 0 && actor === Number(usuarioId);
 }
 
 function telefonoDeRepartidor(rows, repartidorId) {
@@ -293,4 +299,5 @@ module.exports = {
   normalizarContacto,
   quitarRepartidores,
   telefonoDeRepartidor,
+  puedeEditarContacto,
 };

@@ -1535,7 +1535,7 @@ async function crearSoporte(deps = {}) {
   const datos = {
     ...(notificacion.datos || {}),
     actionUrl: esAyudaCodigo || esAyudaTercero
-      ? `/dashboard/call-center?tab=soporte&aviso=${notificacion.id}`
+      ? `/dashboard/call-center?tab=soporte&aviso=${notificacion.id}&repartidor=${deps.repartidorId}`
       : `/dashboard/call-center?tab=operacion&aviso=${notificacion.id}`,
   };
   if (typeof notificacion.update === 'function') await notificacion.update({ datos });

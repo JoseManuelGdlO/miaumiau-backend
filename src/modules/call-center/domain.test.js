@@ -16,6 +16,7 @@ const {
   normalizarContacto,
   quitarRepartidores,
   telefonoDeRepartidor,
+  puedeEditarContacto,
   NOTE_LIMIT,
 } = require('./domain');
 
@@ -95,6 +96,7 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   expect(dia.ciudad_id).toBe(2);
   expect(dia.modificado).toBe(false);
   expect(dia.comprobante_url).toBeNull();
+  expect(dia.total).toBe(0);
   const tocado = toPedidoDia({
     pedido: {
       id: 4,
@@ -181,6 +183,8 @@ test('un repartidor queda con un solo contacto de incidencia', () => {
   expect(rows[0].repartidorIds).toEqual([3]);
   expect(telefonoDeRepartidor(rows, 2)).toBe('6181892035');
   expect(telefonoDeRepartidor(rows, 3)).toBe('1111111111');
+  expect(puedeEditarContacto(8, 8)).toBe(true);
+  expect(puedeEditarContacto(1, 8)).toBe(false);
 });
 
 test('solo admin o supervisor autoriza una excepción de entrega', () => {

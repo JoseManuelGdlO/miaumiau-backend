@@ -20,6 +20,7 @@ const {
   toRepartidorOpcion,
   puedeAutorizarExcepcion,
   normalizarContacto,
+  puedeEditarContacto,
   comprobantePublicPath,
   ACTIVE,
 } = require('./domain');
@@ -1089,7 +1090,6 @@ async function listarContactos(deps = {}) {
   const guardados = typeof db.ContactoSoporte?.findAll === 'function' ? await db.ContactoSoporte.findAll() : [];
   const repartidores = typeof db.Repartidor?.findAll === 'function'
     ? await db.Repartidor.findAll({
-      where: { baja_logica: false },
       attributes: ['id', 'nombre_completo'],
       order: [['nombre_completo', 'ASC']],
     })
@@ -1115,6 +1115,7 @@ async function guardarContacto(deps = {}) {
   if (!norma.ok) fail(norma.statusCode, norma.message);
   const db = getModels(deps);
   const usuarioId = Number(deps.usuarioId);
+  if (!puedeEditarContacto(deps.usuario?.id, usuarioId)) fail(403, 'Solo puedes editar tu propio contacto');
   const users = deps.usuarios || await usersWithPermission('operar_call_center');
   if (!users.some((user) => Number(user.id) === usuarioId)) fail(404, 'Esa persona no tiene acceso a Call Center');
   const rows = await db.ContactoSoporte.findAll();
