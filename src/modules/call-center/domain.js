@@ -30,6 +30,16 @@ function approveCheck({ tipo, leida, estadoSolicitud, jornadaEstado, vigente }) 
   return { ok: true };
 }
 
+function reagendarCheck({ fecha, hoy, rol }) {
+  const dia = String(fecha || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return { ok: false, statusCode: 422, message: 'La fecha no es válida' };
+  if (dia < hoy) return { ok: false, statusCode: 422, message: 'La fecha ya pasó' };
+  if (dia === hoy && rol !== 'super_admin') {
+    return { ok: false, statusCode: 403, message: 'Solo un super admin puede reagendar para el mismo día' };
+  }
+  return { ok: true, fecha: dia };
+}
+
 function attendCheck({ tipo, leida, estadoSolicitud }) {
   const ok = (tipo === 'llamada_cliente' || tipo === 'soporte') && !leida && estadoSolicitud === 'abierta';
   if (!ok) return { ok: false, statusCode: 409, message: 'Esa solicitud ya no se puede atender' };
@@ -225,6 +235,36 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
   };
 }
 
+function normalizarContacto({ telefono, repartidorIds }) {
+  const tel = String(telefono || '').trim();
+  if (!/^[\+]?[0-9\s\-()]{8,20}$/.test(tel)) {
+    return { ok: false, statusCode: 422, message: 'Escribe un teléfono válido' };
+  }
+  const ids = [...new Set((repartidorIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  return { ok: true, telefono: tel, repartidorIds: ids };
+}
+
+function quitarRepartidores(rows, usuarioId, ids) {
+  const tomados = new Set(ids);
+  return rows.map((row) => ({
+    ...row,
+    repartidorIds: row.usuarioId === usuarioId
+      ? ids
+      : row.repartidorIds.filter((id) => !tomados.has(id)),
+  }));
+}
+
+function telefonoDeRepartidor(rows, repartidorId) {
+  const id = Number(repartidorId);
+  const row = (rows || []).find((item) => (item.repartidorIds || []).map(Number).includes(id) && item.telefono);
+  return row ? String(row.telefono) : null;
+}
+
+function puedeAutorizarExcepcion(rol) {
+  const nombre = String(rol || '');
+  return nombre === 'super_admin' || nombre === 'admin' || nombre.includes('supervisor');
+}
+
 function toRepartidorOpcion(repartidor) {
   return { id: repartidor.id, nombre_completo: repartidor.nombre_completo, estado: repartidor.estado };
 }
@@ -233,6 +273,7 @@ module.exports = {
   NOTE_LIMIT,
   ACTIVE,
   approveCheck,
+  reagendarCheck,
   attendCheck,
   appendNota,
   transition,
@@ -248,4 +289,8 @@ module.exports = {
   fueModificado,
   comprobantePublicPath,
   toRepartidorOpcion,
+  puedeAutorizarExcepcion,
+  normalizarContacto,
+  quitarRepartidores,
+  telefonoDeRepartidor,
 };

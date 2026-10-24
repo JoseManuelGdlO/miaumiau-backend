@@ -337,6 +337,31 @@ test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
   expect(pedido.estado).toBe('no_entregado');
 });
 
+test('noEntregar acepta la ayuda de tercero cuando ya pasaron 15 minutos', async () => {
+  const pedido = { id: 5, estado: 'en_camino', productos: [], update: async (data) => Object.assign(pedido, data) };
+  const rutaPedido = { pedido, update: async (data) => Object.assign(rutaPedido, data) };
+  await noEntregar({
+    jornada: { estado: 'validada' },
+    pedidoId: 5,
+    repartidorId: 1,
+    rutaPedido,
+    models: {
+      Notificacion: {
+        findAll: async () => [{
+          datos: {
+            tipo: 'soporte',
+            ayuda: 'tercero',
+            pedido_id: 5,
+            espera_desde: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+          },
+        }],
+      },
+    },
+  });
+  expect(pedido.estado).toBe('no_entregado');
+  expect(rutaPedido.estado_entrega).toBe('fallido');
+});
+
 test('detallePedido no selecciona codigo_entrega', async () => {
   let pedidoInclude;
   const dto = await detallePedido({

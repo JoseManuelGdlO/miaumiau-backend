@@ -48,6 +48,7 @@ const CampanaEnvio = require('./CampanaEnvio');
 const LecturaKilometraje = require('./LecturaKilometraje');
 const LecturaVelocidad = require('./LecturaVelocidad');
 const HistorialCambio = require('./HistorialCambio');
+const ContactoSoporte = require('./ContactoSoporte');
 
 // Inicializar modelos
 const models = {
@@ -97,6 +98,7 @@ const models = {
   LecturaKilometraje: LecturaKilometraje(sequelize, DataTypes),
   LecturaVelocidad: LecturaVelocidad(sequelize, DataTypes),
   HistorialCambio: HistorialCambio(sequelize, DataTypes),
+  ContactoSoporte: ContactoSoporte(sequelize, DataTypes),
 };
 
 // Definir asociaciones

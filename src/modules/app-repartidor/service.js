@@ -18,6 +18,7 @@ const {
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
+const { telefonoDeRepartidor } = require('../call-center/domain');
 const { publishNotificacion } = require('../notificaciones/stream');
 const { phoneOf } = require('../call-center/domain');
 const { ensureDeliveryCode } = require('./assignCode');
@@ -1253,7 +1254,7 @@ const ESPERA_CLIENTE_MS = 5 * 60 * 1000;
 
 function esAyudaCodigo(n, pedidoId) {
   const d = n.datos || {};
-  return d.tipo === 'soporte' && d.ayuda === 'codigo' && Number(d.pedido_id) === Number(pedidoId);
+  return d.tipo === 'soporte' && (d.ayuda === 'codigo' || d.ayuda === 'tercero') && Number(d.pedido_id) === Number(pedidoId);
 }
 
 function esLlamadaCliente(n, pedidoId) {
@@ -1509,8 +1510,9 @@ async function crearSoporte(deps = {}) {
   const motivo = deps.motivo;
   const esLlamada = motivo === 'llamada';
   const esAyudaCodigo = motivo === 'ayuda_codigo';
+  const esAyudaTercero = motivo === 'ayuda_tercero';
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
-  const esperaDesde = esLlamada || esAyudaCodigo ? new Date().toISOString() : null;
+  const esperaDesde = esLlamada || esAyudaCodigo || esAyudaTercero ? new Date().toISOString() : null;
   const repartidorNombre = await nombreDelRepartidor(deps);
   const tipo = esLlamada ? 'llamada_cliente' : 'soporte';
   const notificacion = await crearNotificacion({
@@ -1526,12 +1528,15 @@ async function crearSoporte(deps = {}) {
       ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
       motivo: String(deps.nota || '').trim().slice(0, 500) || motivo,
       ...(esAyudaCodigo ? { ayuda: 'codigo' } : {}),
+      ...(esAyudaTercero ? { ayuda: 'tercero' } : {}),
       ...(String(deps.nota || '').trim() ? { nota: String(deps.nota).trim().slice(0, 500) } : {}),
     },
   });
   const datos = {
     ...(notificacion.datos || {}),
-    actionUrl: `/dashboard/call-center?tab=operacion&aviso=${notificacion.id}`,
+    actionUrl: esAyudaCodigo || esAyudaTercero
+      ? `/dashboard/call-center?tab=soporte&aviso=${notificacion.id}`
+      : `/dashboard/call-center?tab=operacion&aviso=${notificacion.id}`,
   };
   if (typeof notificacion.update === 'function') await notificacion.update({ datos });
   else notificacion.datos = datos;
@@ -1585,6 +1590,15 @@ async function perfil(deps = {}) {
   const stats = await logroStats({ ...deps, fecha }, timeZone, puntos);
   const efectivo = await efectivoHoy({ ...deps, fecha }, timeZone);
   const ciudad = repartidor?.ciudad ? plain(repartidor.ciudad) : null;
+  const db = getModels(deps);
+  let asignado = null;
+  if (typeof db.ContactoSoporte?.findAll === 'function') {
+    const filas = await db.ContactoSoporte.findAll({ attributes: ['telefono', 'repartidores'] });
+    asignado = telefonoDeRepartidor(
+      filas.map((row) => ({ telefono: row.telefono, repartidorIds: row.repartidores || [] })),
+      repartidor.id,
+    );
+  }
   return {
     id: repartidor.id,
     nombre: repartidor.nombre_completo,
@@ -1594,6 +1608,7 @@ async function perfil(deps = {}) {
     jornada: jornada
       ? { id: jornada.id, estado: jornada.estado, fecha: jornada.fecha }
       : { estado: 'borrador', fecha },
+    telefono_call_center: asignado || ciudad?.numero_soporte_cliente || ciudad?.telefono || null,
     ciudad: ciudad
       ? {
         id: ciudad.id,

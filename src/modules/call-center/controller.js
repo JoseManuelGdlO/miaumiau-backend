@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto']);
 
 function live(extra) {
   return {
@@ -81,6 +81,18 @@ function estado(req, res) {
 
 function repartidores(req, res) {
   return handle(res, () => service.listarRepartidores({ ciudadId: req.query.ciudadId }), 'repartidores');
+}
+
+function contactos(req, res) {
+  return handle(res, () => service.listarContactos({}), 'contactos');
+}
+
+function guardarContacto(req, res) {
+  return handle(res, () => service.guardarContacto({
+    usuarioId: req.params.usuarioId,
+    telefono: req.body?.telefono,
+    repartidorIds: req.body?.repartidor_ids,
+  }), 'guardarContacto');
 }
 
 function liberarCierre(req, res) {
@@ -163,6 +175,8 @@ function resolverAyuda(req, res) {
   return handle(res, () => service.resolverAyuda(live({
     notificacionId: req.params.id,
     accion: req.body?.accion,
+    receptor: req.body?.receptor,
+    usuario: req.user,
   })), 'resolverAyuda');
 }
 
@@ -194,6 +208,8 @@ module.exports = {
   repartidores,
   reasignar,
   liberarCierre,
+  contactos,
+  guardarContacto,
   reagendar,
   cambiarFranja,
   moverParada,

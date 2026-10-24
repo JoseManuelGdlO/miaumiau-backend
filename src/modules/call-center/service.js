@@ -4,6 +4,7 @@ const { refrescarCargaEnValidacion, olvidarOrdenRuta, liberarSiguienteParada } =
 const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
   approveCheck,
+  reagendarCheck,
   attendCheck,
   appendNota,
   stamp,
@@ -17,12 +18,16 @@ const {
   toSolicitudDetalle,
   toPedidoDia,
   toRepartidorOpcion,
+  puedeAutorizarExcepcion,
+  normalizarContacto,
   comprobantePublicPath,
   ACTIVE,
 } = require('./domain');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { franjaDeHorario } = require('../pedidos/horario');
+const { registrarCambio } = require('../historial/service');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
+const usersWithPermission = require('../../utils/usersWithPermission');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
@@ -757,8 +762,10 @@ async function liberarCierre(deps = {}) {
 }
 
 async function reagendar(deps = {}) {
-  const fecha = String(deps.fecha || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fail(422, 'La fecha no es válida');
+  const hoy = await fechaDeHoy(deps);
+  const regla = reagendarCheck({ fecha: deps.fecha, hoy, rol: deps.usuario?.rol?.nombre });
+  if (!regla.ok) fail(regla.statusCode, regla.message);
+  const fecha = regla.fecha;
   const motivo = String(deps.motivo || '').trim();
   if (!motivo) fail(422, 'El motivo es obligatorio');
   const db = getModels(deps);
@@ -774,7 +781,6 @@ async function reagendar(deps = {}) {
   if (!note.ok) fail(note.statusCode, note.message);
   const estado = pedido.estado === 'no_entregado' || pedido.estado === 'en_camino' ? 'confirmado' : pedido.estado;
   await pedido.update({ fecha_entrega_estimada: fecha, estado, notas: note.notas });
-  const hoy = await fechaDeHoy(deps);
   const paradas = await db.RutaPedido.findAll({
     where: { fkid_pedido: pedido.id },
     include: [{
@@ -1077,6 +1083,53 @@ async function asignarActividad(deps = {}) {
   return { ruta_id: ruta.id, pedido_id: pedido.id };
 }
 
+async function listarContactos(deps = {}) {
+  const db = getModels(deps);
+  const users = deps.usuarios || await usersWithPermission('operar_call_center');
+  const guardados = typeof db.ContactoSoporte?.findAll === 'function' ? await db.ContactoSoporte.findAll() : [];
+  const repartidores = typeof db.Repartidor?.findAll === 'function'
+    ? await db.Repartidor.findAll({
+      where: { baja_logica: false },
+      attributes: ['id', 'nombre_completo'],
+      order: [['nombre_completo', 'ASC']],
+    })
+    : [];
+  const porUsuario = new Map(guardados.map((row) => [Number(row.fkid_usuario), row]));
+  return {
+    personas: users.map((user) => {
+      const row = porUsuario.get(Number(user.id));
+      const ids = Array.isArray(row?.repartidores) ? row.repartidores.map(Number) : [];
+      return {
+        id: user.id,
+        nombre: user.nombre_completo,
+        telefono: row?.telefono || '',
+        repartidor_ids: ids,
+      };
+    }).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es')),
+    repartidores: repartidores.map((row) => ({ id: row.id, nombre: row.nombre_completo })),
+  };
+}
+
+async function guardarContacto(deps = {}) {
+  const norma = normalizarContacto({ telefono: deps.telefono, repartidorIds: deps.repartidorIds });
+  if (!norma.ok) fail(norma.statusCode, norma.message);
+  const db = getModels(deps);
+  const usuarioId = Number(deps.usuarioId);
+  const users = deps.usuarios || await usersWithPermission('operar_call_center');
+  if (!users.some((user) => Number(user.id) === usuarioId)) fail(404, 'Esa persona no tiene acceso a Call Center');
+  const rows = await db.ContactoSoporte.findAll();
+  for (const row of rows) {
+    if (Number(row.fkid_usuario) === usuarioId) continue;
+    const actuales = Array.isArray(row.repartidores) ? row.repartidores.map(Number) : [];
+    const queda = actuales.filter((id) => !norma.repartidorIds.includes(id));
+    if (queda.length !== actuales.length) await row.update({ repartidores: queda });
+  }
+  const propio = rows.find((row) => Number(row.fkid_usuario) === usuarioId);
+  if (propio) await propio.update({ telefono: norma.telefono, repartidores: norma.repartidorIds });
+  else await db.ContactoSoporte.create({ fkid_usuario: usuarioId, telefono: norma.telefono, repartidores: norma.repartidorIds });
+  return { guardado: true };
+}
+
 async function resolverAyuda(deps = {}) {
   const accion = deps.accion;
   const db = getModels(deps);
@@ -1094,6 +1147,9 @@ async function resolverAyuda(deps = {}) {
     if (!pedido?.codigo_entrega) fail(404, 'Ese pedido no tiene código');
     return { codigo: pedido.codigo_entrega };
   }
+  if (accion === 'aprobar_codigo' || accion === 'autorizar_tercero') {
+    if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un supervisor puede autorizar esta entrega');
+  }
   if (accion === 'aprobar_codigo') {
     if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
     await parada.update({ codigo_validado_en: new Date() });
@@ -1101,7 +1157,20 @@ async function resolverAyuda(deps = {}) {
     return { aprobado: true };
   }
   if (accion === 'autorizar_tercero') {
+    if (datos.ayuda !== 'tercero') fail(422, 'El repartidor todavía no pidió entregar a otra persona');
+    const receptor = String(deps.receptor || '').trim();
+    if (receptor.length < 2) fail(422, 'Escribe quién recibe');
     await parada.update({ entrega_tercero_en: new Date() });
+    if (typeof notificacion.update === 'function') {
+      await notificacion.update({ datos: { ...datos, receptor_nombre: receptor } });
+    }
+    await registrarCambio({
+      usuarioId: deps.usuario?.id,
+      accion: 'Entrega a otra persona',
+      entidad: 'pedido',
+      entidadId: pedidoId,
+      detalle: `Autorizada la entrega del pedido ${pedidoId} a ${receptor}`,
+    });
     await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
     return { autorizado: true };
   }
@@ -1164,4 +1233,6 @@ module.exports = {
   asignarActividad,
   cerrarSinCodigo,
   resolverAyuda,
+  listarContactos,
+  guardarContacto,
 };

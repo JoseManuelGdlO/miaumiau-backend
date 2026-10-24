@@ -23,6 +23,7 @@ const { getHub } = require('./modules/realtime');
 
 const log = new Logger('App');
 const autoEntregarPedidos = require('./jobs/autoEntregarPedidos');
+const reencolarAyer = require('./jobs/reencolarNoEntregados');
 
 // Importar rutas
 const authRoutes = require('./modules/auth/routes');
@@ -353,7 +354,20 @@ const startServer = async () => {
       timezone: "America/Mexico_City" // Ajusta según tu zona horaria
     });
     
-    log.info('Jobs programados iniciados: Auto-entregar pedidos (cada hora)');
+    cron.schedule('5 0 * * *', async () => {
+      log.info('Ejecutando job: Re-encolar no entregados');
+      try {
+        const moved = await reencolarAyer();
+        log.info('Pedidos no entregados vueltos a la cola', { moved });
+      } catch (error) {
+        log.error('Error re-encolando no entregados', { message: error.message, stack: error.stack });
+      }
+    }, {
+      scheduled: true,
+      timezone: 'America/Mexico_City',
+    });
+
+    log.info('Jobs programados iniciados: Auto-entregar pedidos (cada hora), re-encolar no entregados (00:05)');
   } catch (error) {
     log.error('Error al iniciar el servidor', { message: error.message, stack: error.stack });
     process.exit(1);
