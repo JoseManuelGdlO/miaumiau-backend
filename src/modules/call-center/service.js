@@ -8,6 +8,7 @@ const {
   attendCheck,
   appendNota,
   stamp,
+  phoneOf,
   NOTE_LIMIT,
   transition,
   reassignCheck,
@@ -19,15 +20,17 @@ const {
   toPedidoDia,
   toRepartidorOpcion,
   puedeAutorizarExcepcion,
+  cierreDirectoCheck,
   normalizarContacto,
-  puedeEditarContacto,
+  normalizarLineas,
+  lineasDeFila,
   comprobantePublicPath,
   ACTIVE,
 } = require('./domain');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { franjaDeHorario } = require('../pedidos/horario');
 const { registrarCambio } = require('../historial/service');
-const { reencolarNoEntregados } = require('../pedidos/reencolar');
+const { reencolarNoEntregados, encolarAlDiaSiguiente } = require('../pedidos/reencolar');
 const usersWithPermission = require('../../utils/usersWithPermission');
 const { Logger } = require('../../utils/logger');
 
@@ -739,6 +742,7 @@ async function listarRepartidores(deps = {}) {
 }
 
 async function liberarCierre(deps = {}) {
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede aprobar el check-out');
   const db = getModels(deps);
   const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
   if (!notificacion) fail(404, 'Solicitud no encontrada');
@@ -759,6 +763,40 @@ async function liberarCierre(deps = {}) {
     cerrado_por_nombre: quien.nombre,
   });
   await safeNotify(deps, jornada.fkid_repartidor, { type: 'jornada.actualizada' });
+  return { cerrada: true, cerrado_por_nombre: quien.nombre };
+}
+
+async function cierreDirecto(deps = {}) {
+  const db = getModels(deps);
+  const repartidorId = Number(deps.repartidorId);
+  if (!Number.isInteger(repartidorId) || repartidorId <= 0) fail(422, 'Elige un repartidor');
+  const fecha = deps.fecha || await fechaDeHoy(deps);
+  const jornada = deps.jornada || await db.JornadaRepartidor.findOne({
+    where: { fkid_repartidor: repartidorId, fecha },
+  });
+  const regla = cierreDirectoCheck({
+    rol: deps.usuario?.rol?.nombre,
+    tieneJornada: Boolean(jornada),
+    estado: jornada?.estado,
+  });
+  if (!regla.ok) fail(regla.statusCode, regla.message);
+  const quien = await nombreAprobador(deps);
+  await jornada.update({
+    estado: 'cerrada',
+    cerrada_en: new Date(),
+    cerrado_por_usuario_id: quien.id,
+    cerrado_por_nombre: quien.nombre,
+  });
+  const avisos = typeof db.Notificacion?.findAll === 'function'
+    ? await db.Notificacion.findAll({ where: openSolicitudWhere() })
+    : [];
+  for (const aviso of avisos.filter(isOpenSolicitud)) {
+    const datos = aviso.datos || {};
+    if (datos.tipo === 'cierre_dia' && Number(datos.jornada_id) === Number(jornada.id) && typeof aviso.update === 'function') {
+      await aviso.update({ leida: true });
+    }
+  }
+  await safeNotify(deps, repartidorId, { type: 'jornada.actualizada' });
   return { cerrada: true, cerrado_por_nombre: quien.nombre };
 }
 
@@ -1098,12 +1136,13 @@ async function listarContactos(deps = {}) {
   return {
     personas: users.map((user) => {
       const row = porUsuario.get(Number(user.id));
-      const ids = Array.isArray(row?.repartidores) ? row.repartidores.map(Number) : [];
+      const lineas = lineasDeFila(row || { telefono: '', repartidores: [] });
       return {
         id: user.id,
         nombre: user.nombre_completo,
-        telefono: row?.telefono || '',
-        repartidor_ids: ids,
+        telefono: lineas[0]?.telefono || '',
+        repartidor_ids: lineas.flatMap((linea) => linea.repartidorIds),
+        numeros: lineas.map((linea) => ({ telefono: linea.telefono, repartidor_ids: linea.repartidorIds })),
       };
     }).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es')),
     repartidores: repartidores.map((row) => ({ id: row.id, nombre: row.nombre_completo })),
@@ -1111,23 +1150,36 @@ async function listarContactos(deps = {}) {
 }
 
 async function guardarContacto(deps = {}) {
-  const norma = normalizarContacto({ telefono: deps.telefono, repartidorIds: deps.repartidorIds });
+  const norma = Array.isArray(deps.numeros)
+    ? normalizarLineas(deps.numeros)
+    : normalizarContacto({ telefono: deps.telefono, repartidorIds: deps.repartidorIds });
   if (!norma.ok) fail(norma.statusCode, norma.message);
+  const numeros = norma.numeros || [{ telefono: norma.telefono, repartidorIds: norma.repartidorIds }];
+  const tomados = new Set(numeros.flatMap((linea) => linea.repartidorIds));
   const db = getModels(deps);
   const usuarioId = Number(deps.usuarioId);
-  if (!puedeEditarContacto(deps.usuario?.id, usuarioId)) fail(403, 'Solo puedes editar tu propio contacto');
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede cambiar los contactos');
   const users = deps.usuarios || await usersWithPermission('operar_call_center');
   if (!users.some((user) => Number(user.id) === usuarioId)) fail(404, 'Esa persona no tiene acceso a Call Center');
   const rows = await db.ContactoSoporte.findAll();
   for (const row of rows) {
     if (Number(row.fkid_usuario) === usuarioId) continue;
-    const actuales = Array.isArray(row.repartidores) ? row.repartidores.map(Number) : [];
-    const queda = actuales.filter((id) => !norma.repartidorIds.includes(id));
-    if (queda.length !== actuales.length) await row.update({ repartidores: queda });
+    const raw = row.repartidores;
+    const queda = Array.isArray(raw) && raw.length && typeof raw[0] === 'object'
+      ? raw.map((item) => ({
+        telefono: item.telefono,
+        repartidorIds: (item.repartidorIds || item.repartidor_ids || []).map(Number).filter((id) => !tomados.has(id)),
+      }))
+      : (Array.isArray(raw) ? raw.map(Number).filter((id) => !tomados.has(id)) : []);
+    const antes = JSON.stringify(raw || []);
+    if (JSON.stringify(queda) !== antes) await row.update({ repartidores: queda });
   }
   const propio = rows.find((row) => Number(row.fkid_usuario) === usuarioId);
-  if (propio) await propio.update({ telefono: norma.telefono, repartidores: norma.repartidorIds });
-  else await db.ContactoSoporte.create({ fkid_usuario: usuarioId, telefono: norma.telefono, repartidores: norma.repartidorIds });
+  const guardado = numeros.length > 1 || Array.isArray(deps.numeros)
+    ? numeros
+    : numeros[0].repartidorIds;
+  if (propio) await propio.update({ telefono: numeros[0].telefono, repartidores: guardado });
+  else await db.ContactoSoporte.create({ fkid_usuario: usuarioId, telefono: numeros[0].telefono, repartidores: guardado });
   return { guardado: true };
 }
 
@@ -1149,7 +1201,7 @@ async function resolverAyuda(deps = {}) {
     return { codigo: pedido.codigo_entrega };
   }
   if (accion === 'aprobar_codigo' || accion === 'autorizar_tercero') {
-    if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un supervisor puede autorizar esta entrega');
+    if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede autorizar esta entrega');
   }
   if (accion === 'aprobar_codigo') {
     if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
@@ -1188,8 +1240,29 @@ async function cerrarSinCodigo(deps = {}) {
     fail(409, 'Ese pedido ya está cerrado');
   }
   const parada = await findRutaDeHoy(deps, pedido.id);
+  if (parada?.estado_entrega === 'fallido') fail(409, 'Ese pedido ya está cerrado');
   const ahora = new Date();
   await pedido.update({ estado: 'no_entregado' });
+  const nadie = /no contest|nadie|no hab[ií]a/i.test(motivo);
+  if (nadie) {
+    try {
+      const { avisarReagendar, elegirLinea } = require('../mensajeria/reagendar-whatsapp');
+      const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
+      const lineas = typeof db.WhatsAppPhoneNumber?.findAll === 'function'
+        ? await db.WhatsAppPhoneNumber.findAll({ attributes: ['phoneid', 'telefono'] })
+        : [];
+      const ciudad = pedido.fkid_ciudad && typeof db.City?.findByPk === 'function'
+        ? await db.City.findByPk(pedido.fkid_ciudad, { attributes: ['telefono'] })
+        : null;
+      await avisarReagendar({
+        telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
+        linea: elegirLinea(lineas, { telefonoCiudad: ciudad?.telefono }),
+      });
+    } catch (error) {
+      log.warn('No se pudo avisar el reagendo por WhatsApp', { message: error.message });
+    }
+  }
+  await encolarAlDiaSiguiente(pedido, await fechaDeHoy(deps));
   if (parada && typeof parada.update === 'function') {
     await parada.update({ estado_entrega: 'fallido', fecha_entrega_real: ahora });
   }
@@ -1206,7 +1279,7 @@ async function cerrarSinCodigo(deps = {}) {
     type: 'ruta.actualizada',
     pedidoId: Number(pedido.id),
   });
-  return { id: pedido.id, estado: 'no_entregado' };
+  return { id: pedido.id, estado: pedido.estado };
 }
 
 module.exports = {
@@ -1223,6 +1296,7 @@ module.exports = {
   listarRepartidores,
   fechaDeHoy,
   liberarCierre,
+  cierreDirecto,
   reagendar,
   cambiarFranja,
   moverParada,

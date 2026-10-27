@@ -28,8 +28,11 @@ const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventari
 const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
+const { encolarAlDiaSiguiente } = require('../pedidos/reencolar');
+const { Logger } = require('../../utils/logger');
 const { repartoBloqueado } = require('./deposito-pendiente');
 
+const log = new Logger('AppRepartidor');
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
 const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = '986416624552272';
 const PACKAGE_CODE_SEND_ERROR = 'No se pudo enviar el código al cliente. Intenta de nuevo.';
@@ -818,7 +821,18 @@ async function lineaWhatsAppDelCliente(deps, pedido) {
     });
     if (conversacion?.whatsapp_phone_number_id) return conversacion.whatsapp_phone_number_id;
   }
-  return DEFAULT_WHATSAPP_PHONE_NUMBER_ID;
+  const { elegirLinea } = require('../mensajeria/reagendar-whatsapp');
+  const lineas = typeof db.WhatsAppPhoneNumber?.findAll === 'function'
+    ? await db.WhatsAppPhoneNumber.findAll({ attributes: ['phoneid', 'telefono'] })
+    : [];
+  const ciudadId = pedido?.fkid_ciudad || pedido?.ciudad?.id;
+  const ciudad = pedido?.ciudad || (ciudadId && typeof db.City?.findByPk === 'function'
+    ? await db.City.findByPk(ciudadId, { attributes: ['telefono'] })
+    : null);
+  return elegirLinea(lineas, {
+    telefonoCiudad: ciudad?.telefono,
+    defecto: DEFAULT_WHATSAPP_PHONE_NUMBER_ID,
+  });
 }
 
 async function llegada(deps = {}) {
@@ -1314,9 +1328,9 @@ async function noEntregar(deps = {}) {
     fail(403, 'Debes esperar antes de avanzar');
   }
 
-  const rutaPedido = await assertRutaDelRepartidor(deps);
+  const rutaPedido = await assertRutaDelRepartidor(deps, { withPhone: true });
   const pedido = rutaPedido.pedido;
-  if (['entregado', 'no_entregado'].includes(pedido.estado)) {
+  if (['entregado', 'no_entregado'].includes(pedido.estado) || rutaPedido.estado_entrega === 'fallido') {
     fail(409, 'El pedido ya fue cerrado');
   }
   const now = new Date();
@@ -1333,6 +1347,18 @@ async function noEntregar(deps = {}) {
     precio_unitario: Number(prod.precio_unidad) || 0,
   })).filter((line) => line.nombre && line.cantidad > 0);
   await registrarExtraNoEntregado(deps, jornada, pedido.id, lineas);
+  if (deps.motivo === 'nadie') {
+    try {
+      const { avisarReagendar } = require('../mensajeria/reagendar-whatsapp');
+      await avisarReagendar({
+        telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
+        linea: await lineaWhatsAppDelCliente(deps, pedido),
+      });
+    } catch (error) {
+      log.warn('No se pudo avisar el reagendo por WhatsApp', { message: error.message });
+    }
+  }
+  await encolarAlDiaSiguiente(pedido, deps.fecha);
   return toPedidoDto(pedido, rutaPedido);
 }
 

@@ -334,7 +334,8 @@ test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
   expect(queries).toHaveLength(1);
   expect(queries[0].limit).toBeUndefined();
   expect(queries[0].where.leida).toBeUndefined();
-  expect(pedido.estado).toBe('no_entregado');
+  expect(pedido.estado).toBe('confirmado');
+  expect(pedido.notas).toContain('Volvió a la cola');
 });
 
 test('noEntregar acepta la ayuda de tercero cuando ya pasaron 15 minutos', async () => {
@@ -358,7 +359,7 @@ test('noEntregar acepta la ayuda de tercero cuando ya pasaron 15 minutos', async
       },
     },
   });
-  expect(pedido.estado).toBe('no_entregado');
+  expect(pedido.estado).toBe('confirmado');
   expect(rutaPedido.estado_entrega).toBe('fallido');
 });
 

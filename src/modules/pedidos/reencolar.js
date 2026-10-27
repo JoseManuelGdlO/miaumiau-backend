@@ -1,4 +1,35 @@
 const { Op } = require('sequelize');
+const { dayKey } = require('../app-repartidor/domain');
+
+const NOTA_COLA = 'Volvió a la cola: no se entregó el día anterior.';
+
+function diaSiguiente(fecha) {
+  const [y, m, d] = fecha.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${dt.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+function datosReencole(notas, fecha) {
+  const previas = String(notas || '');
+  return {
+    fecha_entrega_estimada: new Date(`${fecha}T12:00:00.000Z`),
+    estado: 'confirmado',
+    notas: (previas.includes(NOTA_COLA) ? previas : `${previas ? `${previas}\n` : ''}${NOTA_COLA}`).slice(0, 1000),
+  };
+}
+
+async function encolarAlDiaSiguiente(pedido, hoy) {
+  if (!pedido || pedido.baja_logica || pedido.estado === 'cancelado' || pedido.estado === 'entregado') return pedido;
+  const base = String(hoy || '').slice(0, 10);
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(base) ? diaSiguiente(base) : diaSiguiente(dayKey(new Date(), 'America/Mexico_City'));
+  const data = datosReencole(pedido.notas, fecha);
+  if (typeof pedido.update === 'function') await pedido.update(data);
+  else Object.assign(pedido, data);
+  return pedido;
+}
 
 function diaAnterior(fecha) {
   const [y, m, d] = fecha.split('-').map(Number);
@@ -25,15 +56,7 @@ async function reencolarNoEntregados(deps = {}) {
   let moved = 0;
   for (const row of rows) {
     if (row.estado && row.estado !== 'no_entregado') continue;
-    const nota = 'Volvió a la cola: no se entregó el día anterior.';
-    const notas = String(row.notas || '').includes(nota)
-      ? row.notas
-      : `${row.notas ? `${row.notas}\n` : ''}${nota}`.slice(0, 1000);
-    const data = {
-      fecha_entrega_estimada: new Date(`${fecha}T12:00:00.000Z`),
-      estado: 'confirmado',
-      notas,
-    };
+    const data = datosReencole(row.notas, fecha);
     if (typeof row.update === 'function') await row.update(data);
     else Object.assign(row, data);
     moved += 1;
@@ -41,4 +64,4 @@ async function reencolarNoEntregados(deps = {}) {
   return moved;
 }
 
-module.exports = { diaAnterior, reencolarNoEntregados };
+module.exports = { diaAnterior, diaSiguiente, encolarAlDiaSiguiente, reencolarNoEntregados };

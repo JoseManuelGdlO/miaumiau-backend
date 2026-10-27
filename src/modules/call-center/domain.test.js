@@ -14,9 +14,10 @@ const {
   puedeAutorizarExcepcion,
   reagendarCheck,
   normalizarContacto,
+  normalizarLineas,
   quitarRepartidores,
   telefonoDeRepartidor,
-  puedeEditarContacto,
+  cierreDirectoCheck,
   NOTE_LIMIT,
 } = require('./domain');
 
@@ -183,16 +184,28 @@ test('un repartidor queda con un solo contacto de incidencia', () => {
   expect(rows[0].repartidorIds).toEqual([3]);
   expect(telefonoDeRepartidor(rows, 2)).toBe('6181892035');
   expect(telefonoDeRepartidor(rows, 3)).toBe('1111111111');
-  expect(puedeEditarContacto(8, 8)).toBe(true);
-  expect(puedeEditarContacto(1, 8)).toBe(false);
+  const varias = normalizarLineas([
+    { telefono: '6181111111', repartidor_ids: [2] },
+    { telefono: '6182222222', repartidor_ids: [4] },
+  ]);
+  expect(varias.ok).toBe(true);
+  expect(telefonoDeRepartidor([{ telefono: varias.telefono, repartidores: varias.numeros }], 4)).toBe('6182222222');
+  expect(normalizarLineas([
+    { telefono: '6181111111', repartidor_ids: [2] },
+    { telefono: '6182222222', repartidor_ids: [2] },
+  ]).statusCode).toBe(422);
 });
 
-test('solo admin o supervisor autoriza una excepción de entrega', () => {
+test('solo un super admin autoriza una excepción, un contacto o un cierre directo', () => {
   expect(puedeAutorizarExcepcion('super_admin')).toBe(true);
-  expect(puedeAutorizarExcepcion('admin')).toBe(true);
-  expect(puedeAutorizarExcepcion('supervisor_ventas')).toBe(true);
+  expect(puedeAutorizarExcepcion('admin')).toBe(false);
+  expect(puedeAutorizarExcepcion('supervisor_ventas')).toBe(false);
   expect(puedeAutorizarExcepcion('user')).toBe(false);
   expect(puedeAutorizarExcepcion('')).toBe(false);
+  expect(cierreDirectoCheck({ rol: 'admin', tieneJornada: true, estado: 'validada' }).statusCode).toBe(403);
+  expect(cierreDirectoCheck({ rol: 'super_admin', tieneJornada: false, estado: null }).statusCode).toBe(404);
+  expect(cierreDirectoCheck({ rol: 'super_admin', tieneJornada: true, estado: 'cerrada' }).statusCode).toBe(409);
+  expect(cierreDirectoCheck({ rol: 'super_admin', tieneJornada: true, estado: 'validada' }).ok).toBe(true);
 });
 
 test('la cola ignora leídas, canceladas y otros tipos', () => {

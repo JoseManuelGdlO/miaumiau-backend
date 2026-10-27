@@ -125,7 +125,11 @@ function toCargaValidada({ notificacion, repartidor, jornada }) {
 
 function repartidorDto(repartidor) {
   if (!repartidor) return null;
-  return { id: repartidor.id, nombre_completo: repartidor.nombre_completo };
+  return {
+    id: repartidor.id,
+    nombre_completo: repartidor.nombre_completo,
+    telefono: repartidor.telefono || null,
+  };
 }
 
 function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
@@ -236,6 +240,39 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
   };
 }
 
+function lineasDeFila(row) {
+  const raw = row?.repartidores ?? row?.repartidorIds;
+  if (Array.isArray(raw) && raw.length && typeof raw[0] === 'object') {
+    return raw.map((item) => ({
+      telefono: String(item.telefono || '').trim(),
+      repartidorIds: [...new Set((item.repartidorIds || item.repartidor_ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))],
+    }));
+  }
+  const ids = Array.isArray(raw) ? raw.map(Number).filter((id) => Number.isInteger(id) && id > 0) : [];
+  return [{ telefono: String(row?.telefono || '').trim(), repartidorIds: [...new Set(ids)] }];
+}
+
+function normalizarLineas(lineas) {
+  if (!Array.isArray(lineas) || !lineas.length) {
+    return { ok: false, statusCode: 422, message: 'Agrega un teléfono' };
+  }
+  const vistos = new Set();
+  const numeros = [];
+  for (const linea of lineas) {
+    const uno = normalizarContacto({
+      telefono: linea?.telefono,
+      repartidorIds: linea?.repartidor_ids || linea?.repartidorIds,
+    });
+    if (!uno.ok) return uno;
+    for (const id of uno.repartidorIds) {
+      if (vistos.has(id)) return { ok: false, statusCode: 422, message: 'Un repartidor solo puede estar en un número' };
+      vistos.add(id);
+    }
+    numeros.push({ telefono: uno.telefono, repartidorIds: uno.repartidorIds });
+  }
+  return { ok: true, telefono: numeros[0].telefono, numeros };
+}
+
 function normalizarContacto({ telefono, repartidorIds }) {
   const tel = String(telefono || '').trim();
   if (!/^[\+]?[0-9\s\-()]{8,20}$/.test(tel)) {
@@ -255,20 +292,26 @@ function quitarRepartidores(rows, usuarioId, ids) {
   }));
 }
 
-function puedeEditarContacto(actorId, usuarioId) {
-  const actor = Number(actorId);
-  return Number.isInteger(actor) && actor > 0 && actor === Number(usuarioId);
+function cierreDirectoCheck({ rol, tieneJornada, estado }) {
+  if (!puedeAutorizarExcepcion(rol)) {
+    return { ok: false, statusCode: 403, message: 'Solo un super admin puede cerrar la jornada' };
+  }
+  if (!tieneJornada) return { ok: false, statusCode: 404, message: 'Ese repartidor no tiene jornada hoy' };
+  if (estado === 'cerrada') return { ok: false, statusCode: 409, message: 'Esa jornada ya está cerrada' };
+  return { ok: true };
 }
 
 function telefonoDeRepartidor(rows, repartidorId) {
   const id = Number(repartidorId);
-  const row = (rows || []).find((item) => (item.repartidorIds || []).map(Number).includes(id) && item.telefono);
-  return row ? String(row.telefono) : null;
+  for (const row of rows || []) {
+    const linea = lineasDeFila(row).find((item) => item.repartidorIds.includes(id) && item.telefono);
+    if (linea) return String(linea.telefono);
+  }
+  return null;
 }
 
 function puedeAutorizarExcepcion(rol) {
-  const nombre = String(rol || '');
-  return nombre === 'super_admin' || nombre === 'admin' || nombre.includes('supervisor');
+  return String(rol || '') === 'super_admin';
 }
 
 function toRepartidorOpcion(repartidor) {
@@ -296,8 +339,10 @@ module.exports = {
   comprobantePublicPath,
   toRepartidorOpcion,
   puedeAutorizarExcepcion,
+  cierreDirectoCheck,
   normalizarContacto,
+  normalizarLineas,
+  lineasDeFila,
   quitarRepartidores,
   telefonoDeRepartidor,
-  puedeEditarContacto,
 };

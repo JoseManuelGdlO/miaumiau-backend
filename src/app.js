@@ -234,12 +234,21 @@ app.use((req, res, next) => {
     if (SIN_HISTORIAL.some((prefix) => ruta.startsWith(prefix))) return;
     if (ruta.includes('/cerrar-sin-codigo')) return;
     const escrito = describirCambio(req.method, ruta);
+    const cuerpo = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    for (const clave of ['contrasena', 'password', 'token', 'authorization', 'refreshToken']) delete cuerpo[clave];
+    const contexto = JSON.stringify({
+      ip: req.headers['x-forwarded-for'] || req.ip || null,
+      ruta,
+      metodo: req.method,
+      usuario: req.user.nombre_completo || req.user.id,
+      body: cuerpo,
+    }).slice(0, 1500);
     void registrarCambio({
       usuarioId: req.user.id,
       accion: escrito.accion,
       entidad: escrito.entidad,
       entidadId: req.params?.id || null,
-      detalle: escrito.detalle,
+      detalle: `${escrito.detalle}\n${contexto}`,
     });
   });
   next();
