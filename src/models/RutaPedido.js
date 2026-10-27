@@ -116,6 +116,10 @@ module.exports = (sequelize, DataTypes) => {
     liberado_en: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    entrega_tercero_en: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'rutas_pedidos',

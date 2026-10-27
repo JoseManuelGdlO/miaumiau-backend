@@ -11,6 +11,13 @@ const {
   toCargaValidada,
   toSolicitudDetalle,
   toPedidoDia,
+  puedeAutorizarExcepcion,
+  reagendarCheck,
+  normalizarContacto,
+  normalizarLineas,
+  quitarRepartidores,
+  telefonoDeRepartidor,
+  cierreDirectoCheck,
   NOTE_LIMIT,
 } = require('./domain');
 
@@ -90,6 +97,7 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   expect(dia.ciudad_id).toBe(2);
   expect(dia.modificado).toBe(false);
   expect(dia.comprobante_url).toBeNull();
+  expect(dia.total).toBe(0);
   const tocado = toPedidoDia({
     pedido: {
       id: 4,
@@ -155,6 +163,52 @@ test('el histórico solo incluye check-in leídos y no cancelados', () => {
   expect(row.validado_por_nombre).toBe('Mariana G.');
   expect(row.dinero_esperado).toBe(80);
   expect(row.cargas[0].nombre).toBe('Arena');
+});
+
+test('reagendar el mismo día solo lo hace un super admin', () => {
+  expect(reagendarCheck({ fecha: '2026-10-24', hoy: '2026-10-23', rol: 'user' }).ok).toBe(true);
+  expect(reagendarCheck({ fecha: '2026-10-23', hoy: '2026-10-23', rol: 'admin' }).statusCode).toBe(403);
+  expect(reagendarCheck({ fecha: '2026-10-23', hoy: '2026-10-23', rol: 'super_admin' }).ok).toBe(true);
+  expect(reagendarCheck({ fecha: '2026-10-22', hoy: '2026-10-23', rol: 'super_admin' }).statusCode).toBe(422);
+});
+
+test('un repartidor queda con un solo contacto de incidencia', () => {
+  const norma = normalizarContacto({ telefono: '618 189 2035', repartidorIds: [2, 2, 4] });
+  expect(norma.ok).toBe(true);
+  expect(norma.repartidorIds).toEqual([2, 4]);
+  expect(normalizarContacto({ telefono: '12', repartidorIds: [] }).statusCode).toBe(422);
+  const rows = quitarRepartidores([
+    { usuarioId: 1, telefono: '1111111111', repartidorIds: [2, 3] },
+    { usuarioId: 8, telefono: '6181892035', repartidorIds: [9] },
+  ], 8, norma.repartidorIds);
+  expect(rows[0].repartidorIds).toEqual([3]);
+  expect(telefonoDeRepartidor(rows, 2)).toBe('6181892035');
+  expect(telefonoDeRepartidor(rows, 3)).toBe('1111111111');
+  const varias = normalizarLineas([
+    { telefono: '6181111111', repartidor_ids: [2] },
+    { telefono: '6182222222', repartidor_ids: [4] },
+  ]);
+  expect(varias.ok).toBe(true);
+  expect(telefonoDeRepartidor([{ telefono: varias.telefono, repartidores: varias.numeros }], 4)).toBe('6182222222');
+  expect(normalizarLineas([
+    { telefono: '6181111111', repartidor_ids: [2] },
+    { telefono: '6182222222', repartidor_ids: [2] },
+  ]).statusCode).toBe(422);
+});
+
+test('solo un super admin autoriza una excepción, un contacto o un cierre directo', () => {
+  expect(puedeAutorizarExcepcion('super_admin')).toBe(true);
+  expect(puedeAutorizarExcepcion({ role: 'super_admin' })).toBe(true);
+  expect(puedeAutorizarExcepcion({ rol: { nombre: 'super_admin' } })).toBe(true);
+  expect(puedeAutorizarExcepcion({ role: 'admin' })).toBe(false);
+  expect(puedeAutorizarExcepcion('admin')).toBe(false);
+  expect(puedeAutorizarExcepcion('supervisor_ventas')).toBe(false);
+  expect(puedeAutorizarExcepcion('user')).toBe(false);
+  expect(puedeAutorizarExcepcion('')).toBe(false);
+  expect(cierreDirectoCheck({ rol: 'admin', tieneJornada: true, estado: 'validada' }).statusCode).toBe(403);
+  expect(cierreDirectoCheck({ rol: 'super_admin', tieneJornada: false, estado: null }).statusCode).toBe(404);
+  expect(cierreDirectoCheck({ rol: 'super_admin', tieneJornada: true, estado: 'cerrada' }).statusCode).toBe(409);
+  expect(cierreDirectoCheck({ rol: 'super_admin', tieneJornada: true, estado: 'validada' }).ok).toBe(true);
 });
 
 test('la cola ignora leídas, canceladas y otros tipos', () => {

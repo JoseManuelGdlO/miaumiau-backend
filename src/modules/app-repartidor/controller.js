@@ -213,7 +213,7 @@ async function solicitarLlamada(req, res) {
 async function noEntregar(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
-    return service.noEntregar(depsFrom(req, { fecha, timezone }));
+    return service.noEntregar(depsFrom(req, { fecha, timezone, motivo: req.body?.motivo, nota: req.body?.nota }));
   }, 'noEntregar');
 }
 
@@ -254,7 +254,9 @@ async function entregar(req, res) {
       monto_transferencia: req.body.monto_transferencia,
       efectivo: req.body.efectivo,
       transferencia: req.body.transferencia,
-      file: req.file,
+      file: req.file || req.files?.comprobante?.[0],
+      receptorNombre: req.body.receptor_nombre,
+      receptorFile: req.files?.receptor?.[0],
     }));
   }, 'entregar');
 }

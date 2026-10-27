@@ -19,6 +19,47 @@ async function callGeocodeApi(address, apiKey) {
 }
 
 // Helper: detectar si la API encontró la calle (vs dirección genérica tipo "Ciudad, Mexico")
+function direccionDeRespaldo(ciudad) {
+  const lugar = String(ciudad || '').trim();
+  if (lugar.length < 2) return '';
+  return `${lugar}, México`;
+}
+
+function coordsDe(data) {
+  if (data?.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) return null;
+  const result = data.results[0];
+  return {
+    lat: result.geometry.location.lat,
+    lng: result.geometry.location.lng,
+    formatted_address: result.formatted_address,
+  };
+}
+
+async function resolverDireccion({ address, ciudad, colonia, codigo_postal }, apiKey) {
+  let fullAddress = address;
+  if (colonia) fullAddress += `, ${colonia}`;
+  if (ciudad && !String(address).includes(ciudad)) fullAddress += `, ${ciudad}`;
+  if (codigo_postal) fullAddress += `, ${codigo_postal}`;
+
+  const primero = coordsDe(await callGeocodeApi(fullAddress, apiKey));
+  if (primero && isStreetFound(primero.formatted_address, address)) {
+    return { ...primero, aproximado: false };
+  }
+
+  if (colonia || codigo_postal) {
+    const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
+    const zona = coordsDe(await callGeocodeApi(fallbackAddress, apiKey));
+    if (zona) return { ...zona, aproximado: true };
+  }
+
+  if (primero) return { ...primero, aproximado: true };
+
+  const respaldo = direccionDeRespaldo(ciudad);
+  if (!respaldo) return null;
+  const ciudadHit = coordsDe(await callGeocodeApi(respaldo, apiKey));
+  return ciudadHit ? { ...ciudadHit, aproximado: true } : null;
+}
+
 function isStreetFound(formattedAddress, searchedAddress) {
   const parts = formattedAddress.split(',').map(s => s.trim()).filter(Boolean);
   if (parts.length <= 3) return false;
@@ -49,53 +90,11 @@ class MapsController {
         });
       }
 
-      // Construir dirección completa: address + colonia (opcional) + ciudad + codigo_postal (opcional)
-      let fullAddress = address;
-      if (colonia) fullAddress += `, ${colonia}`;
-      if (ciudad && !address.includes(ciudad)) fullAddress += `, ${ciudad}`;
-      if (codigo_postal) fullAddress += `, ${codigo_postal}`;
-
-      log.debug(`Geocodificando dirección: ${fullAddress}`);
-
-      let data = await callGeocodeApi(fullAddress, apiKey);
-
-      log.debug('Geocode respuesta cruda de Google', {
-        status: data?.status,
-        resultsLength: Array.isArray(data?.results) ? data.results.length : null,
-        error_message: data?.error_message
-      });
-
-      if (data.status === 'OK' && data.results.length > 0) {
-        const result = data.results[0];
-        const location = result.geometry.location;
-        const formattedAddress = result.formatted_address;
-
-        const streetFound = isStreetFound(formattedAddress, address);
-
-        if (!streetFound && (colonia || codigo_postal)) {
-          const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
-          log.debug(`Calle no encontrada, intentando fallback: ${fallbackAddress}`);
-          const fallbackData = await callGeocodeApi(fallbackAddress, apiKey);
-          if (fallbackData.status === 'OK' && fallbackData.results.length > 0) {
-            const fb = fallbackData.results[0];
-            return res.json({
-              success: true,
-              data: {
-                lat: fb.geometry.location.lat,
-                lng: fb.geometry.location.lng,
-                formatted_address: fb.formatted_address
-              }
-            });
-          }
-        }
-
+      const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal }, apiKey);
+      if (punto) {
         return res.json({
           success: true,
-          data: {
-            lat: location.lat,
-            lng: location.lng,
-            formatted_address: formattedAddress
-          }
+          data: punto
         });
       }
 
@@ -245,48 +244,17 @@ class MapsController {
           const codigo_postal = typeof addressData === 'object' ? addressData.codigo_postal : undefined;
           const colonia = typeof addressData === 'object' ? addressData.colonia : undefined;
 
-          let fullAddress = address;
-          if (colonia) fullAddress += `, ${colonia}`;
-          if (ciudad && !address.includes(ciudad)) fullAddress += `, ${ciudad}`;
-          if (codigo_postal) fullAddress += `, ${codigo_postal}`;
-
-          let data = await callGeocodeApi(fullAddress, apiKey);
-
-          if (data.status === 'OK' && data.results.length > 0) {
-            const result = data.results[0];
-            const location = result.geometry.location;
-            const formattedAddress = result.formatted_address;
-
-            const streetFound = isStreetFound(formattedAddress, address);
-
-            if (!streetFound && (colonia || codigo_postal)) {
-              const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
-              const fallbackData = await callGeocodeApi(fallbackAddress, apiKey);
-              if (fallbackData.status === 'OK' && fallbackData.results.length > 0) {
-                const fb = fallbackData.results[0];
-                return {
-                  address: addressKey,
-                  success: true,
-                  lat: fb.geometry.location.lat,
-                  lng: fb.geometry.location.lng,
-                  formatted_address: fb.formatted_address
-                };
-              }
-            }
-
-            return {
-              address: addressKey,
-              success: true,
-              lat: location.lat,
-              lng: location.lng,
-              formatted_address: formattedAddress
-            };
+          const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal }, apiKey);
+          if (!punto) {
+            return { address: addressKey, success: false, error: 'ZERO_RESULTS' };
           }
-
           return {
             address: addressKey,
-            success: false,
-            error: data.status
+            success: true,
+            lat: punto.lat,
+            lng: punto.lng,
+            formatted_address: punto.formatted_address,
+            aproximado: punto.aproximado,
           };
         } catch (error) {
           return {
@@ -311,4 +279,5 @@ class MapsController {
 }
 
 module.exports = new MapsController();
+module.exports.direccionDeRespaldo = direccionDeRespaldo;
 

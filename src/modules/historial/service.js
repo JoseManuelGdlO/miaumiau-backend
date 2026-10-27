@@ -73,6 +73,13 @@ function describirCambio(method, ruta) {
   return { accion: verbo, entidad: recurso, detalle };
 }
 
+function partirDetalle(detalle) {
+  const texto = String(detalle || '');
+  const corte = texto.indexOf('\n{');
+  if (corte < 0) return { detalle: detalleVisible(texto), contexto: null };
+  return { detalle: detalleVisible(texto.slice(0, corte)), contexto: texto.slice(corte + 1) };
+}
+
 function detalleVisible(detalle) {
   const texto = String(detalle || '');
   const match = texto.match(/^(POST|PUT|PATCH|DELETE)\s+(\S+)/i);
@@ -91,7 +98,7 @@ async function registrarCambio(deps = {}) {
       accion: String(deps.accion || 'cambio').slice(0, 80),
       entidad: String(deps.entidad || 'sistema').slice(0, 80),
       entidad_id: deps.entidadId == null ? null : String(deps.entidadId).slice(0, 40),
-      detalle: detalle.slice(0, 2000),
+      detalle: detalle.slice(0, 4000),
     });
   } catch (error) {
     log.warn('No se pudo guardar el historial', { message: error.message });
@@ -131,12 +138,15 @@ async function listar(deps = {}) {
     order: [['created_at', 'DESC']],
     limit: Math.min(Number(deps.limit) || 50, 100),
   });
-  return rows.map((row) => ({
+  return rows.map((row) => {
+    const partes = partirDetalle(row.detalle);
+    return {
     id: row.id,
     accion: ACCION_VISIBLE[row.accion] || row.accion,
     entidad: row.entidad,
     entidad_id: row.entidad_id,
-    detalle: detalleVisible(row.detalle),
+    detalle: partes.detalle,
+    contexto: partes.contexto,
     creado_en: row.created_at || row.createdAt,
     usuario: row.usuario ? {
       id: row.usuario.id,
@@ -144,7 +154,8 @@ async function listar(deps = {}) {
       correo: row.usuario.correo_electronico,
       rol: row.usuario.rol?.nombre || null,
     } : null,
-  }));
+    };
+  });
 }
 
 module.exports = { registrarCambio, listar, describirCambio };

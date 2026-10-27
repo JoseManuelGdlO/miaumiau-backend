@@ -12,6 +12,8 @@ const {
   stripPhone,
   dayKey,
   agruparCarga,
+  ayudaCodigoVencida,
+  avisaReagendo,
   META_DIARIA,
   PUNTOS_POR_ENTREGA,
 } = require('./domain');
@@ -109,6 +111,20 @@ describe('domain app-repartidor', () => {
       { fkid_producto: 4, nombre: 'Arena', cantidad: 6, precio_unitario: 10, es_extra: false },
       { fkid_producto: 8, nombre: 'Snack', cantidad: 1, precio_unitario: 20, es_extra: false },
     ]);
+  });
+
+  test('la ayuda con el código se puede saltar a los 15 minutos', () => {
+    const inicio = '2026-10-23T15:00:00.000Z';
+    expect(ayudaCodigoVencida(inicio, new Date('2026-10-23T15:14:00.000Z'))).toBe(false);
+    expect(ayudaCodigoVencida(inicio, new Date('2026-10-23T15:15:00.000Z'))).toBe(true);
+    expect(ayudaCodigoVencida('', new Date())).toBe(false);
+  });
+
+  test('solo nadie y reagendar avisan por WhatsApp', () => {
+    expect(avisaReagendo('nadie')).toBe(true);
+    expect(avisaReagendo('reagendar')).toBe(true);
+    expect(avisaReagendo('otro')).toBe(false);
+    expect(avisaReagendo(undefined)).toBe(false);
   });
 
   test('agruparCarga agrupa por nombre si no hay producto', () => {

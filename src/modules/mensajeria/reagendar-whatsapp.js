@@ -20,6 +20,16 @@ function textoDe(message) {
     || '';
 }
 
+function elegirLinea(lineas, { conversacionId, telefonoCiudad, defecto } = {}) {
+  if (conversacionId) return conversacionId;
+  const digitos = String(telefonoCiudad || '').replace(/\D/g, '').slice(-10);
+  const coinciden = digitos.length >= 10
+    ? (lineas || []).filter((row) => String(row.telefono || '').replace(/\D/g, '').endsWith(digitos) && row.phoneid)
+    : [];
+  if (coinciden.length) return coinciden[0].phoneid;
+  return defecto || LINEA;
+}
+
 function listaDeFechas(dias) {
   return {
     type: 'list',
@@ -107,6 +117,13 @@ async function atenderMensaje(message, phoneNumberId) {
   await sendWhatsAppInteractive(telefono, linea, listaDeFechas(proximosDias()));
 }
 
+async function avisarReagendar({ telefono, linea, send } = {}) {
+  if (!telefono || !linea) return false;
+  const enviar = send || sendWhatsAppInteractive;
+  const result = await enviar(telefono, linea, listaDeFechas(proximosDias()));
+  return Boolean(result?.success);
+}
+
 async function atenderEntrada(value) {
   const linea = value?.metadata?.phone_number_id;
   for (const message of value?.messages || []) {
@@ -121,6 +138,8 @@ async function atenderEntrada(value) {
 module.exports = {
   atenderEntrada,
   atenderMensaje,
+  avisarReagendar,
+  elegirLinea,
   textoDe,
   listaDeFechas,
 };

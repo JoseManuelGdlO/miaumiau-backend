@@ -4,9 +4,11 @@ const { refrescarCargaEnValidacion, olvidarOrdenRuta, liberarSiguienteParada } =
 const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
   approveCheck,
+  reagendarCheck,
   attendCheck,
   appendNota,
   stamp,
+  phoneOf,
   NOTE_LIMIT,
   transition,
   reassignCheck,
@@ -17,10 +19,20 @@ const {
   toSolicitudDetalle,
   toPedidoDia,
   toRepartidorOpcion,
+  nombreRol,
+  puedeAutorizarExcepcion,
+  cierreDirectoCheck,
+  normalizarContacto,
+  normalizarLineas,
+  lineasDeFila,
   comprobantePublicPath,
   ACTIVE,
 } = require('./domain');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
+const { franjaDeHorario } = require('../pedidos/horario');
+const { registrarCambio } = require('../historial/service');
+const { reencolarNoEntregados, encolarAlDiaSiguiente } = require('../pedidos/reencolar');
+const usersWithPermission = require('../../utils/usersWithPermission');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
@@ -30,6 +42,16 @@ const DEFAULT_ZONE = 'America/Mexico_City';
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
+}
+
+async function responderRepartidor(deps = {}) {
+  const texto = String(deps.texto || '').trim().slice(0, 300);
+  if (texto.length < 2) fail(422, 'Escribe el mensaje');
+  const id = Number(deps.repartidorId);
+  if (!Number.isFinite(id)) fail(422, 'Repartidor inválido');
+  // shortcut: el aviso vive solo en el socket, persistir si el repartidor debe verlo al reabrir la app
+  await safeNotify(deps, id, { type: 'soporte.mensaje', texto });
+  return { enviado: true };
 }
 
 async function safeNotify(deps, repartidorId, event) {
@@ -618,8 +640,9 @@ async function detalleSolicitud(deps = {}) {
   let pedido = null;
   let dineroEsperado = null;
   let deposito = null;
+  let jornada = null;
   if (datos.tipo === 'check_in' && datos.jornada_id) {
-    const jornada = await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] });
+    jornada = await db.JornadaRepartidor.findByPk(datos.jornada_id, { include: [{ association: 'cargas' }] });
     cargas = jornada?.cargas || [];
     dineroEsperado = jornada?.dinero_esperado;
   }
@@ -632,10 +655,65 @@ async function detalleSolicitud(deps = {}) {
       include: [{ association: 'cliente', attributes: ['id', 'nombre_completo', 'telefono'] }],
     });
   }
-  return {
+  const detalle = {
     ...toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, dineroEsperado, deposito }),
     ya_validada: yaValidada,
   };
+  if (datos.tipo === 'check_in') detalle.pedidos = await pedidosDeLaCarga(deps, jornada);
+  return detalle;
+}
+
+function pedidosDeRutas(rutas) {
+  const pedidos = [];
+  for (const ruta of rutas || []) {
+    if (ruta.baja_logica || ruta.estado === 'cancelada') continue;
+    for (const parada of ruta.pedidos || []) {
+      const pedido = parada.pedido;
+      if (!pedido || pedido.baja_logica || pedido.estado === 'cancelado') continue;
+      pedidos.push({
+        numero_pedido: pedido.numero_pedido || String(pedido.id || ''),
+        cliente: pedido.cliente?.nombre_completo || '',
+        productos: (pedido.productos || [])
+          .filter((linea) => linea && !linea.baja_logica)
+          .map((linea) => ({
+            nombre: linea.producto?.nombre || linea.nombre || '',
+            cantidad: Number(linea.cantidad) || 0,
+          }))
+          .filter((linea) => linea.nombre),
+      });
+    }
+  }
+  return pedidos;
+}
+
+async function pedidosDeLaCarga(deps, jornada) {
+  if (!jornada?.fkid_repartidor || !jornada.fecha) return [];
+  const db = getModels(deps);
+  if (typeof db.Ruta?.findAll !== 'function') return [];
+  const rutas = await db.Ruta.findAll({
+    where: {
+      fkid_repartidor: jornada.fkid_repartidor,
+      fecha_ruta: jornada.fecha,
+      baja_logica: false,
+    },
+    include: [{
+      association: 'pedidos',
+      required: false,
+      include: [{
+        association: 'pedido',
+        required: false,
+        include: [
+          { association: 'cliente', attributes: ['nombre_completo'], required: false },
+          {
+            association: 'productos',
+            required: false,
+            include: [{ association: 'producto', attributes: ['nombre'], required: false }],
+          },
+        ],
+      }],
+    }],
+  });
+  return pedidosDeRutas(rutas);
 }
 
 async function listarPedidos(deps = {}) {
@@ -675,6 +753,7 @@ async function listarRepartidores(deps = {}) {
 }
 
 async function liberarCierre(deps = {}) {
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede aprobar el check-out');
   const db = getModels(deps);
   const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
   if (!notificacion) fail(404, 'Solicitud no encontrada');
@@ -698,9 +777,45 @@ async function liberarCierre(deps = {}) {
   return { cerrada: true, cerrado_por_nombre: quien.nombre };
 }
 
+async function cierreDirecto(deps = {}) {
+  const db = getModels(deps);
+  const repartidorId = Number(deps.repartidorId);
+  if (!Number.isInteger(repartidorId) || repartidorId <= 0) fail(422, 'Elige un repartidor');
+  const fecha = deps.fecha || await fechaDeHoy(deps);
+  const jornada = deps.jornada || await db.JornadaRepartidor.findOne({
+    where: { fkid_repartidor: repartidorId, fecha },
+  });
+  const regla = cierreDirectoCheck({
+    rol: deps.usuario?.rol?.nombre,
+    tieneJornada: Boolean(jornada),
+    estado: jornada?.estado,
+  });
+  if (!regla.ok) fail(regla.statusCode, regla.message);
+  const quien = await nombreAprobador(deps);
+  await jornada.update({
+    estado: 'cerrada',
+    cerrada_en: new Date(),
+    cerrado_por_usuario_id: quien.id,
+    cerrado_por_nombre: quien.nombre,
+  });
+  const avisos = typeof db.Notificacion?.findAll === 'function'
+    ? await db.Notificacion.findAll({ where: openSolicitudWhere() })
+    : [];
+  for (const aviso of avisos.filter(isOpenSolicitud)) {
+    const datos = aviso.datos || {};
+    if (datos.tipo === 'cierre_dia' && Number(datos.jornada_id) === Number(jornada.id) && typeof aviso.update === 'function') {
+      await aviso.update({ leida: true });
+    }
+  }
+  await safeNotify(deps, repartidorId, { type: 'jornada.actualizada' });
+  return { cerrada: true, cerrado_por_nombre: quien.nombre };
+}
+
 async function reagendar(deps = {}) {
-  const fecha = String(deps.fecha || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fail(422, 'La fecha no es válida');
+  const hoy = await fechaDeHoy(deps);
+  const regla = reagendarCheck({ fecha: deps.fecha, hoy, rol: deps.usuario?.rol?.nombre });
+  if (!regla.ok) fail(regla.statusCode, regla.message);
+  const fecha = regla.fecha;
   const motivo = String(deps.motivo || '').trim();
   if (!motivo) fail(422, 'El motivo es obligatorio');
   const db = getModels(deps);
@@ -716,7 +831,6 @@ async function reagendar(deps = {}) {
   if (!note.ok) fail(note.statusCode, note.message);
   const estado = pedido.estado === 'no_entregado' || pedido.estado === 'en_camino' ? 'confirmado' : pedido.estado;
   await pedido.update({ fecha_entrega_estimada: fecha, estado, notas: note.notas });
-  const hoy = await fechaDeHoy(deps);
   const paradas = await db.RutaPedido.findAll({
     where: { fkid_pedido: pedido.id },
     include: [{
@@ -756,6 +870,10 @@ async function cambiarFranja(deps = {}) {
   const db = getModels(deps);
   const parada = await findRutaDeHoy(deps, deps.pedidoId);
   if (!parada) fail(409, 'Ese pedido no está en una ruta de hoy');
+  const paradas = deps.alcance === 'ruta' && parada.ruta
+    ? await db.RutaPedido.findAll({ where: { fkid_ruta: parada.fkid_ruta || parada.ruta.id }, include: [{ association: 'pedido', required: false }] })
+    : [parada];
+  await exigirFranja(db, paradas.length ? paradas : [parada], franja);
   await parada.update({ franja });
   if (deps.alcance === 'ruta' && parada.ruta) {
     if (typeof parada.ruta.update === 'function') await parada.ruta.update({ franja });
@@ -899,9 +1017,27 @@ async function listarDepositos(deps = {}) {
     }));
 }
 
+async function exigirFranja(db, paradas, franja) {
+  let pedidos = paradas.map((row) => row.pedido).filter(Boolean);
+  const faltan = paradas.filter((row) => !row.pedido && row.fkid_pedido);
+  if (faltan.length && typeof db.Pedido?.findAll === 'function') {
+    pedidos = pedidos.concat(await db.Pedido.findAll({
+      where: { id: faltan.map((row) => row.fkid_pedido) },
+      attributes: ['id', 'horario_preferente'],
+    }));
+  }
+  for (const pedido of pedidos) {
+    const esperada = franjaDeHorario(pedido.horario_preferente);
+    if (!esperada || esperada === franja) continue;
+    const hora = String(pedido.horario_preferente).slice(0, 5);
+    fail(422, `A partir de las ${hora} corresponde a ${esperada === 'tarde' ? 'Tarde' : 'Mañana'}`);
+  }
+}
+
 async function listarActividadesDisponibles(deps = {}) {
   const db = getModels(deps);
   const fecha = deps.fecha || await fechaDeHoy(deps);
+  await reencolarNoEntregados({ Pedido: db.Pedido, fecha });
   const where = {
     baja_logica: false,
     fecha_entrega_estimada: diaEntre(fecha),
@@ -984,7 +1120,7 @@ async function asignarActividad(deps = {}) {
     orden_entrega: (Number(maximo) || 0) + 1,
     orden_manual: true,
     estado_entrega: 'pendiente',
-    franja: ruta.franja === 'tarde' ? 'tarde' : 'manana',
+    franja: franjaDeHorario(pedido.horario_preferente) || (ruta.franja === 'tarde' ? 'tarde' : 'manana'),
     liberado_en: deps.now || new Date(),
   });
   await ruta.update({ total_pedidos: (Number(ruta.total_pedidos) || 0) + 1 });
@@ -997,6 +1133,114 @@ async function asignarActividad(deps = {}) {
   return { ruta_id: ruta.id, pedido_id: pedido.id };
 }
 
+async function listarContactos(deps = {}) {
+  const db = getModels(deps);
+  const users = deps.usuarios || await usersWithPermission('operar_call_center');
+  const guardados = typeof db.ContactoSoporte?.findAll === 'function' ? await db.ContactoSoporte.findAll() : [];
+  const repartidores = typeof db.Repartidor?.findAll === 'function'
+    ? await db.Repartidor.findAll({
+      attributes: ['id', 'nombre_completo'],
+      order: [['nombre_completo', 'ASC']],
+    })
+    : [];
+  const porUsuario = new Map(guardados.map((row) => [Number(row.fkid_usuario), row]));
+  return {
+    personas: users.map((user) => {
+      const row = porUsuario.get(Number(user.id));
+      const lineas = lineasDeFila(row || { telefono: '', repartidores: [] });
+      return {
+        id: user.id,
+        nombre: user.nombre_completo,
+        telefono: lineas[0]?.telefono || '',
+        repartidor_ids: lineas.flatMap((linea) => linea.repartidorIds),
+        numeros: lineas.map((linea) => ({ telefono: linea.telefono, repartidor_ids: linea.repartidorIds })),
+      };
+    }).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es')),
+    repartidores: repartidores.map((row) => ({ id: row.id, nombre: row.nombre_completo })),
+  };
+}
+
+async function guardarContacto(deps = {}) {
+  const norma = Array.isArray(deps.numeros)
+    ? normalizarLineas(deps.numeros)
+    : normalizarContacto({ telefono: deps.telefono, repartidorIds: deps.repartidorIds });
+  if (!norma.ok) fail(norma.statusCode, norma.message);
+  const numeros = norma.numeros || [{ telefono: norma.telefono, repartidorIds: norma.repartidorIds }];
+  const tomados = new Set(numeros.flatMap((linea) => linea.repartidorIds));
+  const db = getModels(deps);
+  const usuarioId = Number(deps.usuarioId);
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede cambiar los contactos');
+  const users = deps.usuarios || await usersWithPermission('operar_call_center');
+  if (!users.some((user) => Number(user.id) === usuarioId)) fail(404, 'Esa persona no tiene acceso a Call Center');
+  const rows = await db.ContactoSoporte.findAll();
+  for (const row of rows) {
+    if (Number(row.fkid_usuario) === usuarioId) continue;
+    const raw = row.repartidores;
+    const queda = Array.isArray(raw) && raw.length && typeof raw[0] === 'object'
+      ? raw.map((item) => ({
+        telefono: item.telefono,
+        repartidorIds: (item.repartidorIds || item.repartidor_ids || []).map(Number).filter((id) => !tomados.has(id)),
+      }))
+      : (Array.isArray(raw) ? raw.map(Number).filter((id) => !tomados.has(id)) : []);
+    const antes = JSON.stringify(raw || []);
+    if (JSON.stringify(queda) !== antes) await row.update({ repartidores: queda });
+  }
+  const propio = rows.find((row) => Number(row.fkid_usuario) === usuarioId);
+  const guardado = numeros.length > 1 || Array.isArray(deps.numeros)
+    ? numeros
+    : numeros[0].repartidorIds;
+  if (propio) await propio.update({ telefono: numeros[0].telefono, repartidores: guardado });
+  else await db.ContactoSoporte.create({ fkid_usuario: usuarioId, telefono: numeros[0].telefono, repartidores: guardado });
+  return { guardado: true };
+}
+
+async function resolverAyuda(deps = {}) {
+  const accion = deps.accion;
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion) fail(404, 'Solicitud no encontrada');
+  const datos = notificacion.datos || {};
+  const pedidoId = Number(datos.pedido_id);
+  if (!pedidoId) fail(422, 'Esta solicitud no tiene pedido');
+  const parada = await findRutaDeHoy(deps, pedidoId);
+  if (!parada) fail(409, 'Ese pedido no está en una ruta de hoy');
+  const repartidorId = parada.ruta?.fkid_repartidor;
+  if (accion === 'ver_codigo') {
+    if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
+    const pedido = await db.Pedido.findByPk(pedidoId, { attributes: ['codigo_entrega'] });
+    if (!pedido?.codigo_entrega) fail(404, 'Ese pedido no tiene código');
+    return { codigo: pedido.codigo_entrega };
+  }
+  if (accion === 'aprobar_codigo' || accion === 'autorizar_tercero') {
+    if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede autorizar esta entrega');
+  }
+  if (accion === 'aprobar_codigo') {
+    if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
+    await parada.update({ codigo_validado_en: new Date() });
+    await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
+    return { aprobado: true };
+  }
+  if (accion === 'autorizar_tercero') {
+    if (datos.ayuda !== 'tercero') fail(422, 'El repartidor todavía no pidió entregar a otra persona');
+    const receptor = String(deps.receptor || '').trim();
+    if (receptor.length < 2) fail(422, 'Escribe quién recibe');
+    await parada.update({ entrega_tercero_en: new Date() });
+    if (typeof notificacion.update === 'function') {
+      await notificacion.update({ datos: { ...datos, receptor_nombre: receptor } });
+    }
+    await registrarCambio({
+      usuarioId: deps.usuario?.id,
+      accion: 'Entrega a otra persona',
+      entidad: 'pedido',
+      entidadId: pedidoId,
+      detalle: `Autorizada la entrega del pedido ${pedidoId} a ${receptor}`,
+    });
+    await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
+    return { autorizado: true };
+  }
+  fail(422, 'Esa acción no existe');
+}
+
 async function cerrarSinCodigo(deps = {}) {
   const motivo = String(deps.motivo || '').trim();
   if (motivo.length < 5) fail(422, 'Escribe por qué se cierra el pedido sin el código del cliente');
@@ -1007,8 +1251,29 @@ async function cerrarSinCodigo(deps = {}) {
     fail(409, 'Ese pedido ya está cerrado');
   }
   const parada = await findRutaDeHoy(deps, pedido.id);
+  if (parada?.estado_entrega === 'fallido') fail(409, 'Ese pedido ya está cerrado');
   const ahora = new Date();
   await pedido.update({ estado: 'no_entregado' });
+  const nadie = /no contest|nadie|no hab[ií]a/i.test(motivo);
+  if (nadie) {
+    try {
+      const { avisarReagendar, elegirLinea } = require('../mensajeria/reagendar-whatsapp');
+      const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
+      const lineas = typeof db.WhatsAppPhoneNumber?.findAll === 'function'
+        ? await db.WhatsAppPhoneNumber.findAll({ attributes: ['phoneid', 'telefono'] })
+        : [];
+      const ciudad = pedido.fkid_ciudad && typeof db.City?.findByPk === 'function'
+        ? await db.City.findByPk(pedido.fkid_ciudad, { attributes: ['telefono'] })
+        : null;
+      await avisarReagendar({
+        telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
+        linea: elegirLinea(lineas, { telefonoCiudad: ciudad?.telefono }),
+      });
+    } catch (error) {
+      log.warn('No se pudo avisar el reagendo por WhatsApp', { message: error.message });
+    }
+  }
+  await encolarAlDiaSiguiente(pedido, await fechaDeHoy(deps));
   if (parada && typeof parada.update === 'function') {
     await parada.update({ estado_entrega: 'fallido', fecha_entrega_real: ahora });
   }
@@ -1025,7 +1290,7 @@ async function cerrarSinCodigo(deps = {}) {
     type: 'ruta.actualizada',
     pedidoId: Number(pedido.id),
   });
-  return { id: pedido.id, estado: 'no_entregado' };
+  return { id: pedido.id, estado: pedido.estado };
 }
 
 module.exports = {
@@ -1042,6 +1307,7 @@ module.exports = {
   listarRepartidores,
   fechaDeHoy,
   liberarCierre,
+  cierreDirecto,
   reagendar,
   cambiarFranja,
   moverParada,
@@ -1052,4 +1318,8 @@ module.exports = {
   listarActividadesDisponibles,
   asignarActividad,
   cerrarSinCodigo,
+  responderRepartidor,
+  resolverAyuda,
+  listarContactos,
+  guardarContacto,
 };

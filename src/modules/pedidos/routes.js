@@ -53,6 +53,11 @@ const validatePedido = [
       return parseFechaEntregaEstimada(value) !== null;
     })
     .withMessage('La fecha de entrega estimada debe ser una fecha válida (formato ISO YYYY-MM-DD o DD-MM-YYYY)'),
+
+  body('horario_preferente')
+    .optional({ nullable: true, checkFalsy: true })
+    .matches(/^([01]?\d|2[0-3]):[0-5]\d$/)
+    .withMessage('El horario preferente debe ser una hora, por ejemplo 16:00'),
   
   body('metodo_pago')
     .optional()

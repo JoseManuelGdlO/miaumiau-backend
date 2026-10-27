@@ -890,12 +890,12 @@ class RepartidorController {
 
       // Si no se entregó, actualizar también el estado del pedido
       if (estadoBD === 'fallido') {
-        await Pedido.update(
-          { 
-            estado: 'no_entregado'
-          },
-          { where: { id } }
-        );
+        const pedido = await Pedido.findByPk(id);
+        if (pedido) {
+          const { encolarAlDiaSiguiente } = require('../pedidos/reencolar');
+          const { dayKey } = require('../app-repartidor/domain');
+          await encolarAlDiaSiguiente(pedido, dayKey(new Date(), 'America/Mexico_City'));
+        }
       }
 
       // Obtener el pedido actualizado
