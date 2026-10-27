@@ -19,6 +19,7 @@ const {
   toSolicitudDetalle,
   toPedidoDia,
   toRepartidorOpcion,
+  nombreRol,
   puedeAutorizarExcepcion,
   cierreDirectoCheck,
   normalizarContacto,

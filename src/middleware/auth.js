@@ -44,6 +44,7 @@ const authenticateToken = async (req, res, next) => {
         id: user.id,
         email: decoded.email,
         role: decoded.role,
+        rol: decoded.role ? { nombre: decoded.role } : null,
         permissions: decoded.permissions,
         ciudad_id: user.ciudad_id,
         ciudad: user.ciudad

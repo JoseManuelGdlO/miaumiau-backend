@@ -15,6 +15,7 @@ const {
   stripPhone,
   dayKey,
   agruparCarga,
+  avisaReagendo,
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
@@ -1333,6 +1334,9 @@ async function noEntregar(deps = {}) {
   if (['entregado', 'no_entregado'].includes(pedido.estado) || rutaPedido.estado_entrega === 'fallido') {
     fail(409, 'El pedido ya fue cerrado');
   }
+  const motivo = String(deps.motivo || '');
+  const notaOtro = String(deps.nota || '').trim().slice(0, 200);
+  if (motivo === 'otro' && notaOtro.length < 3) fail(422, 'Escribe qué pasó');
   const now = new Date();
   await rutaPedido.update({
     estado_entrega: 'fallido',
@@ -1347,7 +1351,11 @@ async function noEntregar(deps = {}) {
     precio_unitario: Number(prod.precio_unidad) || 0,
   })).filter((line) => line.nombre && line.cantidad > 0);
   await registrarExtraNoEntregado(deps, jornada, pedido.id, lineas);
-  if (deps.motivo === 'nadie') {
+  if (motivo === 'otro') {
+    const previas = String(pedido.notas || '');
+    await pedido.update({ notas: `${previas ? `${previas}\n` : ''}No entregado: ${notaOtro}`.slice(0, 1000) });
+  }
+  if (avisaReagendo(motivo)) {
     try {
       const { avisarReagendar } = require('../mensajeria/reagendar-whatsapp');
       await avisarReagendar({

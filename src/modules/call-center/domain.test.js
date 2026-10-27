@@ -198,6 +198,9 @@ test('un repartidor queda con un solo contacto de incidencia', () => {
 
 test('solo un super admin autoriza una excepción, un contacto o un cierre directo', () => {
   expect(puedeAutorizarExcepcion('super_admin')).toBe(true);
+  expect(puedeAutorizarExcepcion({ role: 'super_admin' })).toBe(true);
+  expect(puedeAutorizarExcepcion({ rol: { nombre: 'super_admin' } })).toBe(true);
+  expect(puedeAutorizarExcepcion({ role: 'admin' })).toBe(false);
   expect(puedeAutorizarExcepcion('admin')).toBe(false);
   expect(puedeAutorizarExcepcion('supervisor_ventas')).toBe(false);
   expect(puedeAutorizarExcepcion('user')).toBe(false);

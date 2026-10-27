@@ -13,6 +13,7 @@ const {
   dayKey,
   agruparCarga,
   ayudaCodigoVencida,
+  avisaReagendo,
   META_DIARIA,
   PUNTOS_POR_ENTREGA,
 } = require('./domain');
@@ -117,6 +118,13 @@ describe('domain app-repartidor', () => {
     expect(ayudaCodigoVencida(inicio, new Date('2026-10-23T15:14:00.000Z'))).toBe(false);
     expect(ayudaCodigoVencida(inicio, new Date('2026-10-23T15:15:00.000Z'))).toBe(true);
     expect(ayudaCodigoVencida('', new Date())).toBe(false);
+  });
+
+  test('solo nadie y reagendar avisan por WhatsApp', () => {
+    expect(avisaReagendo('nadie')).toBe(true);
+    expect(avisaReagendo('reagendar')).toBe(true);
+    expect(avisaReagendo('otro')).toBe(false);
+    expect(avisaReagendo(undefined)).toBe(false);
   });
 
   test('agruparCarga agrupa por nombre si no hay producto', () => {

@@ -149,6 +149,10 @@ function ayudaCodigoVencida(esperaDesde, now) {
   return moment - start >= AYUDA_CODIGO_MS;
 }
 
+function avisaReagendo(motivo) {
+  return motivo === 'nadie' || motivo === 'reagendar';
+}
+
 function dayKey(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timeZone || 'America/Mexico_City',
@@ -177,4 +181,5 @@ module.exports = {
   dayKey,
   agruparCarga,
   ayudaCodigoVencida,
+  avisaReagendo,
 };

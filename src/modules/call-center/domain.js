@@ -34,7 +34,7 @@ function reagendarCheck({ fecha, hoy, rol }) {
   const dia = String(fecha || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return { ok: false, statusCode: 422, message: 'La fecha no es válida' };
   if (dia < hoy) return { ok: false, statusCode: 422, message: 'La fecha ya pasó' };
-  if (dia === hoy && rol !== 'super_admin') {
+  if (dia === hoy && nombreRol(rol) !== 'super_admin') {
     return { ok: false, statusCode: 403, message: 'Solo un super admin puede reagendar para el mismo día' };
   }
   return { ok: true, fecha: dia };
@@ -310,8 +310,14 @@ function telefonoDeRepartidor(rows, repartidorId) {
   return null;
 }
 
+function nombreRol(usuario) {
+  if (usuario == null) return '';
+  if (typeof usuario === 'string') return usuario;
+  return String(usuario.rol?.nombre || usuario.role || '');
+}
+
 function puedeAutorizarExcepcion(rol) {
-  return String(rol || '') === 'super_admin';
+  return nombreRol(rol) === 'super_admin';
 }
 
 function toRepartidorOpcion(repartidor) {
@@ -338,6 +344,7 @@ module.exports = {
   fueModificado,
   comprobantePublicPath,
   toRepartidorOpcion,
+  nombreRol,
   puedeAutorizarExcepcion,
   cierreDirectoCheck,
   normalizarContacto,
