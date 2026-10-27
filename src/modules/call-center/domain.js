@@ -144,6 +144,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
     repartidor: repartidorDto(repartidor),
     fecha: notificacion.fecha_creacion,
     hora: notificacion.hora_creacion,
+    ...(datos.espera_desde ? { espera_desde: datos.espera_desde } : {}),
     prioridad: notificacion.prioridad,
   };
 }

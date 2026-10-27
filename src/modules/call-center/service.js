@@ -44,6 +44,16 @@ function fail(status, message) {
   throw Object.assign(new Error(message), { status });
 }
 
+async function responderRepartidor(deps = {}) {
+  const texto = String(deps.texto || '').trim().slice(0, 300);
+  if (texto.length < 2) fail(422, 'Escribe el mensaje');
+  const id = Number(deps.repartidorId);
+  if (!Number.isFinite(id)) fail(422, 'Repartidor inválido');
+  // shortcut: el aviso vive solo en el socket, persistir si el repartidor debe verlo al reabrir la app
+  await safeNotify(deps, id, { type: 'soporte.mensaje', texto });
+  return { enviado: true };
+}
+
 async function safeNotify(deps, repartidorId, event) {
   if (typeof deps.notify !== 'function' || repartidorId == null || repartidorId === '') return;
   try {
@@ -1308,6 +1318,7 @@ module.exports = {
   listarActividadesDisponibles,
   asignarActividad,
   cerrarSinCodigo,
+  responderRepartidor,
   resolverAyuda,
   listarContactos,
   guardarContacto,

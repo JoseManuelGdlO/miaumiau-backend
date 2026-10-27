@@ -1570,7 +1570,7 @@ async function crearSoporte(deps = {}) {
     ...(notificacion.datos || {}),
     actionUrl: esAyudaCodigo || esAyudaTercero
       ? `/dashboard/call-center?tab=soporte&aviso=${notificacion.id}&repartidor=${deps.repartidorId}`
-      : `/dashboard/call-center?tab=operacion&aviso=${notificacion.id}`,
+      : `/dashboard/call-center?tab=incidencias&aviso=${notificacion.id}`,
   };
   if (typeof notificacion.update === 'function') await notificacion.update({ datos });
   else notificacion.datos = datos;
@@ -1629,7 +1629,13 @@ async function perfil(deps = {}) {
   if (typeof db.ContactoSoporte?.findAll === 'function') {
     const filas = await db.ContactoSoporte.findAll({ attributes: ['telefono', 'repartidores'] });
     asignado = telefonoDeRepartidor(
-      filas.map((row) => ({ telefono: row.telefono, repartidorIds: row.repartidores || [] })),
+      filas.map((row) => {
+        let repartidores = row.repartidores;
+        if (typeof repartidores === 'string') {
+          try { repartidores = JSON.parse(repartidores); } catch { repartidores = []; }
+        }
+        return { telefono: row.telefono, repartidores: repartidores || [] };
+      }),
       repartidor.id,
     );
   }

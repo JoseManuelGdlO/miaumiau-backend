@@ -32,6 +32,7 @@ router.post('/actividades', ...guard, controller.asignarActividad);
 router.post('/pedidos/:id/reagendar', ...guard, controller.reagendar);
 router.post('/solicitudes/:id/liberar-cierre', ...guard, controller.liberarCierre);
 router.post('/repartidores/:id/cierre-directo', ...guard, controller.cierreDirecto);
+router.post('/repartidores/:id/mensaje', ...guard, controller.responder);
 router.get('/contactos', ...guard, controller.contactos);
 router.put('/contactos/:usuarioId', ...guard, controller.guardarContacto);
 

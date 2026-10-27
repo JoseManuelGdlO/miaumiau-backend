@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder']);
 
 function live(extra) {
   return {
@@ -102,6 +102,13 @@ function liberarCierre(req, res) {
     notificacionId: req.params.id,
     usuario: req.user,
   })), 'liberarCierre');
+}
+
+function responder(req, res) {
+  return handle(res, () => service.responderRepartidor(live({
+    repartidorId: req.params.id,
+    texto: req.body?.texto,
+  })), 'responder');
 }
 
 function cierreDirecto(req, res) {
@@ -218,6 +225,7 @@ module.exports = {
   reasignar,
   liberarCierre,
   cierreDirecto,
+  responder,
   contactos,
   guardarContacto,
   reagendar,
