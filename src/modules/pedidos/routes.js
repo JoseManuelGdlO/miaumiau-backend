@@ -56,8 +56,12 @@ const validatePedido = [
 
   body('horario_preferente')
     .optional({ nullable: true, checkFalsy: true })
-    .matches(/^([01]?\d|2[0-3]):[0-5]\d$/)
-    .withMessage('El horario preferente debe ser una hora, por ejemplo 16:00'),
+    .custom((value) => {
+      const { horarioDeEntrega } = require('./horario');
+      const rango = horarioDeEntrega(value);
+      if (!rango.ok) throw new Error(rango.message);
+      return true;
+    }),
   
   body('metodo_pago')
     .optional()

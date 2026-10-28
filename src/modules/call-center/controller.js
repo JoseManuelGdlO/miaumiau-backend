@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'anotarComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder']);
 
 function live(extra) {
   return {
@@ -134,7 +134,17 @@ function liberarSiguiente(req, res) {
 }
 
 function comprobantes(req, res) {
-  return handle(res, () => service.listarComprobantes({}), 'comprobantes');
+  return handle(res, () => service.listarComprobantes({
+    fecha: req.query.fecha || null,
+    historico: req.query.historico || null,
+  }), 'comprobantes');
+}
+
+function anotarComprobante(req, res) {
+  return handle(res, () => service.anotarComprobante({
+    pedidoId: req.params.id,
+    comentario: req.body?.comentario,
+  }), 'anotarComprobante');
 }
 
 function subirComprobante(req, res) {
@@ -234,6 +244,7 @@ module.exports = {
   liberarSiguiente,
   velocidad,
   comprobantes,
+  anotarComprobante,
   subirComprobante,
   depositos,
   actividades,

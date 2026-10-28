@@ -31,7 +31,7 @@ const {
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { franjaDeHorario } = require('../pedidos/horario');
 const { registrarCambio } = require('../historial/service');
-const { reencolarNoEntregados, encolarAlDiaSiguiente } = require('../pedidos/reencolar');
+const { reencolarNoEntregados, encolarAlDiaSiguiente, soltarParadasAbiertas } = require('../pedidos/reencolar');
 const usersWithPermission = require('../../utils/usersWithPermission');
 const { Logger } = require('../../utils/logger');
 
@@ -773,6 +773,7 @@ async function liberarCierre(deps = {}) {
     cerrado_por_usuario_id: quien.id,
     cerrado_por_nombre: quien.nombre,
   });
+  await soltarParadasAbiertas(db, jornada.fkid_repartidor, jornada.fecha || await fechaDeHoy(deps));
   await safeNotify(deps, jornada.fkid_repartidor, { type: 'jornada.actualizada' });
   return { cerrada: true, cerrado_por_nombre: quien.nombre };
 }
@@ -807,6 +808,7 @@ async function cierreDirecto(deps = {}) {
       await aviso.update({ leida: true });
     }
   }
+  await soltarParadasAbiertas(db, repartidorId, fecha);
   await safeNotify(deps, repartidorId, { type: 'jornada.actualizada' });
   return { cerrada: true, cerrado_por_nombre: quien.nombre };
 }
@@ -923,19 +925,23 @@ function diaEntre(fecha) {
 
 async function listarComprobantes(deps = {}) {
   const db = getModels(deps);
-  const fecha = deps.fecha || await fechaDeHoy(deps);
+  const historico = deps.historico === '1' || deps.historico === true;
+  const fecha = historico ? null : (deps.fecha || await fechaDeHoy(deps));
   const rows = await db.RutaPedido.findAll({
     include: [
       {
         association: 'pedido',
         required: true,
         where: { baja_logica: false },
-        include: [{ association: 'cobro_entrega', required: false }],
+        include: [
+          { association: 'cobro_entrega', required: false },
+          { association: 'ciudad', required: false, attributes: ['nombre'] },
+        ],
       },
       {
         association: 'ruta',
         required: true,
-        where: { fecha_ruta: fecha, baja_logica: false },
+        where: fecha ? { fecha_ruta: fecha, baja_logica: false } : { baja_logica: false },
         include: [{ association: 'repartidor' }],
       },
     ],
@@ -950,11 +956,30 @@ async function listarComprobantes(deps = {}) {
       pedido_id: pedido.id,
       numero_pedido: pedido.numero_pedido,
       repartidor: row.ruta?.repartidor?.nombre_completo || null,
+      ciudad: pedido.ciudad?.nombre || null,
       metodo,
+      nota: row.notas_entrega || null,
+      fecha: row.ruta?.fecha_ruta || null,
       comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
       puede_subir: admiteFoto && !cobro?.comprobante_path,
     }];
   });
+}
+
+async function anotarComprobante(deps = {}) {
+  const texto = String(deps.comentario || '').trim().slice(0, 300);
+  if (texto.length < 2) fail(422, 'Escribe el comentario');
+  const db = getModels(deps);
+  const parada = await db.RutaPedido.findOne({
+    where: { fkid_pedido: deps.pedidoId },
+    order: [['id', 'DESC']],
+  });
+  if (!parada) fail(404, 'Ese pedido no está en una ruta');
+  // shortcut: el comentario vive en notas_entrega; moverlo a cobros_entrega cuando exista esa columna
+  const previas = String(parada.notas_entrega || '');
+  const linea = `Comprobante: ${texto}`;
+  await parada.update({ notas_entrega: (previas.includes(linea) ? previas : `${previas ? `${previas}\n` : ''}${linea}`).slice(0, 1000) });
+  return { guardado: true };
 }
 
 async function subirComprobante(deps = {}) {
@@ -1313,6 +1338,7 @@ module.exports = {
   moverParada,
   liberarSiguiente,
   listarComprobantes,
+  anotarComprobante,
   subirComprobante,
   listarDepositos,
   listarActividadesDisponibles,

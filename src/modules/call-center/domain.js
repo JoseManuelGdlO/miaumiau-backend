@@ -233,6 +233,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     notas: pedido.notas || null,
     franja: rutaPedido.franja === 'tarde' ? 'tarde' : 'manana',
     horario_preferente: pedido.horario_preferente ? String(pedido.horario_preferente).slice(0, 5) : null,
+    metodo_pago: pedido.metodo_pago || null,
     orden_entrega: rutaPedido.orden_entrega ?? null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,

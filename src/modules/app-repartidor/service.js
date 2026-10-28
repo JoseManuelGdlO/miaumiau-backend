@@ -29,7 +29,7 @@ const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventari
 const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
-const { encolarAlDiaSiguiente } = require('../pedidos/reencolar');
+const { encolarAlDiaSiguiente, soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
 const { repartoBloqueado } = require('./deposito-pendiente');
 
@@ -1251,6 +1251,26 @@ async function entregar(deps = {}) {
   }
 
   await refrescarCorte(deps);
+  const cobrado = String(metodo || '');
+  const original = String(pedido.metodo_pago || '');
+  if (original && cobrado && original !== cobrado) {
+    try {
+      await defaultCrearNotificacion(deps, {
+        nombre: 'Método de pago distinto',
+        descripcion: `${pedido.numero_pedido}: se cobró ${cobrado} y estaba en ${original}`,
+        prioridad: 'alta',
+        datos: {
+          tipo: 'soporte',
+          pedido_id: pedido.id,
+          numero_pedido: pedido.numero_pedido,
+          repartidor_id: deps.repartidorId,
+          motivo: `Cobró ${cobrado}. El pedido estaba en ${original}.`,
+        },
+      });
+    } catch (err) {
+      log.warn('no se avisó el cambio de método', { message: err.message });
+    }
+  }
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -1498,6 +1518,7 @@ async function registrarCaja(deps = {}) {
     efectivo_a_depositar: Number(deps.efectivo) || 0,
     comprobante_deposito_path: nuevo,
   });
+  await soltarParadasAbiertas(getModels(deps), deps.repartidorId, jornada.fecha);
   if (anterior && anterior !== nuevo) {
     const archivo = path.join(__dirname, '..', '..', 'uploads', 'comprobantes', path.basename(String(anterior)));
     fs.unlink(archivo, () => {});

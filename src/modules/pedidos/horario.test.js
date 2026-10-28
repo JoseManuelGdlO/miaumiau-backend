@@ -1,5 +1,5 @@
-const { franjaDeHorario, horarioNormalizado } = require('./horario');
-const { reencolarNoEntregados, encolarAlDiaSiguiente, diaSiguiente } = require('./reencolar');
+const { franjaDeHorario, horarioNormalizado, horarioDeEntrega } = require('./horario');
+const { reencolarNoEntregados, encolarAlDiaSiguiente, diaSiguiente, soltarParadasAbiertas } = require('./reencolar');
 const { elegirLinea } = require('../mensajeria/reagendar-whatsapp');
 
 test('antes de las 14 es mañana y desde las 14 es tarde', () => {
@@ -10,6 +10,13 @@ test('antes de las 14 es mañana y desde las 14 es tarde', () => {
   expect(franjaDeHorario('25:00')).toBeNull();
   expect(horarioNormalizado('9:05')).toBe('09:05:00');
   expect(horarioNormalizado('')).toBeNull();
+  expect(horarioDeEntrega('09:00').franja).toBe('manana');
+  expect(horarioDeEntrega('13:59').franja).toBe('manana');
+  expect(horarioDeEntrega('14:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('21:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('08:59').ok).toBe(false);
+  expect(horarioDeEntrega('21:01').ok).toBe(false);
+  expect(horarioDeEntrega('').ok).toBe(true);
 });
 
 test('el no entregado de ayer vuelve a la cola de hoy', async () => {
@@ -42,4 +49,16 @@ test('un no entregado de hoy queda para mañana y elige la línea de su ciudad',
   expect(elegirLinea(lineas, { conversacionId: 'ya-habla', telefonoCiudad: '6182222222' })).toBe('ya-habla');
   expect(elegirLinea(lineas, { telefonoCiudad: '618 222 2222' })).toBe('linea-norte');
   expect(elegirLinea([], {})).toBe('986416624552272');
+});
+
+test('al cerrar la ruta suelta lo pendiente y deja lo entregado', async () => {
+  const pendiente = { estado: 'pendiente', notas: '', update: async (data) => Object.assign(pendiente, data) };
+  const destruida = { estado_entrega: 'pendiente', pedido: pendiente, destroy: async () => { destruida.fuera = true; } };
+  const entregada = { estado_entrega: 'entregado', destroy: async () => { entregada.fuera = true; } };
+  await soltarParadasAbiertas({
+    Ruta: { findAll: async () => [{ pedidos: [destruida, entregada] }] },
+  }, 3, '2026-10-27');
+  expect(pendiente.estado).toBe('confirmado');
+  expect(destruida.fuera).toBe(true);
+  expect(entregada.fuera).toBeUndefined();
 });
