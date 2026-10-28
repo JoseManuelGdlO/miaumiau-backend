@@ -1257,7 +1257,7 @@ async function cerrarSinCodigo(deps = {}) {
   const nadie = /no contest|nadie|no hab[ií]a/i.test(motivo);
   if (nadie) {
     try {
-      const { avisarReagendar, elegirLinea } = require('../mensajeria/reagendar-whatsapp');
+      const { avisarNoEncontrado, elegirLinea } = require('../mensajeria/reagendar-whatsapp');
       const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
       const lineas = typeof db.WhatsAppPhoneNumber?.findAll === 'function'
         ? await db.WhatsAppPhoneNumber.findAll({ attributes: ['phoneid', 'telefono'] })
@@ -1265,7 +1265,7 @@ async function cerrarSinCodigo(deps = {}) {
       const ciudad = pedido.fkid_ciudad && typeof db.City?.findByPk === 'function'
         ? await db.City.findByPk(pedido.fkid_ciudad, { attributes: ['telefono'] })
         : null;
-      await avisarReagendar({
+      await avisarNoEncontrado({
         telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
         linea: elegirLinea(lineas, { telefonoCiudad: ciudad?.telefono }),
       });

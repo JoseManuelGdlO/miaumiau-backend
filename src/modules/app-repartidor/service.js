@@ -1357,8 +1357,9 @@ async function noEntregar(deps = {}) {
   }
   if (avisaReagendo(motivo)) {
     try {
-      const { avisarReagendar } = require('../mensajeria/reagendar-whatsapp');
-      await avisarReagendar({
+      const { avisarReagendar, avisarNoEncontrado } = require('../mensajeria/reagendar-whatsapp');
+      const avisar = motivo === 'nadie' ? avisarNoEncontrado : avisarReagendar;
+      await avisar({
         telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
         linea: await lineaWhatsAppDelCliente(deps, pedido),
       });

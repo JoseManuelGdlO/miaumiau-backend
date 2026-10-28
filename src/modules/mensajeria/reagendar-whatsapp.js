@@ -117,6 +117,15 @@ async function atenderMensaje(message, phoneNumberId) {
   await sendWhatsAppInteractive(telefono, linea, listaDeFechas(proximosDias()));
 }
 
+const AVISO_NADIE = 'Intentamos entregar su pedido y no fue posible porque no encontramos a nadie / no contestaron. Tu pedido ha sido reagendado para el día siguiente.';
+
+async function avisarNoEncontrado({ telefono, linea, send } = {}) {
+  if (!telefono || !linea) return false;
+  const enviar = send || sendWhatsAppMessage;
+  const result = await enviar(telefono, AVISO_NADIE, linea);
+  return Boolean(result?.success);
+}
+
 async function avisarReagendar({ telefono, linea, send } = {}) {
   if (!telefono || !linea) return false;
   const enviar = send || sendWhatsAppInteractive;
@@ -139,6 +148,7 @@ module.exports = {
   atenderEntrada,
   atenderMensaje,
   avisarReagendar,
+  avisarNoEncontrado,
   elegirLinea,
   textoDe,
   listaDeFechas,
