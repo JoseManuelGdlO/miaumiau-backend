@@ -4,7 +4,7 @@ const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { parseFechaEntregaEstimada } = require('../../utils/date');
-const { horarioDeEntrega } = require('./horario');
+const { horarioDeEntrega, ventanaDeCreacion } = require('./horario');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Pedidos');
@@ -662,6 +662,10 @@ class PedidoController {
   // Crear nuevo pedido
   async createPedido(req, res, next) {
     try {
+      const ventana = ventanaDeCreacion();
+      if (!ventana.ok) {
+        return res.status(422).json({ success: false, message: ventana.message });
+      }
       const {
         fkid_cliente,
         telefono_referencia,

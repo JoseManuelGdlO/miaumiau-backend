@@ -61,6 +61,9 @@ function validatePayment({ metodo, total, efectivo, transferencia, hasPhoto }) {
     if (!hasPhoto) return { ok: false, message: 'El pago mixto requiere foto del comprobante' };
     return { ok: cash > 0 && wire > 0 && cash + wire === due, message: 'Efectivo más transferencia debe ser el total' };
   }
+  if (metodo === 'terminal') {
+    return { ok: wire === due, message: 'El cobro con terminal debe cubrir el total' };
+  }
   return { ok: false, message: 'Método de pago inválido' };
 }
 

@@ -47,7 +47,7 @@ function listaDeFechas(dias) {
   };
 }
 
-async function pedidoAbierto(telefono) {
+async function pedidoDeHoy(telefono, estados) {
   const ultimos = String(telefono || '').replace(/\D/g, '').slice(-10);
   if (ultimos.length < 10) return null;
   const hoy = dayKey(new Date(), ZONE);
@@ -58,7 +58,7 @@ async function pedidoAbierto(telefono) {
       required: true,
       where: {
         baja_logica: false,
-        estado: { [Op.notIn]: ['entregado', 'cancelado', 'no_entregado'] },
+        estado: estados,
       },
       include: [{ model: db.Cliente, as: 'cliente', required: false }],
     }, {
@@ -73,6 +73,10 @@ async function pedidoAbierto(telefono) {
     const tel = `${pedido.telefono_referencia || ''} ${pedido.cliente?.telefono || ''}`;
     return tel.replace(/\D/g, '').endsWith(ultimos);
   })?.pedido || null;
+}
+
+async function pedidoAbierto(telefono) {
+  return pedidoDeHoy(telefono, { [Op.notIn]: ['entregado', 'cancelado', 'no_entregado'] });
 }
 
 async function reiniciarConversacion(telefono) {
@@ -111,6 +115,40 @@ async function atenderMensaje(message, phoneNumberId) {
     await sendWhatsAppMessage(telefono, `Listo. Tu pedido quedó para el ${fechaElegida}.`, linea);
     return;
   }
+  const nuevaDireccion = texto.match(/^direcci[oó]n\s*:\s*(.+)$/i);
+  if (/cambiar direcci[oó]n/i.test(texto) && !nuevaDireccion) {
+    await sendWhatsAppMessage(telefono, 'Escribe dirección: y después la calle completa.', linea);
+    return;
+  }
+  if (nuevaDireccion && nuevaDireccion[1].trim().length >= 10) {
+    const pedido = await pedidoAbierto(telefono);
+    if (!pedido) {
+      await sendWhatsAppMessage(telefono, 'No encuentro un pedido abierto para cambiar la dirección.', linea);
+      return;
+    }
+    await pedido.update({ direccion_entrega: nuevaDireccion[1].trim().slice(0, 500) });
+    await sendWhatsAppMessage(telefono, 'Listo. La entrega queda en la dirección que escribiste.', linea);
+    return;
+  }
+  const calificacion = texto.match(/^calificar:([1-5])$/);
+  if (calificacion) {
+    const pedido = await pedidoDeHoy(telefono, 'entregado');
+    if (!pedido) return;
+    const previas = String(pedido.notas || '');
+    const nota = `Calificación del servicio: ${calificacion[1]}`;
+    await pedido.update({ notas: (previas.includes(nota) ? previas : `${previas ? `${previas}\n` : ''}${nota}`).slice(0, 1000) });
+    await sendWhatsAppMessage(telefono, 'Gracias. Si quieres, escribe un comentario de la entrega.', linea);
+    return;
+  }
+  if (texto.length >= 2 && texto !== 'no_puedo' && !quiereReagendar(texto) && !/cambiar direcci/i.test(texto)) {
+    const pedido = await pedidoDeHoy(telefono, 'entregado');
+    const previas = String(pedido?.notas || '');
+    if (pedido && /Calificación del servicio: [1-5]$/.test(previas) && !previas.includes('Comentario:')) {
+      await pedido.update({ notas: `${previas}\nComentario: ${texto.trim().slice(0, 200)}`.slice(0, 1000) });
+      await sendWhatsAppMessage(telefono, 'Quedó registrado tu comentario.', linea);
+      return;
+    }
+  }
   if (texto !== 'no_puedo' && !quiereReagendar(texto)) return;
   const pedido = await pedidoAbierto(telefono);
   if (!pedido) return;
@@ -123,6 +161,27 @@ async function avisarNoEncontrado({ telefono, linea, send } = {}) {
   if (!telefono || !linea) return false;
   const enviar = send || sendWhatsAppMessage;
   const result = await enviar(telefono, AVISO_NADIE, linea);
+  return Boolean(result?.success);
+}
+
+function listaCalificacion() {
+  return {
+    type: 'list',
+    body: { text: '¿Cómo fue la entrega? Elige de 1 a 5.' },
+    action: {
+      button: 'Calificar',
+      sections: [{
+        title: 'Estrellas',
+        rows: [1, 2, 3, 4, 5].map((n) => ({ id: `calificar:${n}`, title: String(n) })),
+      }],
+    },
+  };
+}
+
+async function avisarCalificar({ telefono, linea, send } = {}) {
+  if (!telefono || !linea) return false;
+  const enviar = send || sendWhatsAppInteractive;
+  const result = await enviar(telefono, linea, listaCalificacion());
   return Boolean(result?.success);
 }
 
@@ -148,6 +207,7 @@ module.exports = {
   atenderEntrada,
   atenderMensaje,
   avisarReagendar,
+  avisarCalificar,
   avisarNoEncontrado,
   elegirLinea,
   textoDe,

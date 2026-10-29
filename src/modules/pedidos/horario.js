@@ -40,4 +40,22 @@ function horarioDeEntrega(value) {
   };
 }
 
-module.exports = { CORTE_TARDE, franjaDeHorario, horarioNormalizado, horarioDeEntrega };
+function minutosEnMexico(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Mexico_City',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  return hour * 60 + minute;
+}
+
+function ventanaDeCreacion(date = new Date()) {
+  const minutos = minutosEnMexico(date);
+  const ok = minutos >= 9 * 60 + 30 && minutos <= 17 * 60;
+  return { ok, message: ok ? null : 'Los pedidos solo se crean entre las 9:30 y las 17:00' };
+}
+
+module.exports = { CORTE_TARDE, franjaDeHorario, horarioNormalizado, horarioDeEntrega, ventanaDeCreacion };

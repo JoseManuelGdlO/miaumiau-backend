@@ -13,6 +13,7 @@ const {
   transition,
   reassignCheck,
   isOpenSolicitud,
+  sigueHoy,
   isValidatedCheckIn,
   toCargaValidada,
   toSolicitudResumen,
@@ -580,7 +581,8 @@ async function listarSolicitudes(deps = {}) {
     where: openSolicitudWhere(),
     order: [['id', 'DESC']],
   });
-  const open = rows.filter(isOpenSolicitud);
+  const hoy = deps.fecha || await fechaDeHoy(deps);
+  const open = rows.filter((row) => isOpenSolicitud(row) && sigueHoy(row, hoy));
   const result = [];
   for (const row of open) {
     const datos = row.datos || {};
@@ -766,7 +768,16 @@ async function liberarCierre(deps = {}) {
     fail(409, 'El repartidor todavía no envió el cierre');
   }
   const quien = await nombreAprobador(deps);
-  await notificacion.update({ leida: true });
+  await notificacion.update({ leida: true, datos: { ...datos, estado_solicitud: 'atendida' } });
+  if (typeof db.Notificacion?.findAll === 'function') {
+    const avisos = await db.Notificacion.findAll({ where: openSolicitudWhere() });
+    for (const aviso of avisos.filter(isOpenSolicitud)) {
+      const extra = aviso.datos || {};
+      if (extra.tipo === 'cierre_dia' && Number(extra.jornada_id) === Number(jornada.id) && typeof aviso.update === 'function') {
+        await aviso.update({ leida: true, datos: { ...extra, estado_solicitud: 'atendida' } });
+      }
+    }
+  }
   await jornada.update({
     estado: 'cerrada',
     cerrada_en: new Date(),
@@ -921,6 +932,17 @@ function diaEntre(fecha) {
   return {
     [Op.between]: [new Date(`${fecha}T00:00:00.000Z`), new Date(`${fecha}T23:59:59.999Z`)],
   };
+}
+
+async function cambiarDireccion(deps = {}) {
+  const direccion = String(deps.direccion || '').trim();
+  if (direccion.length < 10) fail(422, 'Escribe la dirección completa');
+  const db = getModels(deps);
+  const pedido = deps.pedido || await db.Pedido.findByPk(deps.pedidoId);
+  if (!pedido || pedido.baja_logica) fail(404, 'Pedido no encontrado');
+  if (['entregado', 'cancelado'].includes(pedido.estado)) fail(409, 'Ese pedido ya no se puede cambiar');
+  await pedido.update({ direccion_entrega: direccion.slice(0, 500) });
+  return { direccion_entrega: direccion.slice(0, 500) };
 }
 
 async function listarComprobantes(deps = {}) {
@@ -1337,6 +1359,7 @@ module.exports = {
   cambiarFranja,
   moverParada,
   liberarSiguiente,
+  cambiarDireccion,
   listarComprobantes,
   anotarComprobante,
   subirComprobante,

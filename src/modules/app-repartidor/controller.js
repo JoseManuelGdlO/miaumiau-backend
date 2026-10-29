@@ -297,6 +297,13 @@ async function estadisticas(req, res) {
   }, 'estadisticas');
 }
 
+async function calificar(req, res) {
+  return handle(req, res, () => service.calificarCliente(depsFrom(req, {
+    estrellas: req.body?.estrellas,
+    comentario: req.body?.comentario,
+  })), 'calificar');
+}
+
 async function logros(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -327,6 +334,7 @@ module.exports = {
   codigo,
   productos,
   entregar,
+  calificar,
   caja,
   soporte,
   estadisticas,

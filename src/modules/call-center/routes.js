@@ -20,6 +20,7 @@ router.patch('/pedidos/:id/estado', ...guard, controller.estado);
 router.get('/repartidores', ...guard, controller.repartidores);
 router.post('/pedidos/:id/reasignar', ...guard, controller.reasignar);
 router.post('/pedidos/:id/franja', ...guard, controller.cambiarFranja);
+router.post('/pedidos/:id/direccion', ...guard, controller.cambiarDireccion);
 router.post('/pedidos/:id/orden', ...guard, controller.moverParada);
 router.post('/pedidos/:id/liberar-siguiente', ...guard, controller.liberarSiguiente);
 router.post('/pedidos/:id/cerrar-sin-codigo', ...guard, controller.cerrarSinCodigo);

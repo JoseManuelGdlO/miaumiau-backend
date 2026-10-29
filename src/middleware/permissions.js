@@ -239,6 +239,12 @@ const requireSuperAdminOrPermission = (requiredPermissions) => {
         });
       }
 
+      const rol = req.user.rol?.nombre || req.user.role;
+      if (rol === 'super_admin') {
+        req.userPermissions = ['*'];
+        return next();
+      }
+
       // Si ya tenemos permisos en el request (del token), verificar directamente
       if (req.userPermissions && req.userPermissions.length > 0) {
         // Si es super_admin (tiene '*' en permisos), permitir acceso

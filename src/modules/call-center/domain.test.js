@@ -7,6 +7,7 @@ const {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  sigueHoy,
   isValidatedCheckIn,
   toCargaValidada,
   toSolicitudDetalle,
@@ -216,4 +217,9 @@ test('la cola ignora leídas, canceladas y otros tipos', () => {
   expect(isOpenSolicitud({ leida: true, datos: { tipo: 'soporte', estado_solicitud: 'abierta' } })).toBe(false);
   expect(isOpenSolicitud({ leida: false, datos: { tipo: 'check_in', estado_solicitud: 'cancelada' } })).toBe(false);
   expect(isOpenSolicitud({ leida: false, datos: { tipo: 'stock', estado_solicitud: 'abierta' } })).toBe(false);
+  const ayer = { leida: false, fecha_creacion: '2026-10-28', datos: { tipo: 'cierre_dia', estado_solicitud: 'abierta' } };
+  expect(sigueHoy(ayer, '2026-10-29')).toBe(false);
+  expect(sigueHoy({ ...ayer, datos: { tipo: 'check_in' } }, '2026-10-29')).toBe(false);
+  expect(sigueHoy({ ...ayer, fecha_creacion: '2026-10-29' }, '2026-10-29')).toBe(true);
+  expect(sigueHoy({ ...ayer, datos: { tipo: 'soporte' } }, '2026-10-29')).toBe(true);
 });

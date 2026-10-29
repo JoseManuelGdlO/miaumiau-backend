@@ -27,6 +27,7 @@ router.post('/pedidos/:id/solicitar-llamada', controller.solicitarLlamada);
 router.post('/pedidos/:id/no-entregado', controller.noEntregar);
 router.post('/pedidos/:id/codigo', controller.codigo);
 router.put('/pedidos/:id/productos', controller.productos);
+router.post('/pedidos/:id/calificar', controller.calificar);
 router.post('/pedidos/:id/entregar', uploadComprobantes.fields([
   { name: 'comprobante', maxCount: 1 },
   { name: 'receptor', maxCount: 1 },

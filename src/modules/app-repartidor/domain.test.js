@@ -63,6 +63,8 @@ describe('domain app-repartidor', () => {
     expect(validatePayment({ metodo: 'transferencia', total: 100, efectivo: 0, transferencia: 100, hasPhoto: false }).ok).toBe(false);
     expect(validatePayment({ metodo: 'mixto', total: 100, efectivo: 40, transferencia: 50, hasPhoto: true }).ok).toBe(false);
     expect(validatePayment({ metodo: 'mixto', total: 100, efectivo: 40, transferencia: 60, hasPhoto: true }).ok).toBe(true);
+    expect(validatePayment({ metodo: 'terminal', total: 100, efectivo: 0, transferencia: 100, hasPhoto: false }).ok).toBe(true);
+    expect(validatePayment({ metodo: 'terminal', total: 100, efectivo: 0, transferencia: 40, hasPhoto: false }).ok).toBe(false);
   });
 
   test('el pago mixto compara en centavos enteros', () => {

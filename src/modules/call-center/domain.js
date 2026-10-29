@@ -101,9 +101,23 @@ function phoneOf(pedido) {
   return String(pedido?.cliente?.telefono || '').trim();
 }
 
+function diaDe(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  return String(value || '').slice(0, 10);
+}
+
 function isOpenSolicitud(row) {
   const datos = row?.datos || {};
-  return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada';
+  return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada' && datos.estado_solicitud !== 'atendida';
+}
+
+function sigueHoy(row, hoy) {
+  const tipo = row?.datos?.tipo;
+  if (tipo !== 'check_in' && tipo !== 'cierre_dia') return true;
+  // fecha_creacion queda en UTC; el día de la jornada es created_at en México
+  const instante = row?.created_at || row?.createdAt;
+  const dia = instante ? dayKey(new Date(instante), 'America/Mexico_City') : diaDe(row?.fecha_creacion);
+  return dia === diaDe(hoy);
 }
 
 function isValidatedCheckIn(row) {
@@ -338,6 +352,7 @@ module.exports = {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  sigueHoy,
   isValidatedCheckIn,
   toCargaValidada,
   toSolicitudResumen,

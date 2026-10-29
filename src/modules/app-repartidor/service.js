@@ -1174,12 +1174,13 @@ async function entregar(deps = {}) {
     notaTercero = `Entregado a ${receptor}. Foto: ${comprobantePath(deps.receptorFile)}`;
   }
 
-  const metodo = deps.metodo;
+  const elegido = String(deps.metodo || '');
+  const metodo = elegido === 'terminal' ? 'transferencia' : elegido;
   const efectivo = Number(deps.monto_efectivo ?? deps.efectivo) || 0;
   const transferencia = Number(deps.monto_transferencia ?? deps.transferencia) || 0;
   const hasPhoto = Boolean(deps.file || deps.hasPhoto);
   const payment = validatePayment({
-    metodo,
+    metodo: elegido,
     total: pedido.total,
     efectivo,
     transferencia,
@@ -1251,9 +1252,16 @@ async function entregar(deps = {}) {
   }
 
   await refrescarCorte(deps);
-  const cobrado = String(metodo || '');
+  if (elegido === 'terminal' && typeof rutaPedido.update === 'function') {
+    const previas = String(rutaPedido.notas_entrega || '');
+    if (!previas.includes('Terminal física')) {
+      await rutaPedido.update({ notas_entrega: `${previas ? `${previas}\n` : ''}Cobro con terminal física`.slice(0, 1000) });
+    }
+  }
   const original = String(pedido.metodo_pago || '');
-  if (original && cobrado && original !== cobrado) {
+  const mismo = original === elegido || (original === 'tarjeta' && elegido === 'terminal');
+  if (original && elegido && !mismo) {
+    const cobrado = elegido;
     try {
       await defaultCrearNotificacion(deps, {
         nombre: 'Método de pago distinto',
@@ -1270,6 +1278,14 @@ async function entregar(deps = {}) {
     } catch (err) {
       log.warn('no se avisó el cambio de método', { message: err.message });
     }
+  }
+  try {
+    const { avisarCalificar } = require('../mensajeria/reagendar-whatsapp');
+    const tel = pedido.telefono_referencia || pedido.cliente?.telefono;
+    const linea = await lineaWhatsAppDelCliente(deps, pedido);
+    await avisarCalificar({ telefono: tel, linea });
+  } catch (err) {
+    log.warn('no se pidió la calificación', { message: err.message });
   }
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
@@ -1812,6 +1828,19 @@ async function logros(deps = {}) {
   }));
 }
 
+async function calificarCliente(deps = {}) {
+  const estrellas = Number(deps.estrellas);
+  if (!Number.isInteger(estrellas) || estrellas < 1 || estrellas > 5) fail(422, 'Elige de 1 a 5');
+  const rutaPedido = await assertRutaDelRepartidor(deps);
+  const pedido = rutaPedido.pedido;
+  const comentario = String(deps.comentario || '').trim().slice(0, 200);
+  const linea = `Calificación al cliente: ${estrellas}${comentario ? `. ${comentario}` : ''}`;
+  const previas = String(pedido.notas || '');
+  const notas = (previas.includes('Calificación al cliente:') ? previas : `${previas ? `${previas}\n` : ''}${linea}`).slice(0, 1000);
+  if (typeof pedido.update === 'function') await pedido.update({ notas });
+  return { guardado: true };
+}
+
 module.exports = {
   replaceCarga,
   solicitarValidacion,
@@ -1830,6 +1859,7 @@ module.exports = {
   validarCodigo,
   ajustarProductos,
   entregar,
+  calificarCliente,
   noEntregar,
   registrarCaja,
   crearSoporte,
