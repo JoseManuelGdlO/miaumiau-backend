@@ -1,4 +1,4 @@
-const { franjaDeHorario, horarioNormalizado, horarioDeEntrega, ventanaDeCreacion } = require('./horario');
+const { franjaDeHorario, horarioNormalizado, horarioDeEntrega } = require('./horario');
 const { reencolarNoEntregados, encolarAlDiaSiguiente, diaSiguiente, soltarParadasAbiertas } = require('./reencolar');
 const { elegirLinea } = require('../mensajeria/reagendar-whatsapp');
 
@@ -10,17 +10,13 @@ test('antes de las 14 es mañana y desde las 14 es tarde', () => {
   expect(franjaDeHorario('25:00')).toBeNull();
   expect(horarioNormalizado('9:05')).toBe('09:05:00');
   expect(horarioNormalizado('')).toBeNull();
-  expect(horarioDeEntrega('09:00').franja).toBe('manana');
+  expect(horarioDeEntrega('09:30').franja).toBe('manana');
   expect(horarioDeEntrega('13:59').franja).toBe('manana');
   expect(horarioDeEntrega('14:00').franja).toBe('tarde');
-  expect(horarioDeEntrega('21:00').franja).toBe('tarde');
-  expect(horarioDeEntrega('08:59').ok).toBe(false);
-  expect(horarioDeEntrega('21:01').ok).toBe(false);
+  expect(horarioDeEntrega('17:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('09:29').ok).toBe(false);
+  expect(horarioDeEntrega('17:01').ok).toBe(false);
   expect(horarioDeEntrega('').ok).toBe(true);
-  expect(ventanaDeCreacion(new Date('2026-10-29T15:30:00.000Z')).ok).toBe(true);
-  expect(ventanaDeCreacion(new Date('2026-10-29T23:00:00.000Z')).ok).toBe(true);
-  expect(ventanaDeCreacion(new Date('2026-10-29T15:29:00.000Z')).ok).toBe(false);
-  expect(ventanaDeCreacion(new Date('2026-10-29T23:01:00.000Z')).ok).toBe(false);
 });
 
 test('el no entregado de ayer vuelve a la cola de hoy', async () => {

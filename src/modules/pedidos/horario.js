@@ -30,8 +30,8 @@ function horarioDeEntrega(value) {
   const hora = horaDe(value);
   if (!hora) return { ok: false, message: 'La hora de entrega no es válida' };
   const minutos = hora.hour * 60 + Number(hora.texto.slice(3));
-  if (minutos < 9 * 60 || minutos > 21 * 60) {
-    return { ok: false, message: 'La entrega solo puede ser entre las 9:00 y las 21:00' };
+  if (minutos < 9 * 60 + 30 || minutos > 17 * 60) {
+    return { ok: false, message: 'La entrega solo puede ser entre las 9:30 y las 17:00' };
   }
   return {
     ok: true,
@@ -40,22 +40,4 @@ function horarioDeEntrega(value) {
   };
 }
 
-function minutosEnMexico(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Mexico_City',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
-  return hour * 60 + minute;
-}
-
-function ventanaDeCreacion(date = new Date()) {
-  const minutos = minutosEnMexico(date);
-  const ok = minutos >= 9 * 60 + 30 && minutos <= 17 * 60;
-  return { ok, message: ok ? null : 'Los pedidos solo se crean entre las 9:30 y las 17:00' };
-}
-
-module.exports = { CORTE_TARDE, franjaDeHorario, horarioNormalizado, horarioDeEntrega, ventanaDeCreacion };
+module.exports = { CORTE_TARDE, franjaDeHorario, horarioNormalizado, horarioDeEntrega };
