@@ -14,6 +14,7 @@ const {
   agruparCarga,
   ayudaCodigoVencida,
   avisaReagendo,
+  urlFoto,
   META_DIARIA,
   PUNTOS_POR_ENTREGA,
 } = require('./domain');
@@ -136,5 +137,13 @@ describe('domain app-repartidor', () => {
     ])).toEqual([
       { fkid_producto: null, nombre: 'Regalo', cantidad: 3, precio_unitario: 0, es_extra: false },
     ]);
+  });
+
+  test('la foto del repartidor es una ruta publica del archivo', () => {
+    expect(urlFoto('abc.jpg')).toBe('/uploads/repartidores/abc.jpg');
+    expect(urlFoto('/uploads/repartidores/abc.jpg')).toBe('/uploads/repartidores/abc.jpg');
+    expect(urlFoto('../secreto.jpg')).toBe('/uploads/repartidores/secreto.jpg');
+    expect(urlFoto('..')).toBeNull();
+    expect(urlFoto('')).toBeNull();
   });
 });

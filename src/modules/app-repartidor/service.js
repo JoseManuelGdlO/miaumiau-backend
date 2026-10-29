@@ -16,6 +16,7 @@ const {
   dayKey,
   agruparCarga,
   avisaReagendo,
+  urlFoto,
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
@@ -1653,6 +1654,20 @@ async function efectivoHoy(deps, timeZone) {
   }, 0);
 }
 
+async function actualizarFoto(deps = {}) {
+  if (!deps.file?.filename) fail(422, 'Elige una foto');
+  const db = getModels(deps);
+  const repartidor = await db.Repartidor.findByPk(deps.repartidorId);
+  if (!repartidor) fail(404, 'Repartidor no encontrado');
+  const anterior = repartidor.foto;
+  await repartidor.update({ foto: deps.file.filename });
+  if (anterior && anterior !== deps.file.filename) {
+    const archivo = path.join(__dirname, '..', '..', 'uploads', 'repartidores', path.basename(String(anterior)));
+    fs.promises.unlink(archivo).catch(() => {});
+  }
+  return { foto: urlFoto(deps.file.filename) };
+}
+
 async function perfil(deps = {}) {
   const repartidor = await loadRepartidor(deps);
   const timeZone = deps.timezone || repartidor?.ciudad?.timezone;
@@ -1680,6 +1695,7 @@ async function perfil(deps = {}) {
   return {
     id: repartidor.id,
     nombre: repartidor.nombre_completo,
+    foto: urlFoto(repartidor.foto),
     entregas_hoy: stats.entregasHoy,
     efectivo_hoy: efectivo,
     puntos,
@@ -1870,6 +1886,7 @@ module.exports = {
   ubicacionPedido,
   detallePedido,
   perfil,
+  actualizarFoto,
   estadisticas,
   logros,
   toPedidoDto,

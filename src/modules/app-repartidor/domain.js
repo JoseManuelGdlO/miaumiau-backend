@@ -156,6 +156,12 @@ function avisaReagendo(motivo) {
   return motivo === 'nadie' || motivo === 'reagendar';
 }
 
+function urlFoto(valor) {
+  const name = String(valor || '').split(/[/\\]/).pop();
+  if (!name || name === '.' || name === '..' || !/^[a-zA-Z0-9._-]+$/.test(name)) return null;
+  return `/uploads/repartidores/${name}`;
+}
+
 function dayKey(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timeZone || 'America/Mexico_City',
@@ -185,4 +191,5 @@ module.exports = {
   agruparCarga,
   ayudaCodigoVencida,
   avisaReagendo,
+  urlFoto,
 };

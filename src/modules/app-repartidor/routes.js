@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateRepartidor } = require('../../middleware/repartidorAuth');
-const { uploadComprobantes } = require('../../utils/uploadImages');
+const { uploadComprobantes, uploadRepartidores } = require('../../utils/uploadImages');
 const controller = require('./controller');
 
 router.use(authenticateRepartidor);
 router.get('/me', controller.me);
+router.post('/me/foto', uploadRepartidores.single('foto'), controller.foto);
 router.get('/jornada', controller.jornada);
 router.put('/jornada/carga', controller.replaceCarga);
 router.post('/jornada/iniciar', controller.iniciarRuta);
