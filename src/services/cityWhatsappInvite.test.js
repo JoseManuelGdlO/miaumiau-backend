@@ -38,9 +38,31 @@ test('conectado gana a vencido, y vencido gana a usado', () => {
 test('un link usado o vencido no se puede abrir', () => {
   expect(() => assertInviteUsable(null, now)).toThrow('El link de vinculación no es válido.');
   expect(() => assertInviteUsable({ invite_token_hash: 'x', phone_number_id: '1' }, now)).toThrow('Este número ya está vinculado');
+
+  const usedProfile = {
+    invite_token_hash: 'x',
+    phone_number_id: null,
+    invite_expires_at: '2099-01-01',
+    invite_used_at: '2026-01-01'
+  };
   try {
-    assertInviteUsable({ invite_token_hash: 'x', invite_expires_at: '2000-01-01' }, now);
+    assertInviteUsable(usedProfile, now);
+    throw new Error('assertInviteUsable should have thrown for used profile');
   } catch (error) {
+    if (error.message === 'assertInviteUsable should have thrown for used profile') throw error;
+    expect(error.status).toBe(410);
+    expect(error.message).toBe('Este número ya está vinculado. Pide un link nuevo si necesitas reconectar.');
+  }
+
+  const expiredProfile = {
+    invite_token_hash: 'x',
+    invite_expires_at: '2000-01-01'
+  };
+  try {
+    assertInviteUsable(expiredProfile, now);
+    throw new Error('assertInviteUsable should have thrown for expired profile');
+  } catch (error) {
+    if (error.message === 'assertInviteUsable should have thrown for expired profile') throw error;
     expect(error.status).toBe(410);
     expect(error.message).toBe('Este link ya venció. Pide uno nuevo a quien administra la ciudad.');
   }
