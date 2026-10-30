@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const cityController = require('./controller');
+const whatsappController = require('./whatsappController');
 const { authenticateToken } = require('../../middleware/auth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
@@ -216,6 +217,24 @@ router.get('/:cityId/numero-soporte-cliente',
   requireSuperAdminOrPermission('ver_ciudades'),
   validateCityIdParam,
   cityController.getNumeroSoporteCliente
+);
+
+router.get('/:id/whatsapp',
+  authenticateToken,
+  requireSuperAdminOrPermission('editar_ciudades'),
+  whatsappController.show
+);
+
+router.post('/:id/whatsapp/invite',
+  authenticateToken,
+  requireSuperAdminOrPermission('editar_ciudades'),
+  whatsappController.regenerate
+);
+
+router.post('/:id/whatsapp/disconnect',
+  authenticateToken,
+  requireSuperAdminOrPermission('editar_ciudades'),
+  whatsappController.disconnect
 );
 
 router.get('/:id', 
