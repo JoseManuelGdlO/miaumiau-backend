@@ -1,6 +1,12 @@
-const { City, CityPointOfSale, Cliente } = require('../../models');
+const { City, CityPointOfSale, Cliente, CityWhatsappProfile } = require('../../models');
 const { Op } = require('sequelize');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
+const { sequelize } = require('../../config/database');
+const { issueCityProfile } = require('../../services/cityWhatsappService');
+const { describeWhatsapp, inviteUrlFor } = require('../../services/cityWhatsappInvite');
+const { createCityWhatsappRepository } = require('../../services/cityWhatsappRepository');
+const graph = require('../../services/metaGraphClient');
+const { presentCity, removeProfileOnDelete } = require('./whatsappController');
 
 // Validar horario_por_dia: objeto con claves "0"-"6", valores { inicio, fin } (0-23, inicio < fin)
 function validateHorarioPorDia(value) {
@@ -35,6 +41,7 @@ function validateHorarioPorDia(value) {
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Cities');
+const whatsappRepo = createCityWhatsappRepository(CityWhatsappProfile);
 
 class CityController {
   // Obtener todas las ciudades
@@ -85,11 +92,14 @@ class CityController {
         limit: parseInt(limit),
         offset: parseInt(offset)
       });
+      const profiles = await whatsappRepo.findByCityIds(cities.map((city) => city.id));
+      const profilesByCityId = new Map(profiles.map((profile) => [profile.city_id, profile]));
+      const presentedCities = cities.map((city) => presentCity(city, profilesByCityId.get(city.id)));
 
       res.json({
         success: true,
         data: {
-          cities,
+          cities: presentedCities,
           pagination: {
             total: count,
             page: parseInt(page),
@@ -136,10 +146,11 @@ class CityController {
           message: `Ciudad "${id}" no encontrada`
         });
       }
+      const profile = await whatsappRepo.findByCityId(city.id);
 
       res.json({
         success: true,
-        data: { city }
+        data: { city: presentCity(city, profile) }
       });
     } catch (error) {
       log.error('getCityById falló', { message: error.message });
@@ -301,33 +312,54 @@ class CityController {
         var horasEntregaData = { horario_por_dia };
       }
 
-      const city = await City.create({
-        nombre,
-        departamento,
-        direccion_operaciones,
-        estado_inicial,
-        numero_zonas_entrega,
-        area_cobertura,
-        tiempo_promedio_entrega,
-        horario_atencion,
-        manager,
-        telefono,
-        email_contacto,
-        numero_soporte_cliente,
-        notas_adicionales,
-        max_pedidos_por_horario,
-        dias_trabajo,
-        ...horasEntregaData
+      const { city, issued } = await sequelize.transaction(async (transaction) => {
+        const createdCity = await City.create({
+          nombre,
+          departamento,
+          direccion_operaciones,
+          estado_inicial,
+          numero_zonas_entrega,
+          area_cobertura,
+          tiempo_promedio_entrega,
+          horario_atencion,
+          manager,
+          telefono,
+          email_contacto,
+          numero_soporte_cliente,
+          notas_adicionales,
+          max_pedidos_por_horario,
+          dias_trabajo,
+          ...horasEntregaData
+        }, { transaction });
+        const createdProfile = await issueCityProfile({
+          repo: whatsappRepo,
+          cityId: createdCity.id,
+          transaction
+        });
+        return { city: createdCity, issued: createdProfile };
       });
 
       log.info('createCity', { id: city.id });
       res.status(201).json({
         success: true,
         message: 'Ciudad creada exitosamente',
-        data: { city }
+        data: {
+          city: presentCity(city, issued.profile),
+          whatsapp: {
+            ...describeWhatsapp(issued.profile),
+            inviteUrl: inviteUrlFor(req, issued.invite.token),
+            expiresAt: issued.invite.expiresAt
+          }
+        }
       });
     } catch (error) {
       log.error('createCity falló', { message: error.message });
+      if (error.status) {
+        return res.status(error.status).json({
+          success: false,
+          message: error.message
+        });
+      }
       next(error);
     }
   }
@@ -463,6 +495,12 @@ class CityController {
       }
 
       await city.softDelete();
+      const profile = await whatsappRepo.findByCityId(city.id);
+      await removeProfileOnDelete({
+        profile,
+        graph,
+        destroy: () => whatsappRepo.destroyByCityId(city.id)
+      });
 
       log.info('deleteCity', { id: id });
       res.json({
@@ -501,12 +539,19 @@ class CityController {
       }
 
       await city.restore();
+      let profile = await whatsappRepo.findByCityId(city.id);
+      if (!profile) {
+        ({ profile } = await issueCityProfile({
+          repo: whatsappRepo,
+          cityId: city.id
+        }));
+      }
 
       log.info('restoreCity', { id: id });
       res.json({
         success: true,
         message: 'Ciudad restaurada exitosamente',
-        data: { city }
+        data: { city: presentCity(city, profile) }
       });
     } catch (error) {
       log.error('restoreCity falló', { message: error.message });
