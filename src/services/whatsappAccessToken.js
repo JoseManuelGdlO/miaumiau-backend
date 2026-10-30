@@ -22,11 +22,16 @@ async function accessTokenForSend(phoneNumberId, deps = {}) {
   });
 
   const profile = await findProfile(phoneNumberId);
-  const resolved = resolveWhatsAppAccessToken({
-    phoneNumberId,
-    profile,
-    globalToken: process.env.WHATSAPP_API_TOKEN
-  });
+  let resolved;
+  try {
+    resolved = resolveWhatsAppAccessToken({
+      phoneNumberId,
+      profile,
+      globalToken: process.env.WHATSAPP_API_TOKEN
+    });
+  } catch (error) {
+    throw unreadableCityTokenError();
+  }
 
   if (resolved.source === 'city-unreadable') {
     throw unreadableCityTokenError();
