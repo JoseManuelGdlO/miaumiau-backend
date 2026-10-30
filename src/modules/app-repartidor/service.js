@@ -16,6 +16,7 @@ const {
   dayKey,
   agruparCarga,
   avisaReagendo,
+  urlFoto,
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
@@ -29,7 +30,7 @@ const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventari
 const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
-const { encolarAlDiaSiguiente } = require('../pedidos/reencolar');
+const { encolarAlDiaSiguiente, soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
 const { repartoBloqueado } = require('./deposito-pendiente');
 
@@ -787,14 +788,18 @@ async function listarPedidos(deps = {}) {
   const franja = deps.franja === 'tarde' || deps.franja === 'manana' ? deps.franja : null;
   const pedidos = [];
   let esperandoLiberacion = false;
+  let dejoVerSinLiberar = false;
   for (const ruta of rutas) {
     for (const rp of ruta.pedidos || []) {
       if (!rp.pedido) continue;
       const stopFranja = franjaDe(rp.franja || ruta.franja);
       if (franja && stopFranja !== franja) continue;
       if (abierto(rp) && !rp.liberado_en) {
-        esperandoLiberacion = true;
-        continue;
+        if (dejoVerSinLiberar) {
+          esperandoLiberacion = true;
+          continue;
+        }
+        dejoVerSinLiberar = true;
       }
       pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
     }
@@ -1174,12 +1179,13 @@ async function entregar(deps = {}) {
     notaTercero = `Entregado a ${receptor}. Foto: ${comprobantePath(deps.receptorFile)}`;
   }
 
-  const metodo = deps.metodo;
+  const elegido = String(deps.metodo || '');
+  const metodo = elegido === 'terminal' ? 'transferencia' : elegido;
   const efectivo = Number(deps.monto_efectivo ?? deps.efectivo) || 0;
   const transferencia = Number(deps.monto_transferencia ?? deps.transferencia) || 0;
   const hasPhoto = Boolean(deps.file || deps.hasPhoto);
   const payment = validatePayment({
-    metodo,
+    metodo: elegido,
     total: pedido.total,
     efectivo,
     transferencia,
@@ -1251,6 +1257,42 @@ async function entregar(deps = {}) {
   }
 
   await refrescarCorte(deps);
+  if (elegido === 'terminal' && typeof rutaPedido.update === 'function') {
+    const previas = String(rutaPedido.notas_entrega || '');
+    if (!previas.includes('Terminal física')) {
+      await rutaPedido.update({ notas_entrega: `${previas ? `${previas}\n` : ''}Cobro con terminal física`.slice(0, 1000) });
+    }
+  }
+  const original = String(pedido.metodo_pago || '');
+  const mismo = original === elegido || (original === 'tarjeta' && elegido === 'terminal');
+  if (original && elegido && !mismo) {
+    const cobrado = elegido;
+    try {
+      await defaultCrearNotificacion(deps, {
+        nombre: 'Método de pago distinto',
+        descripcion: `${pedido.numero_pedido}: se cobró ${cobrado} y estaba en ${original}`,
+        prioridad: 'alta',
+        datos: {
+          tipo: 'soporte',
+          pedido_id: pedido.id,
+          numero_pedido: pedido.numero_pedido,
+          repartidor_id: deps.repartidorId,
+          motivo: `Cobró ${cobrado}. El pedido estaba en ${original}.`,
+        },
+      });
+    } catch (err) {
+      log.warn('no se avisó el cambio de método', { message: err.message });
+    }
+  }
+  try {
+    const { avisarCalificar } = require('../mensajeria/reagendar-whatsapp');
+    const tel = pedido.telefono_referencia || pedido.cliente?.telefono;
+    const linea = await lineaWhatsAppDelCliente(deps, pedido);
+    await avisarCalificar({ telefono: tel, linea, numero: pedido.numero_pedido });
+  } catch (err) {
+    log.warn('no se pidió la calificación', { message: err.message });
+  }
+  await soltarSiguiente(deps);
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -1357,8 +1399,9 @@ async function noEntregar(deps = {}) {
   }
   if (avisaReagendo(motivo)) {
     try {
-      const { avisarReagendar } = require('../mensajeria/reagendar-whatsapp');
-      await avisarReagendar({
+      const { avisarReagendar, avisarNoEncontrado } = require('../mensajeria/reagendar-whatsapp');
+      const avisar = motivo === 'nadie' ? avisarNoEncontrado : avisarReagendar;
+      await avisar({
         telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
         linea: await lineaWhatsAppDelCliente(deps, pedido),
       });
@@ -1367,6 +1410,7 @@ async function noEntregar(deps = {}) {
     }
   }
   await encolarAlDiaSiguiente(pedido, deps.fecha);
+  await soltarSiguiente(deps);
   return toPedidoDto(pedido, rutaPedido);
 }
 
@@ -1456,6 +1500,14 @@ async function iniciarRuta(deps = {}) {
   return { iniciado: true };
 }
 
+async function soltarSiguiente(deps) {
+  try {
+    await liberarSiguienteParada(deps);
+  } catch (error) {
+    if (error.status !== 409) log.warn('no se liberó la siguiente parada', { message: error.message });
+  }
+}
+
 async function liberarSiguienteParada(deps = {}) {
   const paradas = await paradasAbiertas(deps);
   const siguiente = paradas.find((parada) => !parada.liberado_en);
@@ -1497,6 +1549,7 @@ async function registrarCaja(deps = {}) {
     efectivo_a_depositar: Number(deps.efectivo) || 0,
     comprobante_deposito_path: nuevo,
   });
+  await soltarParadasAbiertas(getModels(deps), deps.repartidorId, jornada.fecha);
   if (anterior && anterior !== nuevo) {
     const archivo = path.join(__dirname, '..', '..', 'uploads', 'comprobantes', path.basename(String(anterior)));
     fs.unlink(archivo, () => {});
@@ -1575,6 +1628,21 @@ async function crearSoporte(deps = {}) {
   if (typeof notificacion.update === 'function') await notificacion.update({ datos });
   else notificacion.datos = datos;
   publishNotificacion(notificacion);
+  if (esLlamada && deps.pedidoId) {
+    try {
+      const pedido = await getModels(deps).Pedido.findByPk(deps.pedidoId, {
+        include: [{ association: 'cliente', attributes: ['id', 'telefono'] }],
+      });
+      const tel = formatPhoneForWhatsApp(phoneOf(pedido));
+      const linea = await lineaWhatsAppDelCliente(deps, pedido);
+      if (tel && linea) {
+        const { sendWhatsAppMessage } = require('../../utils/whatsapp');
+        await sendWhatsAppMessage(tel, 'Tu repartidor está en la dirección esperándote.', linea);
+      }
+    } catch (error) {
+      log.warn('no se avisó la espera al cliente', { message: error.message });
+    }
+  }
   return {
     id: notificacion.id,
     notificacion_id: notificacion.id,
@@ -1615,6 +1683,20 @@ async function efectivoHoy(deps, timeZone) {
   }, 0);
 }
 
+async function actualizarFoto(deps = {}) {
+  if (!deps.file?.filename) fail(422, 'Elige una foto');
+  const db = getModels(deps);
+  const repartidor = await db.Repartidor.findByPk(deps.repartidorId);
+  if (!repartidor) fail(404, 'Repartidor no encontrado');
+  const anterior = repartidor.foto;
+  await repartidor.update({ foto: deps.file.filename });
+  if (anterior && anterior !== deps.file.filename) {
+    const archivo = path.join(__dirname, '..', '..', 'uploads', 'repartidores', path.basename(String(anterior)));
+    fs.promises.unlink(archivo).catch(() => {});
+  }
+  return { foto: urlFoto(deps.file.filename) };
+}
+
 async function perfil(deps = {}) {
   const repartidor = await loadRepartidor(deps);
   const timeZone = deps.timezone || repartidor?.ciudad?.timezone;
@@ -1642,6 +1724,7 @@ async function perfil(deps = {}) {
   return {
     id: repartidor.id,
     nombre: repartidor.nombre_completo,
+    foto: urlFoto(repartidor.foto),
     entregas_hoy: stats.entregasHoy,
     efectivo_hoy: efectivo,
     puntos,
@@ -1790,6 +1873,19 @@ async function logros(deps = {}) {
   }));
 }
 
+async function calificarCliente(deps = {}) {
+  const estrellas = Number(deps.estrellas);
+  if (!Number.isInteger(estrellas) || estrellas < 1 || estrellas > 5) fail(422, 'Elige de 1 a 5');
+  const rutaPedido = await assertRutaDelRepartidor(deps);
+  const pedido = rutaPedido.pedido;
+  const comentario = String(deps.comentario || '').trim().slice(0, 200);
+  const linea = `Calificación al cliente: ${estrellas}${comentario ? `. ${comentario}` : ''}`;
+  const previas = String(pedido.notas || '');
+  const notas = (previas.includes('Calificación al cliente:') ? previas : `${previas ? `${previas}\n` : ''}${linea}`).slice(0, 1000);
+  if (typeof pedido.update === 'function') await pedido.update({ notas });
+  return { guardado: true };
+}
+
 module.exports = {
   replaceCarga,
   solicitarValidacion,
@@ -1808,6 +1904,7 @@ module.exports = {
   validarCodigo,
   ajustarProductos,
   entregar,
+  calificarCliente,
   noEntregar,
   registrarCaja,
   crearSoporte,
@@ -1818,6 +1915,7 @@ module.exports = {
   ubicacionPedido,
   detallePedido,
   perfil,
+  actualizarFoto,
   estadisticas,
   logros,
   toPedidoDto,

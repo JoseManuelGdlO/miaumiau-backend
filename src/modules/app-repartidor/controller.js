@@ -64,6 +64,16 @@ async function me(req, res) {
   }, 'me');
 }
 
+async function foto(req, res) {
+  return handle(req, res, async () => {
+    if (req.fileValidationError) {
+      const err = Object.assign(new Error(req.fileValidationError), { status: 422 });
+      throw err;
+    }
+    return service.actualizarFoto(depsFrom(req, { file: req.file }));
+  }, 'foto');
+}
+
 async function jornada(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -297,6 +307,13 @@ async function estadisticas(req, res) {
   }, 'estadisticas');
 }
 
+async function calificar(req, res) {
+  return handle(req, res, () => service.calificarCliente(depsFrom(req, {
+    estrellas: req.body?.estrellas,
+    comentario: req.body?.comentario,
+  })), 'calificar');
+}
+
 async function logros(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -306,6 +323,7 @@ async function logros(req, res) {
 
 module.exports = {
   me,
+  foto,
   jornada,
   replaceCarga,
   inventario,
@@ -327,6 +345,7 @@ module.exports = {
   codigo,
   productos,
   entregar,
+  calificar,
   caja,
   soporte,
   estadisticas,

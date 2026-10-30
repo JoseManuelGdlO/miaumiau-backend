@@ -206,6 +206,10 @@ module.exports = (sequelize, DataTypes) => {
       validate: {
         len: [0, 255]
       }
+    },
+    foto: {
+      type: DataTypes.STRING(255),
+      allowNull: true
     }
   }, {
     tableName: 'repartidores',

@@ -13,6 +13,7 @@ const PAQUETES_DIR = path.join(UPLOADS_BASE, 'paquetes');
 const CONVERSACIONES_DIR = path.join(UPLOADS_BASE, 'conversaciones');
 const COMPROBANTES_DIR = path.join(UPLOADS_BASE, 'comprobantes');
 const QR_DIR = path.join(UPLOADS_BASE, 'qr');
+const REPARTIDORES_DIR = path.join(UPLOADS_BASE, 'repartidores');
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const CONVERSACIONES_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -39,6 +40,7 @@ function getStorage(subdir) {
     conversaciones: CONVERSACIONES_DIR,
     comprobantes: COMPROBANTES_DIR,
     qr: QR_DIR,
+    repartidores: REPARTIDORES_DIR,
   };
   const dir = dirMap[subdir] || PRODUCTOS_DIR;
   ensureDir(dir);
@@ -99,12 +101,19 @@ const uploadQr = multer({
   fileFilter
 });
 
+const uploadRepartidores = multer({
+  storage: getStorage('repartidores'),
+  limits: { fileSize: MAX_SIZE },
+  fileFilter
+});
+
 function ensureUploadsDirs() {
   ensureDir(PRODUCTOS_DIR);
   ensureDir(PAQUETES_DIR);
   ensureDir(CONVERSACIONES_DIR);
   ensureDir(COMPROBANTES_DIR);
   ensureDir(QR_DIR);
+  ensureDir(REPARTIDORES_DIR);
 }
 
 function deleteConversationImage(filename) {
@@ -121,6 +130,7 @@ module.exports = {
   uploadConversaciones,
   uploadComprobantes,
   uploadQr,
+  uploadRepartidores,
   ensureUploadsDirs,
   deleteConversationImage,
   UPLOADS_BASE,

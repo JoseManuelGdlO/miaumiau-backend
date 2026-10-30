@@ -101,9 +101,30 @@ function phoneOf(pedido) {
   return String(pedido?.cliente?.telefono || '').trim();
 }
 
+function diaDe(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  return String(value || '').slice(0, 10);
+}
+
 function isOpenSolicitud(row) {
   const datos = row?.datos || {};
-  return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada';
+  return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada' && datos.estado_solicitud !== 'atendida';
+}
+
+function diaDeFila(row) {
+  const instante = row?.created_at || row?.createdAt;
+  return instante ? dayKey(new Date(instante), 'America/Mexico_City') : diaDe(row?.fecha_creacion);
+}
+
+function esDeHoy(row, hoy) {
+  return diaDeFila(row) === diaDe(hoy);
+}
+
+function sigueHoy(row, hoy) {
+  const tipo = row?.datos?.tipo;
+  if (tipo !== 'check_in' && tipo !== 'cierre_dia') return true;
+  // fecha_creacion queda en UTC; el día de la jornada es created_at en México
+  return esDeHoy(row, hoy);
 }
 
 function isValidatedCheckIn(row) {
@@ -233,6 +254,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     notas: pedido.notas || null,
     franja: rutaPedido.franja === 'tarde' ? 'tarde' : 'manana',
     horario_preferente: pedido.horario_preferente ? String(pedido.horario_preferente).slice(0, 5) : null,
+    metodo_pago: pedido.metodo_pago || null,
     orden_entrega: rutaPedido.orden_entrega ?? null,
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
@@ -337,6 +359,8 @@ module.exports = {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  sigueHoy,
+  esDeHoy,
   isValidatedCheckIn,
   toCargaValidada,
   toSolicitudResumen,

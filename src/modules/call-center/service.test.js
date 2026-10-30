@@ -428,7 +428,11 @@ test('la lista deja fuera lo leído y arma el detalle sin código', async () => 
     JornadaRepartidor: { findByPk: async () => ({ id: 5, dinero_esperado: 40, cargas: [{ id: 2, fkid_producto: 4, nombre: 'Arena', cantidad: 1, precio_unitario: 10, es_extra: false }] }) },
     Pedido: { findByPk: async () => null },
   };
-  const list = await listarSolicitudes({ models });
+  const list = await listarSolicitudes({
+    models,
+    fecha: '2026-10-07',
+    rows: [abierta, { ...abierta, id: 2, leida: true }, { ...abierta, id: 4, fecha_creacion: '2026-10-06', datos: { ...abierta.datos, tipo: 'cierre_dia' } }],
+  });
   expect(list.map((row) => row.id)).toEqual([1]);
   const detail = await detalleSolicitud({ models, notificacionId: 1, notificacion: abierta });
   expect(detail.cargas[0]).toMatchObject({ id: 2, fkid_producto: 4, nombre: 'Arena', es_extra: false });

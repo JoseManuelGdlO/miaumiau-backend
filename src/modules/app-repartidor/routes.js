@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateRepartidor } = require('../../middleware/repartidorAuth');
-const { uploadComprobantes } = require('../../utils/uploadImages');
+const { uploadComprobantes, uploadRepartidores } = require('../../utils/uploadImages');
 const controller = require('./controller');
 
 router.use(authenticateRepartidor);
 router.get('/me', controller.me);
+router.post('/me/foto', uploadRepartidores.single('foto'), controller.foto);
 router.get('/jornada', controller.jornada);
 router.put('/jornada/carga', controller.replaceCarga);
 router.post('/jornada/iniciar', controller.iniciarRuta);
@@ -27,6 +28,7 @@ router.post('/pedidos/:id/solicitar-llamada', controller.solicitarLlamada);
 router.post('/pedidos/:id/no-entregado', controller.noEntregar);
 router.post('/pedidos/:id/codigo', controller.codigo);
 router.put('/pedidos/:id/productos', controller.productos);
+router.post('/pedidos/:id/calificar', controller.calificar);
 router.post('/pedidos/:id/entregar', uploadComprobantes.fields([
   { name: 'comprobante', maxCount: 1 },
   { name: 'receptor', maxCount: 1 },

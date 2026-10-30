@@ -4,7 +4,7 @@ const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { parseFechaEntregaEstimada } = require('../../utils/date');
-const { horarioNormalizado } = require('./horario');
+const { horarioDeEntrega } = require('./horario');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Pedidos');
@@ -803,6 +803,11 @@ class PedidoController {
 
       // Generar número de pedido único
       const numeroPedido = Pedido.generateNumeroPedido();
+      const horaFecha = String(fecha_entrega_estimada || '').split('T')[1] || '';
+      const rango = horarioDeEntrega(horario_preferente || horaFecha.slice(0, 5));
+      if (!rango.ok) {
+        return res.status(422).json({ success: false, message: rango.message });
+      }
 
       const pedido = await Pedido.create({
         fkid_cliente: clienteId,
@@ -813,7 +818,7 @@ class PedidoController {
         numero_pedido: numeroPedido,
         estado: 'pendiente', // Estado inicial siempre pendiente
         fecha_entrega_estimada: parseFechaEntregaEstimada(fecha_entrega_estimada) ?? null,
-        horario_preferente: horarioNormalizado(horario_preferente),
+        horario_preferente: rango.texto,
         metodo_pago: metodo_pago || null,
         notas: notas || null,
         codigo_promocion: codigoPromocionNormalizado,

@@ -61,6 +61,9 @@ function validatePayment({ metodo, total, efectivo, transferencia, hasPhoto }) {
     if (!hasPhoto) return { ok: false, message: 'El pago mixto requiere foto del comprobante' };
     return { ok: cash > 0 && wire > 0 && cash + wire === due, message: 'Efectivo más transferencia debe ser el total' };
   }
+  if (metodo === 'terminal') {
+    return { ok: wire === due, message: 'El cobro con terminal debe cubrir el total' };
+  }
   return { ok: false, message: 'Método de pago inválido' };
 }
 
@@ -153,6 +156,12 @@ function avisaReagendo(motivo) {
   return motivo === 'nadie' || motivo === 'reagendar';
 }
 
+function urlFoto(valor) {
+  const name = String(valor || '').split(/[/\\]/).pop();
+  if (!name || name === '.' || name === '..' || !/^[a-zA-Z0-9._-]+$/.test(name)) return null;
+  return `/uploads/repartidores/${name}`;
+}
+
 function dayKey(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timeZone || 'America/Mexico_City',
@@ -182,4 +191,5 @@ module.exports = {
   agruparCarga,
   ayudaCodigoVencida,
   avisaReagendo,
+  urlFoto,
 };

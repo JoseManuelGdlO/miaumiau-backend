@@ -1,15 +1,35 @@
-const { franjaDeHorario, horarioNormalizado } = require('./horario');
-const { reencolarNoEntregados, encolarAlDiaSiguiente, diaSiguiente } = require('./reencolar');
+const { franjaDeHorario, horarioNormalizado, horarioDeEntrega, idsExcedentesManana } = require('./horario');
+const { reencolarNoEntregados, encolarAlDiaSiguiente, diaSiguiente, soltarParadasAbiertas } = require('./reencolar');
 const { elegirLinea } = require('../mensajeria/reagendar-whatsapp');
 
-test('antes de las 14 es mañana y desde las 14 es tarde', () => {
-  expect(franjaDeHorario('13:59')).toBe('manana');
-  expect(franjaDeHorario('14:00')).toBe('tarde');
+test('antes de las 12 es mañana y desde las 12 es tarde', () => {
+  expect(franjaDeHorario('11:59')).toBe('manana');
+  expect(franjaDeHorario('12:00')).toBe('tarde');
+  expect(franjaDeHorario('13:59')).toBe('tarde');
   expect(franjaDeHorario('16:30:00')).toBe('tarde');
   expect(franjaDeHorario('')).toBeNull();
   expect(franjaDeHorario('25:00')).toBeNull();
   expect(horarioNormalizado('9:05')).toBe('09:05:00');
   expect(horarioNormalizado('')).toBeNull();
+  expect(horarioDeEntrega('09:30').franja).toBe('manana');
+  expect(horarioDeEntrega('11:59').franja).toBe('manana');
+  expect(horarioDeEntrega('12:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('13:59').franja).toBe('tarde');
+  expect(horarioDeEntrega('17:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('09:29').ok).toBe(false);
+  expect(horarioDeEntrega('17:01').ok).toBe(false);
+  expect(horarioDeEntrega('').ok).toBe(true);
+});
+
+test('la mañana suelta la parada que no cabe por distancia', () => {
+  const cerca = { id: 1, franja: 'manana', lat: 24.02, lng: -104.67, orden: 1 };
+  const lejos = { id: 2, franja: 'manana', lat: 25.5, lng: -103.4, orden: 2 };
+  expect(idsExcedentesManana([lejos, cerca])).toEqual([2]);
+  expect(idsExcedentesManana([
+    cerca,
+    { id: 4, franja: 'manana', lat: 24.03, lng: -104.67, orden: 2 },
+  ])).toEqual([]);
+  expect(idsExcedentesManana([{ id: 3, franja: 'tarde', lat: 0, lng: 0, orden: 1 }])).toEqual([]);
 });
 
 test('el no entregado de ayer vuelve a la cola de hoy', async () => {
@@ -42,4 +62,16 @@ test('un no entregado de hoy queda para mañana y elige la línea de su ciudad',
   expect(elegirLinea(lineas, { conversacionId: 'ya-habla', telefonoCiudad: '6182222222' })).toBe('ya-habla');
   expect(elegirLinea(lineas, { telefonoCiudad: '618 222 2222' })).toBe('linea-norte');
   expect(elegirLinea([], {})).toBe('986416624552272');
+});
+
+test('al cerrar la ruta suelta lo pendiente y deja lo entregado', async () => {
+  const pendiente = { estado: 'pendiente', notas: '', update: async (data) => Object.assign(pendiente, data) };
+  const destruida = { estado_entrega: 'pendiente', pedido: pendiente, destroy: async () => { destruida.fuera = true; } };
+  const entregada = { estado_entrega: 'entregado', destroy: async () => { entregada.fuera = true; } };
+  await soltarParadasAbiertas({
+    Ruta: { findAll: async () => [{ pedidos: [destruida, entregada] }] },
+  }, 3, '2026-10-27');
+  expect(pendiente.estado).toBe('confirmado');
+  expect(destruida.fuera).toBe(true);
+  expect(entregada.fuera).toBeUndefined();
 });

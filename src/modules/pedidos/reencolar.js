@@ -64,4 +64,19 @@ async function reencolarNoEntregados(deps = {}) {
   return moved;
 }
 
-module.exports = { diaAnterior, diaSiguiente, encolarAlDiaSiguiente, reencolarNoEntregados };
+async function soltarParadasAbiertas(db, repartidorId, fecha) {
+  if (typeof db?.Ruta?.findAll !== 'function') return;
+  const rutas = await db.Ruta.findAll({
+    where: { fkid_repartidor: repartidorId, fecha_ruta: String(fecha).slice(0, 10), baja_logica: false },
+    include: [{ association: 'pedidos', include: [{ association: 'pedido' }] }],
+  });
+  for (const ruta of rutas) {
+    for (const parada of ruta.pedidos || []) {
+      if (!parada || parada.estado_entrega === 'entregado') continue;
+      if (parada.pedido) await encolarAlDiaSiguiente(parada.pedido, fecha);
+      if (typeof parada.destroy === 'function') await parada.destroy();
+    }
+  }
+}
+
+module.exports = { diaAnterior, diaSiguiente, encolarAlDiaSiguiente, reencolarNoEntregados, soltarParadasAbiertas };
