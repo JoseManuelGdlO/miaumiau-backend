@@ -64,7 +64,16 @@ test('si la sync falla, la conexión queda y el error se guarda', async () => {
   const issued = await issueCityProfile({ repo, cityId: 3 });
   const result = await completeEmbeddedSignup({
     repo,
-    graph: graph({ initiateCoexistenceSync: async () => { throw new Error('sync caída'); } }),
+    graph: graph({
+      listWabaPhoneNumbers: async () => [{ id: 'phone-3', display_phone_number: '+52 618 333 3333' }],
+      getPhoneNumberDetails: async () => ({
+        id: 'phone-3',
+        display_phone_number: '+52 618 333 3333',
+        is_on_biz_app: true,
+        platform_type: 'CLOUD_API'
+      }),
+      initiateCoexistenceSync: async () => { throw new Error('sync caída'); }
+    }),
     token: issued.invite.token,
     code: 'code-1',
     wabaId: 'waba-3',

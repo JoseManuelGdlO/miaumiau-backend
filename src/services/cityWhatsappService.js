@@ -117,7 +117,7 @@ async function completeEmbeddedSignup({
 
   const coexistenceByEvent = String(event || '').toUpperCase() === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
   const coexistenceEnabled = coexistenceByEvent || (details.is_on_biz_app === true && details.platform_type === 'CLOUD_API');
-  const resolvedPhoneNumberId = String(phoneNumberId || phone.id).trim();
+  const resolvedPhoneNumberId = String(phone.id);
   const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
   if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
 
