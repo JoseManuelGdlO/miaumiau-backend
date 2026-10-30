@@ -10,6 +10,7 @@ const {
   ensureUploadsDirs,
 } = require('./uploadImages');
 const { Logger } = require('./logger');
+const { accessTokenForSend } = require('../services/whatsappAccessToken');
 
 const log = new Logger('WhatsApp');
 
@@ -18,7 +19,7 @@ const { WHATSAPP_API_URL, WHATSAPP_API_TOKEN } = process.env;
 const WHATSAPP_REOPEN_TEMPLATE_NAME = process.env.WHATSAPP_REOPEN_TEMPLATE_NAME || 'saludo_inicial';
 const WHATSAPP_TEMPLATE_LANGUAGE = process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'es_MX';
 
-const buildRequestOptions = (apiUrl, phoneNumberId) => {
+const buildRequestOptions = (apiUrl, phoneNumberId, accessToken) => {
   const url = new URL(`${apiUrl.replace(/\/$/, '')}/${phoneNumberId}/messages`);
   return {
     hostname: url.hostname,
@@ -26,7 +27,7 @@ const buildRequestOptions = (apiUrl, phoneNumberId) => {
     port: url.port || 443,
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${WHATSAPP_API_TOKEN}`,
+      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
   };
@@ -133,8 +134,8 @@ const httpsBinaryGet = (urlString) => new Promise((resolve, reject) => {
   req.end();
 });
 
-const ensureWhatsAppCredentials = () => {
-  if (!WHATSAPP_API_URL || !WHATSAPP_API_TOKEN) {
+const ensureWhatsAppCredentials = ({ requireGlobalToken = true } = {}) => {
+  if (!WHATSAPP_API_URL || (requireGlobalToken && !WHATSAPP_API_TOKEN)) {
     return {
       ok: false,
       error: 'Faltan variables de entorno de WhatsApp',
@@ -144,23 +145,29 @@ const ensureWhatsAppCredentials = () => {
   return { ok: true };
 };
 
-const sendWhatsAppPayload = (phone, phoneNumberId, payload, logLabel) => {
-  const creds = ensureWhatsAppCredentials();
+const sendWhatsAppPayload = async (phone, phoneNumberId, payload, logLabel) => {
+  const creds = ensureWhatsAppCredentials({ requireGlobalToken: false });
   if (!creds.ok) {
     log.error('Faltan variables de entorno');
-    return Promise.resolve({ success: false, status: creds.status, error: creds.error });
+    return { success: false, status: creds.status, error: creds.error };
+  }
+
+  if (!phoneNumberId) {
+    return { success: false, status: 400, error: 'Falta el phone_number_id de WhatsApp' };
+  }
+
+  let accessToken;
+  try {
+    accessToken = await accessTokenForSend(phoneNumberId);
+  } catch (error) {
+    return { success: false, status: 500, error: error.message };
   }
 
   return new Promise((resolve) => {
-    if (!phoneNumberId) {
-      resolve({ success: false, status: 400, error: 'Falta el phone_number_id de WhatsApp' });
-      return;
-    }
-
     const body = JSON.stringify(payload);
     log.info(logLabel, { phone, phoneNumberId });
 
-    const options = buildRequestOptions(WHATSAPP_API_URL, phoneNumberId);
+    const options = buildRequestOptions(WHATSAPP_API_URL, phoneNumberId, accessToken);
     const req = https.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
