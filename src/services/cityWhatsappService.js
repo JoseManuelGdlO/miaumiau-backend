@@ -127,9 +127,6 @@ async function completeEmbeddedSignup({
   await graph.subscribeWabaApp(resolvedWabaId, accessToken);
   await graph.ensurePlatformCanManageWaba({ wabaId: resolvedWabaId, plannerAccessToken: accessToken });
 
-  const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
-  if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
-
   let coexistenceSyncError = null;
   if (coexistenceEnabled) {
     try {
