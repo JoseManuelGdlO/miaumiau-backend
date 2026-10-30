@@ -47,15 +47,17 @@ test('un número repetido no pisa la otra ciudad', async () => {
   await issueCityProfile({ repo, cityId: 1 });
   const second = await issueCityProfile({ repo, cityId: 2 });
   await repo.update((await repo.findByCityId(1)).id, { phone_number_id: 'phone-1', access_token_encrypted: 'x' });
+  const sync = jest.fn(async () => ({}));
   await expect(completeEmbeddedSignup({
     repo,
-    graph: graph(),
+    graph: graph({ initiateCoexistenceSync: sync }),
     token: second.invite.token,
     code: 'code-1',
     wabaId: 'waba-2',
     phoneNumberId: 'phone-1',
     event: 'FINISH'
   })).rejects.toMatchObject({ status: 409 });
+  expect(sync).not.toHaveBeenCalled();
   expect((await repo.findByCityId(2)).phone_number_id).toBeNull();
 });
 
@@ -162,4 +164,30 @@ test('un duplicate en la base devuelve 409 y no cambia el perfil', async () => {
     event: 'FINISH'
   })).rejects.toMatchObject({ status: 409 });
   expect((await repo.findByCityId(11)).phone_number_id).toBeNull();
+});
+
+test('SequelizeUniqueConstraintError en update devuelve 409 y no cambia el perfil', async () => {
+  const repo = memoryRepo();
+  const issued = await issueCityProfile({ repo, cityId: 12 });
+  const originalUpdate = repo.update.bind(repo);
+  repo.update = async (id, patch) => {
+    if (patch.phone_number_id) {
+      throw {
+        name: 'SequelizeUniqueConstraintError',
+        message: 'Validation error',
+        original: { code: 'ER_DUP_ENTRY' }
+      };
+    }
+    return originalUpdate(id, patch);
+  };
+  await expect(completeEmbeddedSignup({
+    repo,
+    graph: graph(),
+    token: issued.invite.token,
+    code: 'code-1',
+    wabaId: 'waba-12',
+    phoneNumberId: 'phone-12',
+    event: 'FINISH'
+  })).rejects.toMatchObject({ status: 409 });
+  expect((await repo.findByCityId(12)).phone_number_id).toBeNull();
 });

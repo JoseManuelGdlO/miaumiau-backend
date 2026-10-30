@@ -124,6 +124,9 @@ async function completeEmbeddedSignup({
   const coexistenceEnabled = coexistenceByEvent || (details.is_on_biz_app === true && details.platform_type === 'CLOUD_API');
   const resolvedPhoneNumberId = String(phone.id);
 
+  const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
+  if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
+
   let coexistenceSyncError = null;
   if (coexistenceEnabled) {
     try {
@@ -133,9 +136,6 @@ async function completeEmbeddedSignup({
       console.warn('embedded signup: sync de coexistence falló', error.message);
     }
   }
-
-  const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
-  if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
 
   let updated;
   try {
@@ -150,7 +150,12 @@ async function completeEmbeddedSignup({
       invite_used_at: new Date(now).toISOString()
     });
   } catch (error) {
-    if (/duplicate|unique|ER_DUP_ENTRY/i.test(error.message)) {
+    const isDuplicate =
+      error.name === 'SequelizeUniqueConstraintError'
+      || (error.original && error.original.code === 'ER_DUP_ENTRY')
+      || (error.parent && error.parent.code === 'ER_DUP_ENTRY')
+      || /duplicate|unique|ER_DUP_ENTRY/i.test(String(error.message || ''));
+    if (isDuplicate) {
       throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
     }
     throw error;
