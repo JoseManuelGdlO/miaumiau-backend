@@ -34,6 +34,7 @@ const ProductoPaquete = require('./ProductoPaquete');
 const PaquetePedido = require('./PaquetePedido');
 const WhatsAppPhoneNumber = require('./WhatsAppPhoneNumber');
 const CityPointOfSale = require('./CityPointOfSale');
+const CityWhatsappProfile = require('./CityWhatsappProfile');
 const SiteSetting = require('./SiteSetting');
 const ClientePuntosMovimiento = require('./ClientePuntosMovimiento');
 const PushSubscription = require('./PushSubscription');
@@ -84,6 +85,7 @@ const models = {
   PaquetePedido: PaquetePedido(sequelize, DataTypes),
   WhatsAppPhoneNumber: WhatsAppPhoneNumber(sequelize, DataTypes),
   CityPointOfSale: CityPointOfSale(sequelize, DataTypes),
+  CityWhatsappProfile: CityWhatsappProfile(sequelize, DataTypes),
   SiteSetting: SiteSetting(sequelize, DataTypes),
   ClientePuntosMovimiento: ClientePuntosMovimiento(sequelize, DataTypes),
   PushSubscription: PushSubscription(sequelize, DataTypes),
@@ -199,6 +201,15 @@ models.City.hasMany(models.CityPointOfSale, {
 });
 
 models.CityPointOfSale.belongsTo(models.City, {
+  foreignKey: 'city_id',
+  as: 'ciudad'
+});
+
+models.City.hasOne(models.CityWhatsappProfile, {
+  foreignKey: 'city_id',
+  as: 'whatsapp_profile'
+});
+models.CityWhatsappProfile.belongsTo(models.City, {
   foreignKey: 'city_id',
   as: 'ciudad'
 });
