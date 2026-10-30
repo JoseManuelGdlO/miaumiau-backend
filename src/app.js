@@ -62,6 +62,7 @@ const {
 const portalClienteRoutes = require('./modules/portal/routes');
 const n8nRoutes = require('./modules/n8n/routes');
 const pushRoutes = require('./modules/push/routes');
+const { metaPublicRoutes } = require('./modules/meta/publicRoutes');
 
 const app = express();
 
@@ -304,6 +305,7 @@ app.use('/api/maps', mapsRoutes);
 app.use('/api/pagos', pagosRoutes);
 app.use('/api/n8n', n8nRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/public/meta', metaPublicRoutes);
 app.use('/api/public', publicSiteSettingsRoutes);
 app.use('/api/site-settings', siteSettingsRoutes);
 
@@ -318,6 +320,19 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.get('/vincular.js', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/vincular.js'));
+});
+app.get('/vincular/:token', (req, res) => {
+  res.set('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' https://connect.facebook.net",
+    "frame-src https://www.facebook.com https://web.facebook.com",
+    "connect-src 'self' https://www.facebook.com https://graph.facebook.com https://connect.facebook.net",
+    "style-src 'self' 'unsafe-inline'"
+  ].join('; '));
+  res.sendFile(path.join(__dirname, '../public/vincular.html'));
+});
 
 // Middlewares de error
 app.use(notFound);
