@@ -4,6 +4,10 @@ const { backfillProfiles } = require('../src/services/cityWhatsappService');
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    if (!String(process.env.CREDENTIALS_ENCRYPTION_KEY || '').trim()) {
+      throw new Error('Falta CREDENTIALS_ENCRYPTION_KEY');
+    }
+
     await queryInterface.createTable('city_whatsapp_profiles', {
       id: {
         allowNull: false,
@@ -91,9 +95,6 @@ module.exports = {
       unique: true,
     });
 
-    if (!String(process.env.CREDENTIALS_ENCRYPTION_KEY || '').trim()) {
-      throw new Error('Falta CREDENTIALS_ENCRYPTION_KEY');
-    }
     const [cities] = await queryInterface.sequelize.query('SELECT id FROM cities');
     const rows = backfillProfiles({
       cityIds: cities.map((row) => row.id),
