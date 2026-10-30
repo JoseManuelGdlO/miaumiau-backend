@@ -64,7 +64,12 @@ async function regenerateCityInvite({ repo, cityId, now = Date.now() } = {}) {
 async function disconnectCityWhatsapp({ repo, graph, cityId, now = Date.now() } = {}) {
   const profile = await repo.findByCityId(cityId);
   if (!profile || !profile.phone_number_id) throw httpError(404, 'No hay una conexión de Meta para desconectar.');
-  const token = decryptMetaAccessToken(profile.access_token_encrypted);
+  let token = '';
+  try {
+    token = decryptMetaAccessToken(profile.access_token_encrypted);
+  } catch (error) {
+    console.warn('disconnect: no se pudo leer el token de Meta', error.message);
+  }
   if (token && profile.waba_id && graph?.unsubscribeWabaApp) {
     try {
       await graph.unsubscribeWabaApp(profile.waba_id, token);
@@ -118,8 +123,6 @@ async function completeEmbeddedSignup({
   const coexistenceByEvent = String(event || '').toUpperCase() === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
   const coexistenceEnabled = coexistenceByEvent || (details.is_on_biz_app === true && details.platform_type === 'CLOUD_API');
   const resolvedPhoneNumberId = String(phone.id);
-  const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
-  if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
 
   let coexistenceSyncError = null;
   if (coexistenceEnabled) {
@@ -131,16 +134,27 @@ async function completeEmbeddedSignup({
     }
   }
 
-  const updated = await repo.update(profile.id, {
-    waba_id: resolvedWabaId,
-    phone_number_id: resolvedPhoneNumberId,
-    business_id: businessId ? String(businessId) : null,
-    display_phone: String(details.display_phone_number || phone.display_phone_number || '').trim() || null,
-    access_token_encrypted: encryptCredentialsPayload({ accessToken }),
-    coexistence_enabled: coexistenceEnabled,
-    coexistence_sync_error: coexistenceSyncError,
-    invite_used_at: new Date(now).toISOString()
-  });
+  const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
+  if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
+
+  let updated;
+  try {
+    updated = await repo.update(profile.id, {
+      waba_id: resolvedWabaId,
+      phone_number_id: resolvedPhoneNumberId,
+      business_id: businessId ? String(businessId) : null,
+      display_phone: String(details.display_phone_number || phone.display_phone_number || '').trim() || null,
+      access_token_encrypted: encryptCredentialsPayload({ accessToken }),
+      coexistence_enabled: coexistenceEnabled,
+      coexistence_sync_error: coexistenceSyncError,
+      invite_used_at: new Date(now).toISOString()
+    });
+  } catch (error) {
+    if (/duplicate|unique|ER_DUP_ENTRY/i.test(error.message)) {
+      throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
+    }
+    throw error;
+  }
 
   return {
     profile: updated,

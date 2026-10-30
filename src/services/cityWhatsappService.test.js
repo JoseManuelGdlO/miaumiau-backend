@@ -123,3 +123,43 @@ test('la migración crea un perfil por ciudad que no tiene', () => {
   expect(rows[0].phone_number_id).toBeNull();
   expect(rows[0].invite_token_hash).toHaveLength(64);
 });
+
+test('desconectar limpia el perfil aunque el token guardado sea inválido', async () => {
+  const repo = memoryRepo();
+  const issued = await issueCityProfile({ repo, cityId: 10 });
+  const profile = await repo.update((await repo.findByCityId(10)).id, {
+    phone_number_id: 'phone-10',
+    waba_id: 'waba-10',
+    access_token_encrypted: 'basura'
+  });
+  const unsub = jest.fn();
+  const disconnected = await disconnectCityWhatsapp({
+    repo,
+    graph: graph({ unsubscribeWabaApp: unsub }),
+    cityId: 10
+  });
+  expect(unsub).not.toHaveBeenCalled();
+  expect(disconnected.profile.phone_number_id).toBeNull();
+  expect(disconnected.invite.token).toBeTruthy();
+  expect(disconnected.profile.invite_token_hash).toBe(hashInviteToken(disconnected.invite.token));
+});
+
+test('un duplicate en la base devuelve 409 y no cambia el perfil', async () => {
+  const repo = memoryRepo();
+  const issued = await issueCityProfile({ repo, cityId: 11 });
+  const originalUpdate = repo.update.bind(repo);
+  repo.update = async (id, patch) => {
+    if (patch.phone_number_id) throw new Error('Duplicate entry for phone_number_id');
+    return originalUpdate(id, patch);
+  };
+  await expect(completeEmbeddedSignup({
+    repo,
+    graph: graph(),
+    token: issued.invite.token,
+    code: 'code-1',
+    wabaId: 'waba-11',
+    phoneNumberId: 'phone-11',
+    event: 'FINISH'
+  })).rejects.toMatchObject({ status: 409 });
+  expect((await repo.findByCityId(11)).phone_number_id).toBeNull();
+});
