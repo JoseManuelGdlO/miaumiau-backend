@@ -14,6 +14,7 @@ const {
   reassignCheck,
   isOpenSolicitud,
   sigueHoy,
+  esDeHoy,
   isValidatedCheckIn,
   toCargaValidada,
   toSolicitudResumen,
@@ -594,7 +595,7 @@ async function listarSolicitudes(deps = {}) {
       const pedido = await db.Pedido.findByPk(datos.pedido_id, { attributes: ['numero_pedido'] });
       numero = pedido?.numero_pedido || null;
     }
-    result.push(toSolicitudResumen(row, repartidor, numero));
+    result.push({ ...toSolicitudResumen(row, repartidor, numero), de_hoy: esDeHoy(row, hoy) });
   }
   return result;
 }

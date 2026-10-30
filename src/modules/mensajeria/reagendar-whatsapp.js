@@ -155,7 +155,7 @@ async function atenderMensaje(message, phoneNumberId) {
   await sendWhatsAppInteractive(telefono, linea, listaDeFechas(proximosDias()));
 }
 
-const AVISO_NADIE = 'Intentamos entregar su pedido y no fue posible porque no encontramos a nadie / no contestaron. Tu pedido ha sido reagendado para el día siguiente.';
+const AVISO_NADIE = 'Intentamos entregar tu pedido pero no fue posible porque no había nadie / no contestaron. Tu entrega ha sido reprogramada.';
 
 async function avisarNoEncontrado({ telefono, linea, send } = {}) {
   if (!telefono || !linea) return false;
@@ -164,24 +164,25 @@ async function avisarNoEncontrado({ telefono, linea, send } = {}) {
   return Boolean(result?.success);
 }
 
-function listaCalificacion() {
+function listaCalificacion(numero) {
+  const cual = numero ? ` ${numero}` : '';
   return {
     type: 'list',
-    body: { text: '¿Cómo fue la entrega? Elige de 1 a 5.' },
+    body: { text: `Tu pedido${cual} fue entregado. Califica el servicio de 1 a 5 estrellas. Si quieres, después escribe un comentario.` },
     action: {
       button: 'Calificar',
       sections: [{
         title: 'Estrellas',
-        rows: [1, 2, 3, 4, 5].map((n) => ({ id: `calificar:${n}`, title: String(n) })),
+        rows: [1, 2, 3, 4, 5].map((n) => ({ id: `calificar:${n}`, title: `${'★'.repeat(n)}` })),
       }],
     },
   };
 }
 
-async function avisarCalificar({ telefono, linea, send } = {}) {
+async function avisarCalificar({ telefono, linea, numero, send } = {}) {
   if (!telefono || !linea) return false;
   const enviar = send || sendWhatsAppInteractive;
-  const result = await enviar(telefono, linea, listaCalificacion());
+  const result = await enviar(telefono, linea, listaCalificacion(numero));
   return Boolean(result?.success);
 }
 

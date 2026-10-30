@@ -788,14 +788,18 @@ async function listarPedidos(deps = {}) {
   const franja = deps.franja === 'tarde' || deps.franja === 'manana' ? deps.franja : null;
   const pedidos = [];
   let esperandoLiberacion = false;
+  let dejoVerSinLiberar = false;
   for (const ruta of rutas) {
     for (const rp of ruta.pedidos || []) {
       if (!rp.pedido) continue;
       const stopFranja = franjaDe(rp.franja || ruta.franja);
       if (franja && stopFranja !== franja) continue;
       if (abierto(rp) && !rp.liberado_en) {
-        esperandoLiberacion = true;
-        continue;
+        if (dejoVerSinLiberar) {
+          esperandoLiberacion = true;
+          continue;
+        }
+        dejoVerSinLiberar = true;
       }
       pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
     }
@@ -1284,10 +1288,11 @@ async function entregar(deps = {}) {
     const { avisarCalificar } = require('../mensajeria/reagendar-whatsapp');
     const tel = pedido.telefono_referencia || pedido.cliente?.telefono;
     const linea = await lineaWhatsAppDelCliente(deps, pedido);
-    await avisarCalificar({ telefono: tel, linea });
+    await avisarCalificar({ telefono: tel, linea, numero: pedido.numero_pedido });
   } catch (err) {
     log.warn('no se pidió la calificación', { message: err.message });
   }
+  await soltarSiguiente(deps);
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -1405,6 +1410,7 @@ async function noEntregar(deps = {}) {
     }
   }
   await encolarAlDiaSiguiente(pedido, deps.fecha);
+  await soltarSiguiente(deps);
   return toPedidoDto(pedido, rutaPedido);
 }
 
@@ -1492,6 +1498,14 @@ async function iniciarRuta(deps = {}) {
     }, null);
   }
   return { iniciado: true };
+}
+
+async function soltarSiguiente(deps) {
+  try {
+    await liberarSiguienteParada(deps);
+  } catch (error) {
+    if (error.status !== 409) log.warn('no se liberó la siguiente parada', { message: error.message });
+  }
 }
 
 async function liberarSiguienteParada(deps = {}) {
@@ -1614,6 +1628,21 @@ async function crearSoporte(deps = {}) {
   if (typeof notificacion.update === 'function') await notificacion.update({ datos });
   else notificacion.datos = datos;
   publishNotificacion(notificacion);
+  if (esLlamada && deps.pedidoId) {
+    try {
+      const pedido = await getModels(deps).Pedido.findByPk(deps.pedidoId, {
+        include: [{ association: 'cliente', attributes: ['id', 'telefono'] }],
+      });
+      const tel = formatPhoneForWhatsApp(phoneOf(pedido));
+      const linea = await lineaWhatsAppDelCliente(deps, pedido);
+      if (tel && linea) {
+        const { sendWhatsAppMessage } = require('../../utils/whatsapp');
+        await sendWhatsAppMessage(tel, 'Tu repartidor está en la dirección esperándote.', linea);
+      }
+    } catch (error) {
+      log.warn('no se avisó la espera al cliente', { message: error.message });
+    }
+  }
   return {
     id: notificacion.id,
     notificacion_id: notificacion.id,

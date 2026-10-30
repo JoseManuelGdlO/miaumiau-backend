@@ -1,22 +1,35 @@
-const { franjaDeHorario, horarioNormalizado, horarioDeEntrega } = require('./horario');
+const { franjaDeHorario, horarioNormalizado, horarioDeEntrega, idsExcedentesManana } = require('./horario');
 const { reencolarNoEntregados, encolarAlDiaSiguiente, diaSiguiente, soltarParadasAbiertas } = require('./reencolar');
 const { elegirLinea } = require('../mensajeria/reagendar-whatsapp');
 
-test('antes de las 14 es mañana y desde las 14 es tarde', () => {
-  expect(franjaDeHorario('13:59')).toBe('manana');
-  expect(franjaDeHorario('14:00')).toBe('tarde');
+test('antes de las 12 es mañana y desde las 12 es tarde', () => {
+  expect(franjaDeHorario('11:59')).toBe('manana');
+  expect(franjaDeHorario('12:00')).toBe('tarde');
+  expect(franjaDeHorario('13:59')).toBe('tarde');
   expect(franjaDeHorario('16:30:00')).toBe('tarde');
   expect(franjaDeHorario('')).toBeNull();
   expect(franjaDeHorario('25:00')).toBeNull();
   expect(horarioNormalizado('9:05')).toBe('09:05:00');
   expect(horarioNormalizado('')).toBeNull();
   expect(horarioDeEntrega('09:30').franja).toBe('manana');
-  expect(horarioDeEntrega('13:59').franja).toBe('manana');
-  expect(horarioDeEntrega('14:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('11:59').franja).toBe('manana');
+  expect(horarioDeEntrega('12:00').franja).toBe('tarde');
+  expect(horarioDeEntrega('13:59').franja).toBe('tarde');
   expect(horarioDeEntrega('17:00').franja).toBe('tarde');
   expect(horarioDeEntrega('09:29').ok).toBe(false);
   expect(horarioDeEntrega('17:01').ok).toBe(false);
   expect(horarioDeEntrega('').ok).toBe(true);
+});
+
+test('la mañana suelta la parada que no cabe por distancia', () => {
+  const cerca = { id: 1, franja: 'manana', lat: 24.02, lng: -104.67, orden: 1 };
+  const lejos = { id: 2, franja: 'manana', lat: 25.5, lng: -103.4, orden: 2 };
+  expect(idsExcedentesManana([lejos, cerca])).toEqual([2]);
+  expect(idsExcedentesManana([
+    cerca,
+    { id: 4, franja: 'manana', lat: 24.03, lng: -104.67, orden: 2 },
+  ])).toEqual([]);
+  expect(idsExcedentesManana([{ id: 3, franja: 'tarde', lat: 0, lng: 0, orden: 1 }])).toEqual([]);
 });
 
 test('el no entregado de ayer vuelve a la cola de hoy', async () => {

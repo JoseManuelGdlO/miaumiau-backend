@@ -4,7 +4,7 @@ const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { dayKey } = require('../app-repartidor/domain');
-const { franjaDeHorario } = require('../pedidos/horario');
+const { franjaDeHorario, idsExcedentesManana } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
@@ -815,6 +815,19 @@ class RutaController {
       }
       
       log.debug(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
+      try {
+        const deLaRuta = await RutaPedido.findAll({ where: { fkid_ruta: parseInt(id, 10) } });
+        const sobran = idsExcedentesManana(deLaRuta.map((parada) => ({
+          id: parada.id,
+          franja: parada.franja,
+          lat: parada.lat,
+          lng: parada.lng,
+          orden: parada.orden_entrega,
+        })));
+        if (sobran.length) await RutaPedido.update({ franja: 'tarde' }, { where: { id: sobran } });
+      } catch (error) {
+        log.warn('[RUTAS] No se reasignó el excedente de la mañana', { message: error.message });
+      }
 
       if (rutaPedidos.length > 0 && ruta.fkid_repartidor) {
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
