@@ -106,9 +106,6 @@ async function completeEmbeddedSignup({
   const resolvedWabaId = String(wabaId || '').trim();
   if (!resolvedWabaId) throw httpError(400, 'Meta no devolvió el WABA ID. Completa de nuevo el flujo.');
 
-  await graph.subscribeWabaApp(resolvedWabaId, accessToken);
-  await graph.ensurePlatformCanManageWaba({ wabaId: resolvedWabaId, plannerAccessToken: accessToken });
-
   const phones = await graph.listWabaPhoneNumbers(resolvedWabaId, accessToken);
   let phone = pickPhone(phones, phoneNumberId);
   if (!phone && phoneNumberId) phone = await graph.getPhoneNumberDetails(phoneNumberId, accessToken);
@@ -127,6 +124,9 @@ async function completeEmbeddedSignup({
 
   const owner = await repo.findByPhoneNumberId(resolvedPhoneNumberId);
   if (owner && owner.id !== profile.id) throw httpError(409, 'Ese número de WhatsApp ya está vinculado a otra ciudad.');
+
+  await graph.subscribeWabaApp(resolvedWabaId, accessToken);
+  await graph.ensurePlatformCanManageWaba({ wabaId: resolvedWabaId, plannerAccessToken: accessToken });
 
   let coexistenceSyncError = null;
   if (coexistenceEnabled) {
