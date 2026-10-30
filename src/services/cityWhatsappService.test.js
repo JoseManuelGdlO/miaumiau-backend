@@ -119,6 +119,14 @@ test('el token de envío sale de la ciudad o del global', () => {
   })).toEqual({ token: 'global', source: 'global' });
 });
 
+test('token cifrado inválido devuelve city-unreadable sin usar el global', () => {
+  expect(resolveWhatsAppAccessToken({
+    phoneNumberId: 'phone-9',
+    profile: { phone_number_id: 'phone-9', access_token_encrypted: 'basura' },
+    globalToken: 'global'
+  })).toEqual({ token: '', source: 'city-unreadable' });
+});
+
 test('la migración crea un perfil por ciudad que no tiene', () => {
   const rows = backfillProfiles({ cityIds: [1, 2, 2], existingCityIds: [2], now: Date.parse('2026-10-29T00:00:00Z') });
   expect(rows.map((row) => row.city_id)).toEqual([1]);
