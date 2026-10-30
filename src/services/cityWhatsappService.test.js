@@ -47,16 +47,24 @@ test('un número repetido no pisa la otra ciudad', async () => {
   await issueCityProfile({ repo, cityId: 1 });
   const second = await issueCityProfile({ repo, cityId: 2 });
   await repo.update((await repo.findByCityId(1)).id, { phone_number_id: 'phone-1', access_token_encrypted: 'x' });
+  const subscribe = jest.fn(async () => ({}));
+  const manage = jest.fn(async () => ({ skipped: true }));
   const sync = jest.fn(async () => ({}));
   await expect(completeEmbeddedSignup({
     repo,
-    graph: graph({ initiateCoexistenceSync: sync }),
+    graph: graph({
+      subscribeWabaApp: subscribe,
+      ensurePlatformCanManageWaba: manage,
+      initiateCoexistenceSync: sync
+    }),
     token: second.invite.token,
     code: 'code-1',
     wabaId: 'waba-2',
     phoneNumberId: 'phone-1',
     event: 'FINISH'
   })).rejects.toMatchObject({ status: 409 });
+  expect(subscribe).not.toHaveBeenCalled();
+  expect(manage).not.toHaveBeenCalled();
   expect(sync).not.toHaveBeenCalled();
   expect((await repo.findByCityId(2)).phone_number_id).toBeNull();
 });

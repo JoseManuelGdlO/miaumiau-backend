@@ -25,7 +25,14 @@ async function graphRequest({ method = 'GET', path, token, query = {}, body } = 
     throw httpError(502, 'No se pudo contactar la API de Meta.');
   }
   const text = await res.text();
-  const payload = text ? JSON.parse(text) : {};
+  let payload = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch (error) {
+      throw httpError(502, 'No se pudo contactar la API de Meta.');
+    }
+  }
   if (!res.ok) {
     const message = payload?.error?.message || 'Error de Graph API';
     throw httpError(res.status >= 400 && res.status < 600 ? res.status : 502, message);

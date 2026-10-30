@@ -241,18 +241,25 @@ const isValidPublicHttpsUrl = (url) => {
   }
 };
 
-const uploadWhatsAppMedia = (phoneNumberId, filePath, mimeType) => {
-  const creds = ensureWhatsAppCredentials();
+const uploadWhatsAppMedia = async (phoneNumberId, filePath, mimeType) => {
+  const creds = ensureWhatsAppCredentials({ requireGlobalToken: false });
   if (!creds.ok) {
-    return Promise.resolve({ success: false, status: creds.status, error: creds.error });
+    return { success: false, status: creds.status, error: creds.error };
   }
 
   if (!phoneNumberId) {
-    return Promise.resolve({ success: false, status: 400, error: 'Falta el phone_number_id de WhatsApp' });
+    return { success: false, status: 400, error: 'Falta el phone_number_id de WhatsApp' };
   }
 
   if (!filePath || !fs.existsSync(filePath)) {
-    return Promise.resolve({ success: false, status: 400, error: 'Archivo de imagen no encontrado' });
+    return { success: false, status: 400, error: 'Archivo de imagen no encontrado' };
+  }
+
+  let accessToken;
+  try {
+    accessToken = await accessTokenForSend(phoneNumberId);
+  } catch (error) {
+    return { success: false, status: error.status || 500, error: error.message };
   }
 
   return new Promise((resolve) => {
@@ -288,7 +295,7 @@ const uploadWhatsAppMedia = (phoneNumberId, filePath, mimeType) => {
       port: url.port || 443,
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${WHATSAPP_API_TOKEN}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Content-Length': body.length,
       },
