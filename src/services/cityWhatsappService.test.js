@@ -174,6 +174,49 @@ test('un duplicate en la base devuelve 409 y no cambia el perfil', async () => {
   expect((await repo.findByCityId(11)).phone_number_id).toBeNull();
 });
 
+test('si el número pedido no está en la lista, se resuelve con getPhoneNumberDetails', async () => {
+  const repo = memoryRepo();
+  const issued = await issueCityProfile({ repo, cityId: 13 });
+  const details = jest.fn(async () => ({
+    id: 'phone-3',
+    display_phone_number: '+52 3',
+    is_on_biz_app: false,
+    platform_type: 'CLOUD_API'
+  }));
+  const result = await completeEmbeddedSignup({
+    repo,
+    graph: graph({
+      listWabaPhoneNumbers: async () => [{ id: 'phone-1', display_phone_number: '+52 1' }],
+      getPhoneNumberDetails: details
+    }),
+    token: issued.invite.token,
+    code: 'code-1',
+    wabaId: 'waba-13',
+    phoneNumberId: 'phone-3',
+    event: 'FINISH'
+  });
+  expect(details).toHaveBeenCalledWith('phone-3', 'tok-ciudad');
+  expect(result.profile.phone_number_id).toBe('phone-3');
+});
+
+test('si getPhoneNumberDetails falla al resolver el número pedido, el perfil no cambia', async () => {
+  const repo = memoryRepo();
+  const issued = await issueCityProfile({ repo, cityId: 14 });
+  await expect(completeEmbeddedSignup({
+    repo,
+    graph: graph({
+      listWabaPhoneNumbers: async () => [{ id: 'phone-1', display_phone_number: '+52 1' }],
+      getPhoneNumberDetails: async () => { throw new Error('no está'); }
+    }),
+    token: issued.invite.token,
+    code: 'code-1',
+    wabaId: 'waba-14',
+    phoneNumberId: 'phone-missing',
+    event: 'FINISH'
+  })).rejects.toThrow('no está');
+  expect((await repo.findByCityId(14)).phone_number_id).toBeNull();
+});
+
 test('SequelizeUniqueConstraintError en update devuelve 409 y no cambia el perfil', async () => {
   const repo = memoryRepo();
   const issued = await issueCityProfile({ repo, cityId: 12 });
