@@ -87,6 +87,7 @@ function pickPhone(phones, preferredId) {
   if (preferredId) {
     const match = phones.find((row) => String(row.id) === String(preferredId));
     if (match) return match;
+    return null;
   }
   return phones[0];
 }
