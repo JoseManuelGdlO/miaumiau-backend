@@ -173,7 +173,12 @@ async function completeEmbeddedSignup({
 function resolveWhatsAppAccessToken({ phoneNumberId, profile, globalToken } = {}) {
   const id = String(phoneNumberId || '').trim();
   if (profile && profile.phone_number_id && String(profile.phone_number_id) === id) {
-    const token = decryptMetaAccessToken(profile.access_token_encrypted);
+    let token = '';
+    try {
+      token = decryptMetaAccessToken(profile.access_token_encrypted);
+    } catch (error) {
+      return { token: '', source: 'city-unreadable' };
+    }
     if (!token) return { token: '', source: 'city-unreadable' };
     return { token, source: 'city' };
   }
