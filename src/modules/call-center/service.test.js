@@ -86,7 +86,8 @@ test('atender agrega la nota y no borra la anterior', async () => {
     transaction: async (fn) => fn(),
   });
   expect(result.atendida).toBe(true);
-  expect(n.leida).toBe(true);
+  expect(n.leida).toBe(false);
+  expect(n.datos.llamada_atendida).toBe(true);
   expect(pedido.notas).toBe('Portón azul\n[Call Center 2026-10-07 12:45] No contestó');
 });
 
@@ -119,7 +120,7 @@ test('atender pasa la misma transacción a pedido y notificación', async () => 
     { transaction: tx },
   );
   expect(n.update).toHaveBeenCalledWith(
-    expect.objectContaining({ leida: true }),
+    expect.objectContaining({ leida: false, datos: expect.objectContaining({ llamada_atendida: true }) }),
     { transaction: tx },
   );
 });
@@ -960,7 +961,7 @@ test('atender relee y bloquea la solicitud antes de anotar', async () => {
     transaction: async (fn) => fn(tx),
   });
   expect(pedido.notas).toBe('[Call Center 2026-10-07 12:40] Primera\n[Call Center 2026-10-07 12:45] Segunda');
-  expect(n.update).toHaveBeenCalledWith(expect.objectContaining({ leida: true }), { transaction: tx });
+  expect(n.update).toHaveBeenCalledWith(expect.objectContaining({ leida: false }), { transaction: tx });
   expect(pedido.update).toHaveBeenCalledWith(expect.any(Object), { transaction: tx });
 });
 

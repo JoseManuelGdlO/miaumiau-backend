@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'cambiarDireccion', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'anotarComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'cambiarDireccion', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'anotarComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder', 'liberarIntento', 'verCodigo', 'enviarCodigo', 'avisarFalla']);
 
 function live(extra) {
   return {
@@ -204,6 +204,36 @@ function moverParada(req, res) {
   })), 'moverParada');
 }
 
+function liberarIntento(req, res) {
+  return handle(res, () => service.liberarIntento(live({
+    notificacionId: req.params.id,
+    usuario: req.user,
+  })), 'liberarIntento');
+}
+
+function verCodigo(req, res) {
+  return handle(res, () => service.verCodigo(live({
+    pedidoId: req.params.id,
+    usuario: req.user,
+  })), 'verCodigo');
+}
+
+function enviarCodigo(req, res) {
+  return handle(res, () => service.enviarCodigo(live({
+    pedidoId: req.params.id,
+    usuario: req.user,
+  })), 'enviarCodigo');
+}
+
+function avisarFalla(req, res) {
+  return handle(res, () => service.avisarFalla(live({
+    motivo: req.body?.motivo,
+    pedidoIds: req.body?.pedido_ids,
+    repartidorId: req.body?.repartidor_id,
+    usuario: req.user,
+  })), 'avisarFalla');
+}
+
 function resolverAyuda(req, res) {
   return handle(res, () => service.resolverAyuda(live({
     notificacionId: req.params.id,
@@ -259,4 +289,8 @@ module.exports = {
   asignarActividad,
   cerrarSinCodigo,
   resolverAyuda,
+  liberarIntento,
+  verCodigo,
+  enviarCodigo,
+  avisarFalla,
 };

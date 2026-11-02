@@ -120,6 +120,22 @@ module.exports = (sequelize, DataTypes) => {
     entrega_tercero_en: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    entrega_dejar_en: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    receptor_nombre: {
+      type: DataTypes.STRING(120),
+      allowNull: true
+    },
+    dejar_lugar: {
+      type: DataTypes.STRING(200),
+      allowNull: true
+    },
+    evidencia_path: {
+      type: DataTypes.STRING(255),
+      allowNull: true
     }
   }, {
     tableName: 'rutas_pedidos',

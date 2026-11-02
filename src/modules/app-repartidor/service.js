@@ -30,7 +30,7 @@ const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventari
 const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
-const { encolarAlDiaSiguiente, soltarParadasAbiertas } = require('../pedidos/reencolar');
+const { soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
 const { repartoBloqueado } = require('./deposito-pendiente');
 
@@ -83,6 +83,7 @@ function toPedidoDto(pedido, rutaPedido) {
     rest.link_ubicacion = rp.link_ubicacion;
     rest.franja = franjaDe(rp.franja);
     rest.entrega_tercero = Boolean(rp.entrega_tercero_en);
+    rest.entrega_dejar = Boolean(rp.entrega_dejar_en);
     const minutos = Number(rp.tiempo_estimado_entrega);
     if (minutos > 0) rest.minutos_transporte = minutos;
   }
@@ -813,6 +814,7 @@ async function detallePedido(deps = {}) {
   const dto = toPedidoDto(rutaPedido.pedido, rutaPedido);
   const llamada = await findLlamadaCliente(deps);
   if (llamada?.datos?.espera_desde) dto.espera_desde = llamada.datos.espera_desde;
+  if (llamada?.datos?.intento_liberado) dto.intento_liberado = true;
   return dto;
 }
 
@@ -841,16 +843,9 @@ async function lineaWhatsAppDelCliente(deps, pedido) {
   });
 }
 
-async function llegada(deps = {}) {
-  await requireJornadaAbierta(deps);
-  const rutaPedido = await assertRutaDelRepartidor(deps, { withCode: true, withPhone: true });
-  if (rutaPedido.llego_en) return toPedidoDto(rutaPedido.pedido, rutaPedido);
-
-  const pedido = rutaPedido.pedido;
-  await ensureDeliveryCode(pedido);
+async function mandarCodigo(deps, pedido) {
   const telefono = formatPhoneForWhatsApp(phoneOf(pedido));
   if (!telefono) fail(422, 'El pedido no tiene teléfono para enviar el código');
-
   const send = deps.sendWhatsAppTemplate || sendWhatsAppTemplate;
   let result;
   try {
@@ -867,7 +862,14 @@ async function llegada(deps = {}) {
     fail(502, PACKAGE_CODE_SEND_ERROR);
   }
   if (!result?.success) fail(502, PACKAGE_CODE_SEND_ERROR);
+}
 
+async function llegada(deps = {}) {
+  await requireJornadaAbierta(deps);
+  const rutaPedido = await assertRutaDelRepartidor(deps, { withCode: true, withPhone: true });
+  if (rutaPedido.llego_en) return toPedidoDto(rutaPedido.pedido, rutaPedido);
+
+  await ensureDeliveryCode(rutaPedido.pedido);
   await rutaPedido.update({
     llego_en: new Date(),
     estado_entrega: 'en_camino',
@@ -1137,6 +1139,12 @@ function comprobantePath(file) {
   return `comprobantes/${file.filename}`;
 }
 
+function nombreYApellido(value) {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return '';
+  return parts.join(' ').slice(0, 120);
+}
+
 function isUniqueConstraint(err) {
   return err?.name === 'SequelizeUniqueConstraintError'
     || err?.original?.code === 'ER_DUP_ENTRY'
@@ -1171,13 +1179,6 @@ async function entregar(deps = {}) {
     fail(409, 'El pedido ya fue cerrado');
   }
   if (!rutaPedido.codigo_validado_en) fail(422, 'Valida el código antes de entregar');
-  let notaTercero = '';
-  if (rutaPedido.entrega_tercero_en) {
-    const receptor = String(deps.receptorNombre || '').trim();
-    if (receptor.length < 2) fail(422, 'Escribe el nombre de quien recibe');
-    if (!deps.receptorFile) fail(422, 'Toma la foto de quien recibe');
-    notaTercero = `Entregado a ${receptor}. Foto: ${comprobantePath(deps.receptorFile)}`;
-  }
 
   const elegido = String(deps.metodo || '');
   const metodo = elegido === 'terminal' ? 'transferencia' : elegido;
@@ -1193,6 +1194,25 @@ async function entregar(deps = {}) {
   });
   if (!payment.ok) fail(422, payment.message);
 
+  let receptor = '';
+  let lugar = '';
+  let evidencia = null;
+  let notaTercero = '';
+  if (rutaPedido.entrega_tercero_en) {
+    receptor = nombreYApellido(deps.receptorNombre);
+    if (!receptor) fail(422, 'Escribe nombre y apellido de quien recibe');
+    if (!deps.receptorFile) fail(422, 'Toma la foto de quien recibe');
+    evidencia = comprobantePath(deps.receptorFile);
+    notaTercero = `Entregado a ${receptor}. Foto: ${evidencia}`;
+  }
+  if (rutaPedido.entrega_dejar_en) {
+    lugar = String(deps.lugar || '').trim().slice(0, 200);
+    if (lugar.length < 3) fail(422, 'Escribe dónde se deja el paquete');
+    if (!deps.receptorFile) fail(422, 'Toma la foto del lugar');
+    evidencia = comprobantePath(deps.receptorFile);
+    notaTercero = `Dejado en ${lugar}. Foto: ${evidencia}`;
+  }
+
   const db = getModels(deps);
   const sequelize = db.sequelize;
   const now = new Date();
@@ -1201,7 +1221,6 @@ async function entregar(deps = {}) {
 
   try {
     await sequelize.transaction(async (t) => {
-      if (notaTercero) await rutaPedido.update({ notas_entrega: notaTercero }, { transaction: t });
       await db.CobroEntrega.create({
         fkid_pedido: pedido.id,
         fkid_repartidor: deps.repartidorId,
@@ -1214,6 +1233,10 @@ async function entregar(deps = {}) {
       await rutaPedido.update({
         estado_entrega: 'entregado',
         fecha_entrega_real: now,
+        ...(receptor ? { receptor_nombre: receptor } : {}),
+        ...(lugar ? { dejar_lugar: lugar } : {}),
+        ...(evidencia ? { evidencia_path: evidencia } : {}),
+        ...(notaTercero ? { notas_entrega: notaTercero } : {}),
       }, { transaction: t });
       await pedido.update({ estado: 'entregado', fecha_entrega_real: now }, { transaction: t });
 
@@ -1284,11 +1307,13 @@ async function entregar(deps = {}) {
       log.warn('no se avisó el cambio de método', { message: err.message });
     }
   }
+  let calificacionAvisada = false;
   try {
     const { avisarCalificar } = require('../mensajeria/reagendar-whatsapp');
     const tel = pedido.telefono_referencia || pedido.cliente?.telefono;
     const linea = await lineaWhatsAppDelCliente(deps, pedido);
-    await avisarCalificar({ telefono: tel, linea, numero: pedido.numero_pedido });
+    calificacionAvisada = await avisarCalificar({ telefono: tel, linea, numero: pedido.numero_pedido });
+    if (!calificacionAvisada) log.warn('no se pidió la calificación', { pedidoId: pedido.id });
   } catch (err) {
     log.warn('no se pidió la calificación', { message: err.message });
   }
@@ -1304,10 +1329,10 @@ async function entregar(deps = {}) {
     });
   }
 
-  return loadPedidoDto(db, pedido, rutaPedido);
+  const dto = await loadPedidoDto(db, pedido, rutaPedido);
+  dto.calificacion_avisada = calificacionAvisada;
+  return dto;
 }
-
-const ESPERA_CLIENTE_MS = 5 * 60 * 1000;
 
 function esAyudaCodigo(n, pedidoId) {
   const d = n.datos || {};
@@ -1321,12 +1346,6 @@ function esLlamadaCliente(n, pedidoId) {
     && Number(d.pedido_id) === Number(pedidoId)
     && d.estado_solicitud === 'abierta'
   );
-}
-
-function esperaCumplida(datos, now) {
-  const start = Date.parse(datos?.espera_desde || '');
-  if (!Number.isFinite(start)) return false;
-  return now.getTime() - start >= ESPERA_CLIENTE_MS;
 }
 
 function whereDatosRepartidor(repartidorId) {
@@ -1353,6 +1372,24 @@ async function avisosDelRepartidor(deps) {
   });
 }
 
+function textoDeAviso(row) {
+  const datos = row?.datos || {};
+  if (datos.tipo === 'llamada_cliente' && datos.intento_liberado) return 'Call Center liberó el intento de entrega';
+  if (datos.tipo === 'llamada_cliente' && (row.leida || datos.llamada_atendida)) return 'Call Center ya se comunicó con el cliente';
+  if (datos.ayuda === 'tercero' && (datos.autorizado || datos.receptor_nombre)) return 'Call Center autorizó la entrega a otra persona';
+  if (datos.ayuda === 'dejar' && datos.autorizado) return 'Call Center autorizó dejar el paquete';
+  if (datos.ayuda === 'codigo' && datos.autorizado) return 'Call Center autorizó la entrega sin el código';
+  return '';
+}
+
+async function listarAvisos(deps = {}) {
+  const rows = await avisosDelRepartidor(deps);
+  return rows.map((row) => {
+    const texto = textoDeAviso(row);
+    return texto ? { id: row.id, texto } : null;
+  }).filter(Boolean).slice(0, 20);
+}
+
 async function findLlamadaCliente(deps) {
   const rows = await avisosDelRepartidor(deps);
   return rows.find((n) => esLlamadaCliente(n, deps.pedidoId)) || null;
@@ -1364,11 +1401,11 @@ async function noEntregar(deps = {}) {
   const llamada = avisos.find((n) => esLlamadaCliente(n, deps.pedidoId));
   const ayuda = avisos.find((n) => esAyudaCodigo(n, deps.pedidoId));
   const ahora = deps.now ? new Date(deps.now) : new Date();
-  const porLlamada = Boolean(llamada) && esperaCumplida(llamada.datos, ahora);
+  const porLlamada = Boolean(llamada?.datos?.intento_liberado);
   const porAyuda = Boolean(ayuda) && ayudaCodigoVencida(ayuda.datos?.espera_desde, ahora);
   if (!porLlamada && !porAyuda) {
     if (!llamada && !ayuda) fail(403, 'Falta avisar a Call Center');
-    fail(403, 'Debes esperar antes de avanzar');
+    fail(403, 'Call Center tiene que liberar el intento');
   }
 
   const rutaPedido = await assertRutaDelRepartidor(deps, { withPhone: true });
@@ -1397,11 +1434,10 @@ async function noEntregar(deps = {}) {
     const previas = String(pedido.notas || '');
     await pedido.update({ notas: `${previas ? `${previas}\n` : ''}No entregado: ${notaOtro}`.slice(0, 1000) });
   }
-  if (avisaReagendo(motivo)) {
+  if (avisaReagendo(motivo) || motivo === 'otro') {
     try {
-      const { avisarReagendar, avisarNoEncontrado } = require('../mensajeria/reagendar-whatsapp');
-      const avisar = motivo === 'nadie' ? avisarNoEncontrado : avisarReagendar;
-      await avisar({
+      const { avisarElegirFecha } = require('../mensajeria/reagendar-whatsapp');
+      await avisarElegirFecha({
         telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
         linea: await lineaWhatsAppDelCliente(deps, pedido),
       });
@@ -1409,7 +1445,6 @@ async function noEntregar(deps = {}) {
       log.warn('No se pudo avisar el reagendo por WhatsApp', { message: error.message });
     }
   }
-  await encolarAlDiaSiguiente(pedido, deps.fecha);
   await soltarSiguiente(deps);
   return toPedidoDto(pedido, rutaPedido);
 }
@@ -1598,14 +1633,18 @@ async function crearSoporte(deps = {}) {
   const esLlamada = motivo === 'llamada';
   const esAyudaCodigo = motivo === 'ayuda_codigo';
   const esAyudaTercero = motivo === 'ayuda_tercero';
+  const esAyudaDejar = motivo === 'ayuda_dejar';
+  const esFalla = motivo === 'averia' || motivo === 'clima';
+  const nota = String(deps.nota || '').trim().slice(0, 500);
+  if (esFalla && nota.length < 3) fail(422, 'Escribe qué pasó');
   const crearNotificacion = deps.crearNotificacion || ((payload) => defaultCrearNotificacion(deps, payload));
-  const esperaDesde = esLlamada || esAyudaCodigo || esAyudaTercero ? new Date().toISOString() : null;
+  const esperaDesde = esLlamada || esAyudaCodigo || esAyudaTercero || esAyudaDejar ? new Date().toISOString() : null;
   const repartidorNombre = await nombreDelRepartidor(deps);
   const tipo = esLlamada ? 'llamada_cliente' : 'soporte';
   const notificacion = await crearNotificacion({
     nombre: esLlamada ? 'Llamada al cliente' : 'Soporte del repartidor',
     descripcion: repartidorNombre ? `Viene de ${repartidorNombre}` : 'Viene de la cola de Call Center',
-    prioridad: esLlamada ? 'alta' : 'media',
+    prioridad: esFalla ? 'urgente' : esLlamada ? 'alta' : 'media',
     datos: {
       tipo,
       estado_solicitud: 'abierta',
@@ -1613,15 +1652,16 @@ async function crearSoporte(deps = {}) {
       ...(repartidorNombre ? { repartidor_nombre: repartidorNombre } : {}),
       ...(deps.pedidoId ? { pedido_id: Number(deps.pedidoId) } : {}),
       ...(esperaDesde ? { espera_desde: esperaDesde } : {}),
-      motivo: String(deps.nota || '').trim().slice(0, 500) || motivo,
+      motivo: esFalla ? motivo : (nota || motivo),
       ...(esAyudaCodigo ? { ayuda: 'codigo' } : {}),
       ...(esAyudaTercero ? { ayuda: 'tercero' } : {}),
-      ...(String(deps.nota || '').trim() ? { nota: String(deps.nota).trim().slice(0, 500) } : {}),
+      ...(esAyudaDejar ? { ayuda: 'dejar' } : {}),
+      ...(nota ? { nota } : {}),
     },
   });
   const datos = {
     ...(notificacion.datos || {}),
-    actionUrl: esAyudaCodigo || esAyudaTercero
+    actionUrl: esAyudaCodigo || esAyudaTercero || esAyudaDejar || esFalla || esLlamada
       ? `/dashboard/call-center?tab=soporte&aviso=${notificacion.id}&repartidor=${deps.repartidorId}`
       : `/dashboard/call-center?tab=incidencias&aviso=${notificacion.id}`,
   };
@@ -1914,6 +1954,9 @@ module.exports = {
   resumenVelocidad,
   ubicacionPedido,
   detallePedido,
+  listarAvisos,
+  mandarCodigo,
+  lineaWhatsAppDelCliente,
   perfil,
   actualizarFoto,
   estadisticas,

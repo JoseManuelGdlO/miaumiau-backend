@@ -1,4 +1,3 @@
-const { Op } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
 
 const NOTA_COLA = 'Volvió a la cola: no se entregó el día anterior.';
@@ -40,28 +39,9 @@ function diaAnterior(fecha) {
   return `${dt.getUTCFullYear()}-${mm}-${dd}`;
 }
 
-async function reencolarNoEntregados(deps = {}) {
-  const fecha = String(deps.fecha || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || typeof deps.Pedido?.findAll !== 'function') return 0;
-  const ayer = diaAnterior(fecha);
-  const rows = await deps.Pedido.findAll({
-    where: {
-      baja_logica: false,
-      estado: 'no_entregado',
-      fecha_entrega_estimada: {
-        [Op.between]: [new Date(`${ayer}T00:00:00.000Z`), new Date(`${ayer}T23:59:59.999Z`)],
-      },
-    },
-  });
-  let moved = 0;
-  for (const row of rows) {
-    if (row.estado && row.estado !== 'no_entregado') continue;
-    const data = datosReencole(row.notas, fecha);
-    if (typeof row.update === 'function') await row.update(data);
-    else Object.assign(row, data);
-    moved += 1;
-  }
-  return moved;
+async function reencolarNoEntregados() {
+  // La fecha nueva la confirma un super admin. Este barrido ya no mueve pedidos.
+  return 0;
 }
 
 async function soltarParadasAbiertas(db, repartidorId, fecha) {

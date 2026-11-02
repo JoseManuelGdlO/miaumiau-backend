@@ -2,7 +2,6 @@ const { Op } = require('sequelize');
 const db = require('../../models');
 const { dayKey } = require('../app-repartidor/domain');
 const { quiereReagendar, proximosDias } = require('../app-repartidor/aviso-siguiente');
-const { reagendar } = require('../call-center/service');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { sendWhatsAppInteractive, sendWhatsAppMessage } = require('../../utils/whatsapp');
 const { Logger } = require('../../utils/logger');
@@ -30,10 +29,10 @@ function elegirLinea(lineas, { conversacionId, telefonoCiudad, defecto } = {}) {
   return defecto || LINEA;
 }
 
-function listaDeFechas(dias) {
+function listaDeFechas(dias, texto) {
   return {
     type: 'list',
-    body: { text: 'Elige el día para recibir tu pedido.' },
+    body: { text: texto || 'Elige el día para recibir tu pedido.' },
     action: {
       button: 'Ver fechas',
       sections: [{
@@ -68,26 +67,18 @@ async function pedidoDeHoy(telefono, estados) {
       where: { fecha_ruta: hoy, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
     }],
   });
-  return paradas.find((parada) => {
-    const pedido = parada.pedido;
+  const parada = paradas.find((row) => {
+    const pedido = row.pedido;
     const tel = `${pedido.telefono_referencia || ''} ${pedido.cliente?.telefono || ''}`;
     return tel.replace(/\D/g, '').endsWith(ultimos);
-  })?.pedido || null;
+  });
+  if (!parada?.pedido) return null;
+  parada.pedido.repartidor_id = parada.ruta?.fkid_repartidor || null;
+  return parada.pedido;
 }
 
 async function pedidoAbierto(telefono) {
-  return pedidoDeHoy(telefono, { [Op.notIn]: ['entregado', 'cancelado', 'no_entregado'] });
-}
-
-async function reiniciarConversacion(telefono) {
-  const ultimos = String(telefono || '').replace(/\D/g, '').slice(-10);
-  const conversacion = await db.Conversacion.findOne({
-    where: { from: { [Op.like]: `%${ultimos}` } },
-    order: [['updated_at', 'DESC']],
-  });
-  if (conversacion?.update) {
-    await conversacion.update({ status: 'activa', id_pedido: null });
-  }
+  return pedidoDeHoy(telefono, { [Op.notIn]: ['entregado', 'cancelado'] });
 }
 
 async function atenderMensaje(message, phoneNumberId) {
@@ -104,15 +95,32 @@ async function atenderMensaje(message, phoneNumberId) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(fechaElegida)) {
     const pedido = await pedidoAbierto(telefono);
     if (!pedido) return;
-    await reagendar({
-      pedidoId: pedido.id,
-      pedido,
-      fecha: fechaElegida,
-      motivo: 'Cliente por WhatsApp',
-      usuario: { nombre_completo: 'Cliente' },
-    });
-    await reiniciarConversacion(telefono);
-    await sendWhatsAppMessage(telefono, `Listo. Tu pedido quedó para el ${fechaElegida}.`, linea);
+    await pedido.update({ fecha_propuesta: fechaElegida });
+    try {
+      const now = new Date();
+      const aviso = await db.Notificacion.create({
+        nombre: 'Fecha propuesta',
+        descripcion: `${pedido.numero_pedido || pedido.id} propone ${fechaElegida}`,
+        prioridad: 'urgente',
+        leida: false,
+        fecha_creacion: now.toISOString().split('T')[0],
+        hora_creacion: now.toTimeString().split(' ')[0],
+        datos: {
+          tipo: 'soporte',
+          estado_solicitud: 'abierta',
+          motivo: 'propuesta',
+          pedido_id: pedido.id,
+          repartidor_id: pedido.repartidor_id || null,
+          fecha_propuesta: fechaElegida,
+          nota: `El cliente eligió ${fechaElegida}. Falta la confirmación de un super admin.`,
+        },
+      });
+      const { publishNotificacion } = require('../notificaciones/stream');
+      publishNotificacion(aviso);
+    } catch (error) {
+      log.warn('no se anotó la fecha propuesta', { message: error.message });
+    }
+    await sendWhatsAppMessage(telefono, `Quedó anotado el ${fechaElegida}. Call Center lo confirma. Puede haber retraso porque el pedido se vuelve a salir.`, linea);
     return;
   }
   const nuevaDireccion = texto.match(/^direcci[oó]n\s*:\s*(.+)$/i);
@@ -155,7 +163,19 @@ async function atenderMensaje(message, phoneNumberId) {
   await sendWhatsAppInteractive(telefono, linea, listaDeFechas(proximosDias()));
 }
 
-const AVISO_NADIE = 'Intentamos entregar tu pedido pero no fue posible porque no había nadie / no contestaron. Tu entrega ha sido reprogramada.';
+const AVISO_REAGENDAR = 'No pudimos completar la entrega. Puede haber retraso porque el pedido se vuelve a salir. Elige el día. Call Center confirma la fecha.';
+const AVISO_AVERIA = 'Hoy no podemos entregar tu pedido por una avería del vehículo. Puede haber retraso porque se vuelve a salir. Elige el día. Call Center confirma la fecha.';
+const AVISO_CLIMA = 'Hoy no podemos entregar tu pedido por el clima. Puede haber retraso porque se vuelve a salir. Elige el día. Call Center confirma la fecha.';
+
+async function avisarElegirFecha({ telefono, linea, motivo, send } = {}) {
+  if (!telefono || !linea) return false;
+  const texto = motivo === 'averia' ? AVISO_AVERIA : motivo === 'clima' ? AVISO_CLIMA : AVISO_REAGENDAR;
+  const enviar = send || sendWhatsAppInteractive;
+  const result = await enviar(telefono, linea, listaDeFechas(proximosDias(), texto));
+  return Boolean(result?.success);
+}
+
+const AVISO_NADIE = AVISO_REAGENDAR;
 
 async function avisarNoEncontrado({ telefono, linea, send } = {}) {
   if (!telefono || !linea) return false;
@@ -208,6 +228,7 @@ module.exports = {
   atenderEntrada,
   atenderMensaje,
   avisarReagendar,
+  avisarElegirFecha,
   avisarCalificar,
   avisarNoEncontrado,
   elegirLinea,
