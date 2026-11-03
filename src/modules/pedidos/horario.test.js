@@ -16,8 +16,9 @@ test('antes de las 12 es mañana y desde las 12 es tarde', () => {
   expect(horarioDeEntrega('12:00').franja).toBe('tarde');
   expect(horarioDeEntrega('13:59').franja).toBe('tarde');
   expect(horarioDeEntrega('17:00').franja).toBe('tarde');
-  expect(horarioDeEntrega('09:29').ok).toBe(false);
-  expect(horarioDeEntrega('17:01').ok).toBe(false);
+  expect(horarioDeEntrega('09:00')).toMatchObject({ ok: true, texto: '09:30:00', ajustado: true });
+  expect(horarioDeEntrega('17:01')).toMatchObject({ ok: true, texto: '17:00:00', ajustado: true });
+  expect(horarioDeEntrega('09:30').ajustado).toBe(false);
   expect(horarioDeEntrega('').ok).toBe(true);
 });
 

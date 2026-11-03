@@ -1084,7 +1084,10 @@ class PedidoController {
       if (visible) delete visible.codigo_entrega;
       res.status(201).json({
         success: true,
-        message: 'Pedido creado exitosamente',
+        message: rango.ajustado
+          ? `Pedido creado. ${rango.aviso} Quedó a las ${rango.texto.slice(0, 5)}.`
+          : 'Pedido creado exitosamente',
+        aviso_horario: rango.aviso || null,
         data: { pedido: visible }
       });
     } catch (error) {

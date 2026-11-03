@@ -43,8 +43,8 @@ const validateId = [
 
 const validateStatusChange = [
   body('status')
-    .isIn(['activa', 'pausada', 'cerrada', 'en_espera'])
-    .withMessage('El status debe ser: activa, pausada, cerrada o en_espera'),
+    .isIn(['activa', 'pausada', 'cerrada', 'en_espera', 'error'])
+    .withMessage('El status debe ser: activa, pausada, cerrada, en_espera o error'),
   
   handleValidationErrors
 ];
