@@ -62,6 +62,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING(6),
       allowNull: true
     },
+    codigo_consentido_en: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    fecha_propuesta: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    },
     estado: {
       type: DataTypes.ENUM('pendiente', 'confirmado', 'en_preparacion', 'en_camino', 'entregado', 'cancelado','no_entregado'),
       allowNull: false,

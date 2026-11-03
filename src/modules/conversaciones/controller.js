@@ -842,8 +842,18 @@ class ConversacionController {
       }
 
       const statusAnterior = conversacion.status;
-      conversacion.status = status;
+      const marcoError = status === 'error';
+      conversacion.status = marcoError ? 'en_espera' : status;
       await conversacion.save();
+      if (marcoError) {
+        await ConversacionLog.createLog(
+          conversacion.id,
+          { status_anterior: statusAnterior, origen: 'bot' },
+          'error',
+          'error',
+          'El bot marcó un error y el pedido quedó para revisión'
+        );
+      }
 
       // Al cerrar/resolver, descartar logs de error para que deje de contar en KPI y filtros
       if (status === 'cerrada') {
@@ -864,7 +874,7 @@ class ConversacionController {
         conversacion.id,
         { 
           status_anterior: statusAnterior,
-          status_nuevo: status,
+          status_nuevo: conversacion.status,
           changed_by: req.user?.id || 'sistema'
         },
         'sistema',

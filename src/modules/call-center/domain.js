@@ -166,6 +166,9 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
     fecha: notificacion.fecha_creacion,
     hora: notificacion.hora_creacion,
     ...(datos.espera_desde ? { espera_desde: datos.espera_desde } : {}),
+    ...(datos.nota ? { nota: datos.nota } : {}),
+    ...(datos.llamada_atendida ? { llamada_atendida: true } : {}),
+    ...(datos.fecha_propuesta ? { fecha_propuesta: datos.fecha_propuesta } : {}),
     prioridad: notificacion.prioridad,
   };
 }
@@ -239,6 +242,11 @@ function comprobantePublicPath(pathValue) {
   return `/${withUploads}`;
 }
 
+function estrella(notas, etiqueta) {
+  const match = String(notas || '').match(new RegExp(`${etiqueta}: ([1-5])`));
+  return match ? Number(match[1]) : null;
+}
+
 function toPedidoDia({ pedido, rutaPedido, ruta }) {
   const cobro = pedido.cobro_entrega || pedido.cobroEntrega || null;
   return {
@@ -260,6 +268,10 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     ciudad_id: ruta?.fkid_ciudad ?? null,
     total: Number(pedido.total) || 0,
     comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
+    codigo_oculto: pedido.codigo_entrega ? '******' : null,
+    fecha_propuesta: pedido.fecha_propuesta || null,
+    calificacion_servicio: estrella(pedido.notas, 'Calificación del servicio'),
+    calificacion_cliente: estrella(pedido.notas, 'Calificación al cliente'),
   };
 }
 

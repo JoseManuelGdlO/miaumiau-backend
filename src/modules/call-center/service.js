@@ -1,6 +1,6 @@
 const { Op, literal } = require('sequelize');
 const { dayKey } = require('../app-repartidor/domain');
-const { refrescarCargaEnValidacion, olvidarOrdenRuta, liberarSiguienteParada } = require('../app-repartidor/service');
+const { refrescarCargaEnValidacion, olvidarOrdenRuta, liberarSiguienteParada, mandarCodigo, lineaWhatsAppDelCliente } = require('../app-repartidor/service');
 const { reemplazarSaldo } = require('../app-repartidor/inventario-vehiculo');
 const {
   approveCheck,
@@ -33,7 +33,7 @@ const {
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { franjaDeHorario } = require('../pedidos/horario');
 const { registrarCambio } = require('../historial/service');
-const { reencolarNoEntregados, encolarAlDiaSiguiente, soltarParadasAbiertas } = require('../pedidos/reencolar');
+const { reencolarNoEntregados, soltarParadasAbiertas } = require('../pedidos/reencolar');
 const usersWithPermission = require('../../utils/usersWithPermission');
 const { Logger } = require('../../utils/logger');
 
@@ -403,7 +403,9 @@ async function atender(deps = {}) {
       if (note.length > NOTE_LIMIT) fail(422, 'La nota supera 1000 caracteres');
       datos.nota = note;
     }
-    await notificacion.update({ leida: true, datos }, txOpts(t));
+    const esLlamada = datos.tipo === 'llamada_cliente';
+    if (esLlamada) datos.llamada_atendida = true;
+    await notificacion.update({ leida: !esLlamada, datos }, txOpts(t));
     return { atendida: true };
   });
 }
@@ -844,7 +846,7 @@ async function reagendar(deps = {}) {
   );
   if (!note.ok) fail(note.statusCode, note.message);
   const estado = pedido.estado === 'no_entregado' || pedido.estado === 'en_camino' ? 'confirmado' : pedido.estado;
-  await pedido.update({ fecha_entrega_estimada: fecha, estado, notas: note.notas });
+  await pedido.update({ fecha_entrega_estimada: fecha, estado, notas: note.notas, fecha_propuesta: null });
   const paradas = await db.RutaPedido.findAll({
     where: { fkid_pedido: pedido.id },
     include: [{
@@ -1255,8 +1257,15 @@ async function resolverAyuda(deps = {}) {
   const repartidorId = parada.ruta?.fkid_repartidor;
   if (accion === 'ver_codigo') {
     if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
-    const pedido = await db.Pedido.findByPk(pedidoId, { attributes: ['codigo_entrega'] });
+    const pedido = await db.Pedido.findByPk(pedidoId, { attributes: ['id', 'numero_pedido', 'codigo_entrega'] });
     if (!pedido?.codigo_entrega) fail(404, 'Ese pedido no tiene código');
+    await registrarCambio({
+      usuarioId: deps.usuario?.id,
+      accion: 'Vio el código de entrega',
+      entidad: 'pedido',
+      entidadId: pedido.id,
+      detalle: `Vio el código del pedido ${pedido.numero_pedido || pedido.id}`,
+    });
     return { codigo: pedido.codigo_entrega };
   }
   if (accion === 'aprobar_codigo' || accion === 'autorizar_tercero') {
@@ -1264,24 +1273,42 @@ async function resolverAyuda(deps = {}) {
   }
   if (accion === 'aprobar_codigo') {
     if (datos.ayuda !== 'codigo') fail(422, 'Esta solicitud no es una ayuda con el código');
+    if (typeof notificacion.update === 'function') {
+      await notificacion.update({ datos: { ...datos, autorizado: true } });
+    }
     await parada.update({ codigo_validado_en: new Date() });
     await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
     return { aprobado: true };
   }
+  if (accion === 'autorizar_dejar') {
+    if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede autorizar esta entrega');
+    if (datos.ayuda !== 'dejar') fail(422, 'El repartidor todavía no pidió dejar el paquete');
+    await parada.update({ entrega_dejar_en: new Date() });
+    if (typeof notificacion.update === 'function') {
+      await notificacion.update({ datos: { ...datos, autorizado: true } });
+    }
+    await registrarCambio({
+      usuarioId: deps.usuario?.id,
+      accion: 'Dejar el paquete',
+      entidad: 'pedido',
+      entidadId: pedidoId,
+      detalle: `Autorizado dejar el pedido ${pedidoId} donde indique el repartidor, con foto`,
+    });
+    await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
+    return { autorizado: true };
+  }
   if (accion === 'autorizar_tercero') {
     if (datos.ayuda !== 'tercero') fail(422, 'El repartidor todavía no pidió entregar a otra persona');
-    const receptor = String(deps.receptor || '').trim();
-    if (receptor.length < 2) fail(422, 'Escribe quién recibe');
     await parada.update({ entrega_tercero_en: new Date() });
     if (typeof notificacion.update === 'function') {
-      await notificacion.update({ datos: { ...datos, receptor_nombre: receptor } });
+      await notificacion.update({ datos: { ...datos, autorizado: true } });
     }
     await registrarCambio({
       usuarioId: deps.usuario?.id,
       accion: 'Entrega a otra persona',
       entidad: 'pedido',
       entidadId: pedidoId,
-      detalle: `Autorizada la entrega del pedido ${pedidoId} a ${receptor}`,
+      detalle: `Autorizada la entrega del pedido ${pedidoId} a otra persona. El repartidor toma nombre y foto.`,
     });
     await safeNotify(deps, repartidorId, { type: 'ruta.actualizada', pedidoId });
     return { autorizado: true };
@@ -1305,7 +1332,7 @@ async function cerrarSinCodigo(deps = {}) {
   const nadie = /no contest|nadie|no hab[ií]a/i.test(motivo);
   if (nadie) {
     try {
-      const { avisarNoEncontrado, elegirLinea } = require('../mensajeria/reagendar-whatsapp');
+      const { avisarElegirFecha, elegirLinea } = require('../mensajeria/reagendar-whatsapp');
       const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
       const lineas = typeof db.WhatsAppPhoneNumber?.findAll === 'function'
         ? await db.WhatsAppPhoneNumber.findAll({ attributes: ['phoneid', 'telefono'] })
@@ -1313,7 +1340,7 @@ async function cerrarSinCodigo(deps = {}) {
       const ciudad = pedido.fkid_ciudad && typeof db.City?.findByPk === 'function'
         ? await db.City.findByPk(pedido.fkid_ciudad, { attributes: ['telefono'] })
         : null;
-      await avisarNoEncontrado({
+      await avisarElegirFecha({
         telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
         linea: elegirLinea(lineas, { telefonoCiudad: ciudad?.telefono }),
       });
@@ -1321,7 +1348,6 @@ async function cerrarSinCodigo(deps = {}) {
       log.warn('No se pudo avisar el reagendo por WhatsApp', { message: error.message });
     }
   }
-  await encolarAlDiaSiguiente(pedido, await fechaDeHoy(deps));
   if (parada && typeof parada.update === 'function') {
     await parada.update({ estado_entrega: 'fallido', fecha_entrega_real: ahora });
   }
@@ -1372,4 +1398,99 @@ module.exports = {
   resolverAyuda,
   listarContactos,
   guardarContacto,
+  liberarIntento,
+  verCodigo,
+  enviarCodigo,
+  avisarFalla,
 };
+
+async function liberarIntento(deps = {}) {
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion) fail(404, 'Solicitud no encontrada');
+  const datos = { ...(notificacion.datos || {}) };
+  if (datos.tipo !== 'llamada_cliente') fail(422, 'Esta solicitud no es una llamada al cliente');
+  if (!datos.llamada_atendida) fail(422, 'Primero confirma que llamaron al cliente');
+  datos.intento_liberado = true;
+  await notificacion.update({ leida: true, datos });
+  const pedidoId = Number(datos.pedido_id);
+  if (Number.isFinite(pedidoId)) {
+    await safeNotify(deps, datos.repartidor_id, { type: 'ruta.actualizada', pedidoId });
+  }
+  return { liberado: true };
+}
+
+async function verCodigo(deps = {}) {
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede ver el código');
+  const db = getModels(deps);
+  const pedido = await db.Pedido.findByPk(deps.pedidoId, { attributes: ['id', 'numero_pedido', 'codigo_entrega'] });
+  if (!pedido?.codigo_entrega) fail(404, 'Ese pedido no tiene código');
+  await registrarCambio({
+    usuarioId: deps.usuario?.id,
+    accion: 'Vio el código de entrega',
+    entidad: 'pedido',
+    entidadId: pedido.id,
+    detalle: `Vio el código del pedido ${pedido.numero_pedido || pedido.id}`,
+  });
+  return { codigo: pedido.codigo_entrega };
+}
+
+async function enviarCodigo(deps = {}) {
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede enviar el código');
+  const db = getModels(deps);
+  const pedido = await db.Pedido.findByPk(deps.pedidoId, {
+    include: [{ association: 'cliente', attributes: ['id', 'telefono'] }],
+  });
+  if (!pedido?.codigo_entrega) fail(404, 'Ese pedido no tiene código');
+  await mandarCodigo(deps, pedido);
+  if (typeof pedido.update === 'function') await pedido.update({ codigo_consentido_en: new Date() });
+  await registrarCambio({
+    usuarioId: deps.usuario?.id,
+    accion: 'Envió el código de entrega',
+    entidad: 'pedido',
+    entidadId: pedido.id,
+    detalle: `Envió el código del pedido ${pedido.numero_pedido || pedido.id} con el consentimiento del cliente`,
+  });
+  return { enviado: true };
+}
+
+async function avisarFalla(deps = {}) {
+  if (!puedeAutorizarExcepcion(deps.usuario?.rol?.nombre)) fail(403, 'Solo un super admin puede avisar la falla');
+  const motivo = deps.motivo === 'clima' ? 'clima' : 'averia';
+  const ids = [...new Set((deps.pedidoIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0))];
+  if (!ids.length) fail(422, 'Elige al menos un pedido');
+  const db = getModels(deps);
+  const { avisarElegirFecha } = require('../mensajeria/reagendar-whatsapp');
+  const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
+  let enviados = 0;
+  for (const pedidoId of ids) {
+    const pedido = await db.Pedido.findByPk(pedidoId, {
+      include: [{ association: 'cliente', attributes: ['id', 'telefono'] }],
+    });
+    if (!pedido || pedido.baja_logica) continue;
+    const tel = formatPhoneForWhatsApp(phoneOf(pedido));
+    const linea = await lineaWhatsAppDelCliente(deps, pedido);
+    const ok = await avisarElegirFecha({ telefono: tel, linea, motivo });
+    if (ok) enviados += 1;
+    const now = new Date();
+    if (typeof db.Notificacion?.create === 'function') {
+      await db.Notificacion.create({
+        nombre: motivo === 'clima' ? 'Clima' : 'Avería',
+        descripcion: `${pedido.numero_pedido || pedido.id} quedó por confirmar`,
+        prioridad: 'urgente',
+        leida: false,
+        fecha_creacion: now.toISOString().split('T')[0],
+        hora_creacion: now.toTimeString().split(' ')[0],
+        datos: {
+          tipo: 'soporte',
+          estado_solicitud: 'abierta',
+          motivo,
+          pedido_id: pedido.id,
+          repartidor_id: deps.repartidorId || null,
+          nota: 'Avisado. Si no elige fecha, queda en la bandeja.',
+        },
+      });
+    }
+  }
+  return { enviados };
+}

@@ -16,8 +16,9 @@ test('antes de las 12 es mañana y desde las 12 es tarde', () => {
   expect(horarioDeEntrega('12:00').franja).toBe('tarde');
   expect(horarioDeEntrega('13:59').franja).toBe('tarde');
   expect(horarioDeEntrega('17:00').franja).toBe('tarde');
-  expect(horarioDeEntrega('09:29').ok).toBe(false);
-  expect(horarioDeEntrega('17:01').ok).toBe(false);
+  expect(horarioDeEntrega('09:00')).toMatchObject({ ok: true, texto: '09:30:00', ajustado: true });
+  expect(horarioDeEntrega('17:01')).toMatchObject({ ok: true, texto: '17:00:00', ajustado: true });
+  expect(horarioDeEntrega('09:30').ajustado).toBe(false);
   expect(horarioDeEntrega('').ok).toBe(true);
 });
 
@@ -32,21 +33,18 @@ test('la mañana suelta la parada que no cabe por distancia', () => {
   expect(idsExcedentesManana([{ id: 3, franja: 'tarde', lat: 0, lng: 0, orden: 1 }])).toEqual([]);
 });
 
-test('el no entregado de ayer vuelve a la cola de hoy', async () => {
+test('el no entregado no se mueve solo al día siguiente', async () => {
   const pedido = {
     estado: 'no_entregado',
     notas: '',
-    update: async (data) => Object.assign(pedido, data),
+    update: async () => { throw new Error('no'); },
   };
   const moved = await reencolarNoEntregados({
     fecha: '2026-10-23',
-    Pedido: { findAll: async () => [pedido, { estado: 'confirmado', update: async () => { throw new Error('no'); } }] },
+    Pedido: { findAll: async () => [pedido] },
   });
-  expect(moved).toBe(1);
-  expect(pedido.estado).toBe('confirmado');
-  expect(pedido.fecha_entrega_estimada.toISOString()).toBe('2026-10-23T12:00:00.000Z');
-  expect(pedido.notas).toContain('Volvió a la cola');
-  expect(await reencolarNoEntregados({ fecha: 'hoy', Pedido: { findAll: async () => { throw new Error('no'); } } })).toBe(0);
+  expect(moved).toBe(0);
+  expect(pedido.estado).toBe('no_entregado');
 });
 
 test('un no entregado de hoy queda para mañana y elige la línea de su ciudad', async () => {

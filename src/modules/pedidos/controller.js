@@ -5,6 +5,7 @@ const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { parseFechaEntregaEstimada } = require('../../utils/date');
 const { horarioDeEntrega } = require('./horario');
+const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Pedidos');
@@ -825,6 +826,7 @@ class PedidoController {
         descuento_promocion: 0, // Los descuentos se aplican antes de crear el pedido
         stripe_link_id: stripe_link_id || null
       });
+      await ensureDeliveryCode(pedido);
 
       // Calcular subtotal inicial
       let subtotal = 0;
@@ -1078,10 +1080,15 @@ class PedidoController {
         ]
       });
 
+      const visible = pedidoCompleto?.toJSON ? pedidoCompleto.toJSON() : pedidoCompleto;
+      if (visible) delete visible.codigo_entrega;
       res.status(201).json({
         success: true,
-        message: 'Pedido creado exitosamente',
-        data: { pedido: pedidoCompleto }
+        message: rango.ajustado
+          ? `Pedido creado. ${rango.aviso} Quedó a las ${rango.texto.slice(0, 5)}.`
+          : 'Pedido creado exitosamente',
+        aviso_horario: rango.aviso || null,
+        data: { pedido: visible }
       });
     } catch (error) {
       next(error);

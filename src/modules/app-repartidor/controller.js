@@ -266,6 +266,7 @@ async function entregar(req, res) {
       transferencia: req.body.transferencia,
       file: req.file || req.files?.comprobante?.[0],
       receptorNombre: req.body.receptor_nombre,
+      lugar: req.body.lugar,
       receptorFile: req.files?.receptor?.[0],
     }));
   }, 'entregar');
@@ -314,6 +315,10 @@ async function calificar(req, res) {
   })), 'calificar');
 }
 
+async function avisos(req, res) {
+  return handle(req, res, () => service.listarAvisos(depsFrom(req)), 'avisos');
+}
+
 async function logros(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -348,6 +353,7 @@ module.exports = {
   calificar,
   caja,
   soporte,
+  avisos,
   estadisticas,
   logros,
 };
