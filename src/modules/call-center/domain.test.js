@@ -35,6 +35,8 @@ test('aprobar solo un check-in vigente sin leer', () => {
 test('atender llamada o soporte abiertos', () => {
   expect(attendCheck({ tipo: 'llamada_cliente', leida: false, estadoSolicitud: 'abierta' }).ok).toBe(true);
   expect(attendCheck({ tipo: 'soporte', leida: false, estadoSolicitud: 'abierta' }).ok).toBe(true);
+  expect(attendCheck({ tipo: 'soporte', leida: false, estadoSolicitud: undefined }).ok).toBe(true);
+  expect(attendCheck({ tipo: 'soporte', leida: false, estadoSolicitud: 'atendida' }).ok).toBe(false);
   expect(attendCheck({ tipo: 'check_in', leida: false, estadoSolicitud: 'abierta' }).statusCode).toBe(409);
   expect(attendCheck({ tipo: 'soporte', leida: true, estadoSolicitud: 'abierta' }).ok).toBe(false);
 });

@@ -1061,7 +1061,9 @@ async function listarDepositos(deps = {}) {
     .filter((row) => row.comprobante_deposito_path)
     .map((row) => ({
       jornada_id: row.id,
+      repartidor_id: row.repartidor?.id || row.fkid_repartidor || null,
       repartidor: row.repartidor?.nombre_completo || null,
+      estado: row.estado || null,
       efectivo_a_depositar: Number(row.efectivo_a_depositar) || 0,
       comprobante_url: comprobantePublicPath(row.comprobante_deposito_path),
     }));

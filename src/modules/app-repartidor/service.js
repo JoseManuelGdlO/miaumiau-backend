@@ -1297,6 +1297,7 @@ async function entregar(deps = {}) {
         prioridad: 'alta',
         datos: {
           tipo: 'soporte',
+          estado_solicitud: 'abierta',
           pedido_id: pedido.id,
           numero_pedido: pedido.numero_pedido,
           repartidor_id: deps.repartidorId,

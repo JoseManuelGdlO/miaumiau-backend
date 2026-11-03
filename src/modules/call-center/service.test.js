@@ -1168,14 +1168,17 @@ test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', 
           efectivo_a_depositar: '80.50',
           comprobante_deposito_path: 'comprobantes/dep.jpg',
           estado: 'cerrada',
-          repartidor: { nombre_completo: 'Ana' },
+          fkid_repartidor: 8,
+          repartidor: { id: 8, nombre_completo: 'Ana' },
         }],
       },
     },
   });
   expect(rows).toEqual([{
     jornada_id: 3,
+    repartidor_id: 8,
     repartidor: 'Ana',
+    estado: 'cerrada',
     efectivo_a_depositar: 80.5,
     comprobante_url: '/uploads/comprobantes/dep.jpg',
   }]);
