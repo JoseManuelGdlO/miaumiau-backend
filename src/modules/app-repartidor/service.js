@@ -1391,35 +1391,89 @@ async function avisosDelRepartidor(deps) {
   });
 }
 
+function createdAtDe(row) {
+  const raw = row?.created_at || row?.createdAt;
+  if (raw) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  const fecha = row?.fecha_creacion ? String(row.fecha_creacion).slice(0, 10) : '';
+  if (!fecha) return null;
+  const hora = row?.hora_creacion ? String(row.hora_creacion).slice(0, 8) : '00:00:00';
+  const d = new Date(`${fecha}T${hora.length === 5 ? `${hora}:00` : hora}`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function pedidoDeAviso(row, datos) {
+  const id = datos.pedido_id ? Number(datos.pedido_id) : null;
+  if (!id) return null;
+  const numero = datos.numero_pedido
+    || (datos.tipo === 'pago' && row?.descripcion)
+    || String(id);
+  const nombre = datos.cliente_nombre || datos.receptor_nombre || null;
+  return {
+    id,
+    numero_pedido: String(numero),
+    cliente: { nombre_completo: nombre },
+  };
+}
+
 function avisoDe(row) {
   const datos = row?.datos || {};
+  const extra = {
+    id: row.id,
+    leido: Boolean(row.leida),
+    created_at: createdAtDe(row),
+    pedido: pedidoDeAviso(row, datos),
+  };
   if (datos.tipo === 'pago') {
-    return { tipo: 'pago', texto: 'Call Center registró el pago por transferencia' };
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Pago por transferencia', mensaje: 'Call Center registró el pago por transferencia', ...extra };
   }
   if (datos.tipo === 'llamada_cliente' && datos.intento_liberado) {
-    return { tipo: 'llamada', texto: 'Call Center liberó el intento de entrega' };
+    return { tipo: 'LIBERACION', titulo: 'Intento de entrega liberado', mensaje: 'Call Center liberó el intento de entrega', ...extra };
   }
   if (datos.tipo === 'llamada_cliente' && (row.leida || datos.llamada_atendida)) {
-    return { tipo: 'llamada', texto: 'Call Center ya se comunicó con el cliente' };
+    return { tipo: 'CONTACTO_CLIENTE', titulo: 'Cliente contactado por Call Center', mensaje: 'Call Center ya se comunicó con el cliente', ...extra };
   }
   if (datos.ayuda === 'tercero' && (datos.autorizado || datos.receptor_nombre)) {
-    return { tipo: 'tercero', texto: 'Call Center autorizó la entrega a otra persona' };
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Entrega a otra persona', mensaje: 'Call Center autorizó la entrega a otra persona', ...extra };
   }
   if (datos.ayuda === 'dejar' && datos.autorizado) {
-    return { tipo: 'dejar', texto: 'Call Center autorizó dejar el paquete' };
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Dejar el paquete', mensaje: 'Call Center autorizó dejar el paquete', ...extra };
   }
   if (datos.ayuda === 'codigo' && datos.autorizado) {
-    return { tipo: 'codigo', texto: 'Call Center autorizó la entrega sin el código' };
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Entrega sin código', mensaje: 'Call Center autorizó la entrega sin el código', ...extra };
   }
   return null;
 }
 
 async function listarAvisos(deps = {}) {
   const rows = await avisosDelRepartidor(deps);
-  return rows.map((row) => {
-    const aviso = avisoDe(row);
-    return aviso ? { id: row.id, ...aviso } : null;
-  }).filter(Boolean).slice(0, 20);
+  const avisos = rows.map((row) => avisoDe(row)).filter(Boolean).slice(0, 20);
+  const ids = [...new Set(avisos.map((a) => a.pedido?.id).filter(Boolean))];
+  if (!ids.length) return avisos;
+  if (deps.notificaciones && typeof deps.models?.Pedido?.findAll !== 'function') return avisos;
+  const db = getModels(deps);
+  if (typeof db.Pedido?.findAll !== 'function') return avisos;
+  const pedidos = await db.Pedido.findAll({
+    where: { id: ids },
+    attributes: ['id', 'numero_pedido'],
+    include: db.Cliente ? [{ model: db.Cliente, as: 'cliente', attributes: ['nombre_completo'], required: false }] : [],
+  });
+  const porId = new Map(pedidos.map((p) => [Number(p.id), p]));
+  return avisos.map((aviso) => {
+    if (!aviso.pedido) return aviso;
+    const pedido = porId.get(aviso.pedido.id);
+    if (!pedido) return { ...aviso, pedido: null };
+    return {
+      ...aviso,
+      pedido: {
+        id: pedido.id,
+        numero_pedido: pedido.numero_pedido || String(pedido.id),
+        cliente: { nombre_completo: pedido.cliente?.nombre_completo || aviso.pedido.cliente?.nombre_completo || null },
+      },
+    };
+  });
 }
 
 async function findLlamadaCliente(deps) {

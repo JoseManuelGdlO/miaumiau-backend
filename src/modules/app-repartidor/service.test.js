@@ -386,8 +386,24 @@ test('la campana solo lista avisos reales de Call Center', async () => {
     ],
   });
   expect(avisos).toEqual([
-    { id: 1, tipo: 'llamada', texto: 'Call Center ya se comunicó con el cliente' },
-    { id: 2, tipo: 'tercero', texto: 'Call Center autorizó la entrega a otra persona' },
+    {
+      id: 1,
+      tipo: 'CONTACTO_CLIENTE',
+      titulo: 'Cliente contactado por Call Center',
+      mensaje: 'Call Center ya se comunicó con el cliente',
+      leido: false,
+      created_at: null,
+      pedido: null,
+    },
+    {
+      id: 2,
+      tipo: 'INSTRUCCION_ACTUALIZADA',
+      titulo: 'Entrega a otra persona',
+      mensaje: 'Call Center autorizó la entrega a otra persona',
+      leido: false,
+      created_at: null,
+      pedido: null,
+    },
   ]);
 });
 
@@ -395,11 +411,54 @@ test('la campana lista el aviso de pago por transferencia', async () => {
   const avisos = await listarAvisos({
     repartidorId: 1,
     notificaciones: [
-      { id: 9, datos: { tipo: 'pago', pedido_id: 5, repartidor_id: 1 } },
+      {
+        id: 9,
+        descripcion: 'P-5',
+        created_at: '2026-11-04T18:20:00.000Z',
+        datos: { tipo: 'pago', pedido_id: 5, repartidor_id: 1 },
+      },
     ],
   });
   expect(avisos).toEqual([
-    { id: 9, tipo: 'pago', texto: 'Call Center registró el pago por transferencia' },
+    {
+      id: 9,
+      tipo: 'INSTRUCCION_ACTUALIZADA',
+      titulo: 'Pago por transferencia',
+      mensaje: 'Call Center registró el pago por transferencia',
+      leido: false,
+      created_at: '2026-11-04T18:20:00.000Z',
+      pedido: { id: 5, numero_pedido: 'P-5', cliente: { nombre_completo: null } },
+    },
+  ]);
+});
+
+test('la campana une pedido y cliente', async () => {
+  const avisos = await listarAvisos({
+    repartidorId: 1,
+    notificaciones: [
+      {
+        id: 1,
+        created_at: '2026-11-04T13:36:00.000Z',
+        datos: { tipo: 'llamada_cliente', intento_liberado: true, pedido_id: 55 },
+      },
+    ],
+    models: {
+      Pedido: {
+        findAll: async () => [{ id: 55, numero_pedido: '1042', cliente: { nombre_completo: 'Selma Embila' } }],
+      },
+      Cliente: {},
+    },
+  });
+  expect(avisos).toEqual([
+    {
+      id: 1,
+      tipo: 'LIBERACION',
+      titulo: 'Intento de entrega liberado',
+      mensaje: 'Call Center liberó el intento de entrega',
+      leido: false,
+      created_at: '2026-11-04T13:36:00.000Z',
+      pedido: { id: 55, numero_pedido: '1042', cliente: { nombre_completo: 'Selma Embila' } },
+    },
   ]);
 });
 
