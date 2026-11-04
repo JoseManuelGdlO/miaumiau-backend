@@ -1042,7 +1042,24 @@ async function subirComprobante(deps = {}) {
       comprobante_path: path,
     });
   }
-  await safeNotify(deps, parada.ruta.fkid_repartidor, { type: 'ruta.actualizada', pedidoId: Number(pedido.id) });
+  if (typeof db.Notificacion?.create === 'function') {
+    await db.Notificacion.create({
+      nombre: 'Pago por transferencia',
+      descripcion: pedido.numero_pedido || String(pedido.id),
+      prioridad: 'media',
+      leida: false,
+      datos: {
+        tipo: 'pago',
+        pedido_id: pedido.id,
+        repartidor_id: parada.ruta.fkid_repartidor,
+      },
+    });
+  }
+  await safeNotify(deps, parada.ruta.fkid_repartidor, {
+    type: 'ruta.actualizada',
+    pedidoId: Number(pedido.id),
+    motivo: 'pago',
+  });
   return { pedido_id: pedido.id, comprobante_url: comprobantePublicPath(path) };
 }
 

@@ -1391,21 +1391,34 @@ async function avisosDelRepartidor(deps) {
   });
 }
 
-function textoDeAviso(row) {
+function avisoDe(row) {
   const datos = row?.datos || {};
-  if (datos.tipo === 'llamada_cliente' && datos.intento_liberado) return 'Call Center liberó el intento de entrega';
-  if (datos.tipo === 'llamada_cliente' && (row.leida || datos.llamada_atendida)) return 'Call Center ya se comunicó con el cliente';
-  if (datos.ayuda === 'tercero' && (datos.autorizado || datos.receptor_nombre)) return 'Call Center autorizó la entrega a otra persona';
-  if (datos.ayuda === 'dejar' && datos.autorizado) return 'Call Center autorizó dejar el paquete';
-  if (datos.ayuda === 'codigo' && datos.autorizado) return 'Call Center autorizó la entrega sin el código';
-  return '';
+  if (datos.tipo === 'pago') {
+    return { tipo: 'pago', texto: 'Call Center registró el pago por transferencia' };
+  }
+  if (datos.tipo === 'llamada_cliente' && datos.intento_liberado) {
+    return { tipo: 'llamada', texto: 'Call Center liberó el intento de entrega' };
+  }
+  if (datos.tipo === 'llamada_cliente' && (row.leida || datos.llamada_atendida)) {
+    return { tipo: 'llamada', texto: 'Call Center ya se comunicó con el cliente' };
+  }
+  if (datos.ayuda === 'tercero' && (datos.autorizado || datos.receptor_nombre)) {
+    return { tipo: 'tercero', texto: 'Call Center autorizó la entrega a otra persona' };
+  }
+  if (datos.ayuda === 'dejar' && datos.autorizado) {
+    return { tipo: 'dejar', texto: 'Call Center autorizó dejar el paquete' };
+  }
+  if (datos.ayuda === 'codigo' && datos.autorizado) {
+    return { tipo: 'codigo', texto: 'Call Center autorizó la entrega sin el código' };
+  }
+  return null;
 }
 
 async function listarAvisos(deps = {}) {
   const rows = await avisosDelRepartidor(deps);
   return rows.map((row) => {
-    const texto = textoDeAviso(row);
-    return texto ? { id: row.id, texto } : null;
+    const aviso = avisoDe(row);
+    return aviso ? { id: row.id, ...aviso } : null;
   }).filter(Boolean).slice(0, 20);
 }
 

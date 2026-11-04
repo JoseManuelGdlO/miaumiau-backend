@@ -386,8 +386,20 @@ test('la campana solo lista avisos reales de Call Center', async () => {
     ],
   });
   expect(avisos).toEqual([
-    { id: 1, texto: 'Call Center ya se comunicó con el cliente' },
-    { id: 2, texto: 'Call Center autorizó la entrega a otra persona' },
+    { id: 1, tipo: 'llamada', texto: 'Call Center ya se comunicó con el cliente' },
+    { id: 2, tipo: 'tercero', texto: 'Call Center autorizó la entrega a otra persona' },
+  ]);
+});
+
+test('la campana lista el aviso de pago por transferencia', async () => {
+  const avisos = await listarAvisos({
+    repartidorId: 1,
+    notificaciones: [
+      { id: 9, datos: { tipo: 'pago', pedido_id: 5, repartidor_id: 1 } },
+    ],
+  });
+  expect(avisos).toEqual([
+    { id: 9, tipo: 'pago', texto: 'Call Center registró el pago por transferencia' },
   ]);
 });
 
