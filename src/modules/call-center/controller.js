@@ -158,10 +158,10 @@ function subirComprobante(req, res) {
   if (req.fileValidationError) {
     return res.status(422).json({ success: false, message: req.fileValidationError });
   }
-  return handle(res, () => service.subirComprobante({
+  return handle(res, () => service.subirComprobante(live({
     pedidoId: req.params.id,
     file: req.file,
-  }), 'subirComprobante');
+  })), 'subirComprobante');
 }
 
 function depositos(req, res) {

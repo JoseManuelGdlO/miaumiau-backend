@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -589,4 +589,24 @@ test('llegada genera el código antes de enviarlo', async () => {
   });
   expect(pedido.codigo_entrega).toMatch(/^\d{6}$/);
   expect(sentCode).toBeUndefined();
+});
+
+test('avisarCodigoAlCrear manda codigo_paquete', async () => {
+  const sends = [];
+  await avisarCodigoAlCrear({
+    models: {
+      Conversacion: { findOne: async () => ({ whatsapp_phone_number_id: '111' }) },
+    },
+    sendWhatsAppTemplate: async (...args) => {
+      sends.push(args);
+      return { success: true };
+    },
+  }, pedidoConCodigo());
+  expect(sends[0][2]).toBe('codigo_paquete');
+});
+
+test('avisarCodigoAlCrear no truena si WhatsApp falla', async () => {
+  await expect(avisarCodigoAlCrear({
+    sendWhatsAppTemplate: async () => { throw new Error('down'); },
+  }, pedidoConCodigo())).resolves.toBeUndefined();
 });

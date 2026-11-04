@@ -20,9 +20,8 @@ const {
   META_DIARIA,
 } = require('./domain');
 const { noticeFromNombre, validacionCargaPath } = require('../notificaciones/checkInNotice');
-const { telefonoDeRepartidor } = require('../call-center/domain');
+const { telefonoDeRepartidor, phoneOf, comprobantePublicPath } = require('../call-center/domain');
 const { publishNotificacion } = require('../notificaciones/stream');
-const { phoneOf } = require('../call-center/domain');
 const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
@@ -86,6 +85,11 @@ function toPedidoDto(pedido, rutaPedido) {
     rest.entrega_dejar = Boolean(rp.entrega_dejar_en);
     const minutos = Number(rp.tiempo_estimado_entrega);
     if (minutos > 0) rest.minutos_transporte = minutos;
+  }
+  const cobro = raw.cobro_entrega || raw.cobroEntrega;
+  if (cobro?.comprobante_path) {
+    rest.pagado = true;
+    rest.comprobante_url = comprobantePublicPath(cobro.comprobante_path);
   }
   return rest;
 }
@@ -640,6 +644,12 @@ function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
         where: { baja_logica: false },
         include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'] }],
       },
+      ...(db.CobroEntrega ? [{
+        model: db.CobroEntrega,
+        as: 'cobro_entrega',
+        required: false,
+        attributes: ['id', 'metodo', 'comprobante_path'],
+      }] : []),
     ],
   };
 }
@@ -862,6 +872,14 @@ async function mandarCodigo(deps, pedido) {
     fail(502, PACKAGE_CODE_SEND_ERROR);
   }
   if (!result?.success) fail(502, PACKAGE_CODE_SEND_ERROR);
+}
+
+async function avisarCodigoAlCrear(deps, pedido) {
+  try {
+    await mandarCodigo(deps, pedido);
+  } catch (error) {
+    log.warn('No se pudo enviar el código al crear el pedido', { message: error.message, pedidoId: pedido?.id });
+  }
 }
 
 async function llegada(deps = {}) {
@@ -1957,6 +1975,8 @@ module.exports = {
   detallePedido,
   listarAvisos,
   mandarCodigo,
+  avisarCodigoAlCrear,
+  ordenarParadasSiAplica,
   lineaWhatsAppDelCliente,
   perfil,
   actualizarFoto,

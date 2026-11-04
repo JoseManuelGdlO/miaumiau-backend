@@ -7,10 +7,30 @@ const { dayKey } = require('../app-repartidor/domain');
 const { franjaDeHorario, idsExcedentesManana } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { getHub } = require('../realtime');
-const { refrescarCargaEnValidacion } = require('../app-repartidor/service');
+const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarParadasSiAplica } = require('../app-repartidor/service');
+const { resolverDireccion, enElEstado } = require('../maps/controller');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
+
+async function coordsDePedido(pedidoRow) {
+  if (!pedidoRow?.direccion_entrega || !process.env.GOOGLE_MAPS_API_KEY) return null;
+  let ciudad = pedidoRow.ciudad;
+  if (!ciudad && pedidoRow.fkid_ciudad) {
+    ciudad = await City.findByPk(pedidoRow.fkid_ciudad, { attributes: ['id', 'nombre', 'departamento'] });
+  }
+  const estado = ciudad?.departamento || null;
+  const punto = await resolverDireccion({
+    address: pedidoRow.direccion_entrega,
+    ciudad: ciudad?.nombre,
+    estado,
+  }, process.env.GOOGLE_MAPS_API_KEY);
+  if (!punto) return null;
+  if (estado && !enElEstado(punto.formatted_address, estado)) {
+    throw Object.assign(new Error(`Esa dirección no está en ${estado}`), { status: 422 });
+  }
+  return { lat: punto.lat, lng: punto.lng };
+}
 
 async function refrescarFotoDeRuta(repartidorId, fecha) {
   if (repartidorId == null || repartidorId === '') return;
@@ -779,12 +799,24 @@ class RutaController {
       for (const pedido of pedidos) {
         try {
           log.debug(`[RUTAS] Intentando crear RutaPedido para pedido ${pedido.fkid_pedido}...`);
+          const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido, {
+            include: [{ model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'], required: false }],
+          });
+          let lat = pedido.lat !== undefined && pedido.lat !== null ? parseFloat(pedido.lat) : null;
+          let lng = pedido.lng !== undefined && pedido.lng !== null ? parseFloat(pedido.lng) : null;
+          if (lat == null || lng == null) {
+            const coords = await coordsDePedido(pedidoAsignado);
+            if (coords) {
+              lat = coords.lat;
+              lng = coords.lng;
+            }
+          }
           const rutaPedido = await RutaPedido.create({
             fkid_ruta: parseInt(id),
             fkid_pedido: parseInt(pedido.fkid_pedido),
             orden_entrega: parseInt(pedido.orden_entrega),
-            lat: pedido.lat !== undefined && pedido.lat !== null ? parseFloat(pedido.lat) : null,
-            lng: pedido.lng !== undefined && pedido.lng !== null ? parseFloat(pedido.lng) : null,
+            lat,
+            lng,
             link_ubicacion: pedido.link_ubicacion || null,
             estado_entrega: 'pendiente',
             notas_entrega: pedido.notas_entrega || null
@@ -792,7 +824,6 @@ class RutaController {
           log.debug(`[RUTAS] ✅ Pedido ${pedido.fkid_pedido} asignado exitosamente (orden ${pedido.orden_entrega}), ID: ${rutaPedido.id}`);
           rutaPedidos.push(rutaPedido);
           try {
-            const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido);
             const franja = franjaDeHorario(pedidoAsignado?.horario_preferente);
             if (franja) await rutaPedido.update({ franja });
             await ensureDeliveryCode(pedidoAsignado);
@@ -830,6 +861,13 @@ class RutaController {
       }
 
       if (rutaPedidos.length > 0 && ruta.fkid_repartidor) {
+        const fecha = String(ruta.fecha_ruta || '').slice(0, 10);
+        olvidarOrdenRuta(ruta.fkid_repartidor, fecha);
+        try {
+          await ordenarParadasSiAplica({ repartidorId: ruta.fkid_repartidor, fecha });
+        } catch (ordenError) {
+          log.warn('[RUTAS] No se pudo ordenar la ruta', { message: ordenError.message });
+        }
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
           const pedidoNuevo = Number(rutaPedidos[0].fkid_pedido);
