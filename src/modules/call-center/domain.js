@@ -41,7 +41,8 @@ function reagendarCheck({ fecha, hoy, rol }) {
 }
 
 function attendCheck({ tipo, leida, estadoSolicitud }) {
-  const ok = (tipo === 'llamada_cliente' || tipo === 'soporte') && !leida && estadoSolicitud === 'abierta';
+  const cerrada = estadoSolicitud === 'cancelada' || estadoSolicitud === 'atendida';
+  const ok = (tipo === 'llamada_cliente' || tipo === 'soporte') && !leida && !cerrada;
   if (!ok) return { ok: false, statusCode: 409, message: 'Esa solicitud ya no se puede atender' };
   return { ok: true };
 }

@@ -1012,20 +1012,14 @@ async function subirComprobante(deps = {}) {
   const db = getModels(deps);
   const pedido = deps.pedido || await db.Pedido.findByPk(deps.pedidoId);
   if (!pedido || pedido.baja_logica) fail(404, 'Pedido no encontrado');
-  const metodo = pedido.metodo_pago === 'mixto' ? 'mixto' : 'transferencia';
-  if (!['transferencia', 'mixto'].includes(pedido.metodo_pago) && !deps.cobro) {
-    const existente = await db.CobroEntrega.findOne({ where: { fkid_pedido: pedido.id } });
-    if (!existente || !['transferencia', 'mixto'].includes(existente.metodo)) {
-      fail(422, 'Ese pedido no admite comprobante');
-    }
+  if (pedido.metodo_pago !== 'transferencia' && pedido.metodo_pago !== 'mixto') {
+    if (typeof pedido.update === 'function') await pedido.update({ metodo_pago: 'transferencia' });
+    else pedido.metodo_pago = 'transferencia';
   }
+  const metodo = pedido.metodo_pago === 'mixto' ? 'mixto' : 'transferencia';
   const path = `comprobantes/${deps.file.filename}`;
   const cobro = await db.CobroEntrega.findOne({ where: { fkid_pedido: pedido.id } });
-  if (cobro) {
-    await cobro.update({ comprobante_path: path });
-    return { pedido_id: pedido.id, comprobante_url: comprobantePublicPath(path) };
-  }
-  const fecha = await fechaDeHoy(deps);
+  const fecha = deps.fecha || await fechaDeHoy(deps);
   const parada = await db.RutaPedido.findOne({
     where: { fkid_pedido: pedido.id },
     include: [{
@@ -1035,15 +1029,20 @@ async function subirComprobante(deps = {}) {
     }],
   });
   if (!parada?.ruta?.fkid_repartidor) fail(409, 'Ese pedido no está en una ruta de hoy');
-  const total = Number(pedido.total) || 0;
-  await db.CobroEntrega.create({
-    fkid_pedido: pedido.id,
-    fkid_repartidor: parada.ruta.fkid_repartidor,
-    metodo,
-    monto_efectivo: metodo === 'mixto' ? 0 : 0,
-    monto_transferencia: total,
-    comprobante_path: path,
-  });
+  if (cobro) {
+    await cobro.update({ comprobante_path: path, metodo });
+  } else {
+    const total = Number(pedido.total) || 0;
+    await db.CobroEntrega.create({
+      fkid_pedido: pedido.id,
+      fkid_repartidor: parada.ruta.fkid_repartidor,
+      metodo,
+      monto_efectivo: 0,
+      monto_transferencia: total,
+      comprobante_path: path,
+    });
+  }
+  await safeNotify(deps, parada.ruta.fkid_repartidor, { type: 'ruta.actualizada', pedidoId: Number(pedido.id) });
   return { pedido_id: pedido.id, comprobante_url: comprobantePublicPath(path) };
 }
 
@@ -1061,7 +1060,9 @@ async function listarDepositos(deps = {}) {
     .filter((row) => row.comprobante_deposito_path)
     .map((row) => ({
       jornada_id: row.id,
+      repartidor_id: row.repartidor?.id || row.fkid_repartidor || null,
       repartidor: row.repartidor?.nombre_completo || null,
+      estado: row.estado || null,
       efectivo_a_depositar: Number(row.efectivo_a_depositar) || 0,
       comprobante_url: comprobantePublicPath(row.comprobante_deposito_path),
     }));

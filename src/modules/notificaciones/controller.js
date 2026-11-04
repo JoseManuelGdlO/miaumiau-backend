@@ -858,7 +858,7 @@ class NotificacionController {
       const cambioCiudades = ciudadesNuevasEsteMes - ciudadesNuevasMesAnterior;
 
       // 4. VENTAS DEL MES
-      const ventasMesActual = await Pedido.sum('total', {
+      const ventasMesActual = Number(await Pedido.sum('total', {
         where: {
           baja_logica: false,
           estado: {
@@ -868,9 +868,9 @@ class NotificacionController {
             [Op.between]: [inicioMesActual, finMesActual]
           }
         }
-      }) || 0;
+      }) || 0);
 
-      const ventasMesAnterior = await Pedido.sum('total', {
+      const ventasMesAnterior = Number(await Pedido.sum('total', {
         where: {
           baja_logica: false,
           estado: {
@@ -880,7 +880,7 @@ class NotificacionController {
             [Op.between]: [inicioMesAnterior, finMesAnterior]
           }
         }
-      }) || 0;
+      }) || 0);
 
       const cambioVentas = ventasMesAnterior > 0
         ? ((ventasMesActual - ventasMesAnterior) / ventasMesAnterior * 100).toFixed(1)

@@ -25,6 +25,19 @@ function direccionDeRespaldo(ciudad) {
   return `${lugar}, México`;
 }
 
+function fold(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function enElEstado(formatted, estado) {
+  const needle = fold(estado).trim();
+  if (!needle) return true;
+  return fold(formatted).includes(needle);
+}
+
 function coordsDe(data) {
   if (data?.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) return null;
   const result = data.results[0];
@@ -35,10 +48,11 @@ function coordsDe(data) {
   };
 }
 
-async function resolverDireccion({ address, ciudad, colonia, codigo_postal }, apiKey) {
+async function resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey) {
   let fullAddress = address;
   if (colonia) fullAddress += `, ${colonia}`;
   if (ciudad && !String(address).includes(ciudad)) fullAddress += `, ${ciudad}`;
+  if (estado && !String(fullAddress).includes(estado)) fullAddress += `, ${estado}`;
   if (codigo_postal) fullAddress += `, ${codigo_postal}`;
 
   const primero = coordsDe(await callGeocodeApi(fullAddress, apiKey));
@@ -47,7 +61,7 @@ async function resolverDireccion({ address, ciudad, colonia, codigo_postal }, ap
   }
 
   if (colonia || codigo_postal) {
-    const fallbackAddress = [colonia, ciudad, codigo_postal].filter(Boolean).join(', ');
+    const fallbackAddress = [colonia, ciudad, estado, codigo_postal].filter(Boolean).join(', ');
     const zona = coordsDe(await callGeocodeApi(fallbackAddress, apiKey));
     if (zona) return { ...zona, aproximado: true };
   }
@@ -73,7 +87,7 @@ class MapsController {
   // Geocodificar una dirección
   async geocodeAddress(req, res, next) {
     try {
-      const { address, ciudad, codigo_postal, colonia } = req.body;
+      const { address, ciudad, codigo_postal, colonia, estado } = req.body;
 
       if (!address) {
         return res.status(400).json({
@@ -90,7 +104,13 @@ class MapsController {
         });
       }
 
-      const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal }, apiKey);
+      const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey);
+      if (punto && !enElEstado(punto.formatted_address, estado)) {
+        return res.status(422).json({
+          success: false,
+          message: `Esa dirección no está en ${estado}`
+        });
+      }
       if (punto) {
         return res.json({
           success: true,
@@ -243,8 +263,12 @@ class MapsController {
           const ciudad = typeof addressData === 'object' ? addressData.ciudad : undefined;
           const codigo_postal = typeof addressData === 'object' ? addressData.codigo_postal : undefined;
           const colonia = typeof addressData === 'object' ? addressData.colonia : undefined;
+          const estado = typeof addressData === 'object' ? addressData.estado : undefined;
 
-          const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal }, apiKey);
+          const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey);
+          if (punto && !enElEstado(punto.formatted_address, estado)) {
+            return { address: addressKey, success: false, error: `Esa dirección no está en ${estado}` };
+          }
           if (!punto) {
             return { address: addressKey, success: false, error: 'ZERO_RESULTS' };
           }
@@ -280,4 +304,6 @@ class MapsController {
 
 module.exports = new MapsController();
 module.exports.direccionDeRespaldo = direccionDeRespaldo;
+module.exports.resolverDireccion = resolverDireccion;
+module.exports.enElEstado = enElEstado;
 

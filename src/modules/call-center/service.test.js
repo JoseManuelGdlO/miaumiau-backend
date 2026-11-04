@@ -1133,6 +1133,38 @@ test('listar comprobantes incluye la foto y permite subirla si falta', async () 
   ]);
 });
 
+test('subir comprobante a un pedido en efectivo ahora pasa', async () => {
+  const created = [];
+  const pedido = {
+    id: 9,
+    baja_logica: false,
+    metodo_pago: 'efectivo',
+    total: 80,
+    update: async (data) => Object.assign(pedido, data),
+  };
+  const result = await subirComprobante({
+    fecha: '2026-10-19',
+    file: { filename: 'pago.jpg' },
+    pedido,
+    models: {
+      CobroEntrega: {
+        findOne: async () => null,
+        create: async (row) => { created.push(row); return row; },
+      },
+      RutaPedido: {
+        findOne: async () => ({ ruta: { fkid_repartidor: 8 } }),
+      },
+    },
+  });
+  expect(pedido.metodo_pago).toBe('transferencia');
+  expect(result.comprobante_url).toBe('/uploads/comprobantes/pago.jpg');
+  expect(created[0]).toEqual(expect.objectContaining({
+    fkid_pedido: 9,
+    metodo: 'transferencia',
+    monto_transferencia: 80,
+  }));
+});
+
 test('subir comprobante crea el cobro si el pedido todavía no lo tiene', async () => {
   const created = [];
   const result = await subirComprobante({
@@ -1168,14 +1200,17 @@ test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', 
           efectivo_a_depositar: '80.50',
           comprobante_deposito_path: 'comprobantes/dep.jpg',
           estado: 'cerrada',
-          repartidor: { nombre_completo: 'Ana' },
+          fkid_repartidor: 8,
+          repartidor: { id: 8, nombre_completo: 'Ana' },
         }],
       },
     },
   });
   expect(rows).toEqual([{
     jornada_id: 3,
+    repartidor_id: 8,
     repartidor: 'Ana',
+    estado: 'cerrada',
     efectivo_a_depositar: 80.5,
     comprobante_url: '/uploads/comprobantes/dep.jpg',
   }]);

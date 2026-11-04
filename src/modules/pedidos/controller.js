@@ -1082,6 +1082,13 @@ class PedidoController {
 
       const visible = pedidoCompleto?.toJSON ? pedidoCompleto.toJSON() : pedidoCompleto;
       if (visible) delete visible.codigo_entrega;
+      try {
+        const { avisarCodigoAlCrear } = require('../app-repartidor/service');
+        if (!pedido.cliente && cliente) pedido.cliente = cliente;
+        await avisarCodigoAlCrear({}, pedido);
+      } catch (codigoError) {
+        log.warn('No se pudo enviar el código al crear el pedido', { message: codigoError.message, pedidoId: pedido.id });
+      }
       res.status(201).json({
         success: true,
         message: rango.ajustado
@@ -1849,14 +1856,14 @@ class PedidoController {
         }
       });
 
-      const totalVentas = await Pedido.sum('total', {
+      const totalVentas = Number(await Pedido.sum('total', {
         where: { 
           baja_logica: false,
           estado: {
             [Op.ne]: 'cancelado'
           }
         }
-      });
+      }) || 0);
 
       const pedidosPorEstado = await Pedido.getPedidosByEstado();
       const pedidosPorMetodoPago = await Pedido.getPedidosByMetodoPago();
