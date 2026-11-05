@@ -787,7 +787,8 @@ class RutaController {
       // Verificar que los pedidos no estén ya asignados a otra ruta
       const pedidosAsignados = await RutaPedido.findAll({
         where: {
-          fkid_pedido: pedidoIds
+          fkid_pedido: pedidoIds,
+          estado_entrega: { [Op.notIn]: ['entregado', 'fallido'] }
         },
         include: [
           {

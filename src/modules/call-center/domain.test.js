@@ -184,6 +184,7 @@ test('el histórico solo incluye check-in leídos y no cancelados', () => {
   expect(row.validado_por_nombre).toBe('Mariana G.');
   expect(row.dinero_esperado).toBe(80);
   expect(row.cargas[0].nombre).toBe('Arena');
+  expect(row.cobros).toEqual([]);
 });
 
 test('reagendar el mismo día solo lo hace un super admin', () => {

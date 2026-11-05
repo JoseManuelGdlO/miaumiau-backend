@@ -134,7 +134,18 @@ function isValidatedCheckIn(row) {
   return Boolean(row?.leida) && datos.tipo === 'check_in' && datos.estado_solicitud !== 'cancelada';
 }
 
-function toCargaValidada({ notificacion, repartidor, jornada }) {
+function cobroDeParada(row) {
+  const pedido = row?.pedido || {};
+  const cobro = pedido.cobro_entrega || pedido.cobroEntrega;
+  return {
+    numero_pedido: pedido.numero_pedido || null,
+    metodo: cobro?.metodo || pedido.metodo_pago || null,
+    estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
+    monto: Number(pedido.total) || 0,
+  };
+}
+
+function toCargaValidada({ notificacion, repartidor, jornada, cobros }) {
   return {
     ...toSolicitudDetalle({
       notificacion,
@@ -143,6 +154,9 @@ function toCargaValidada({ notificacion, repartidor, jornada }) {
       dineroEsperado: jornada?.dinero_esperado,
     }),
     validado_por_nombre: jornada?.validado_por_nombre || null,
+    efectivo_cobrado: Number(jornada?.efectivo_cobrado) || 0,
+    virtual_cobrado: Number(jornada?.virtual_cobrado) || 0,
+    cobros: cobros || [],
   };
 }
 
@@ -437,6 +451,7 @@ module.exports = {
   sigueHoy,
   esDeHoy,
   isValidatedCheckIn,
+  cobroDeParada,
   toCargaValidada,
   toSolicitudResumen,
   toSolicitudDetalle,

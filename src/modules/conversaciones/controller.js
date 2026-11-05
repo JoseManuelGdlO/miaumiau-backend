@@ -95,6 +95,8 @@ class ConversacionController {
         flags,
         has_error,
         has_escalation,
+        unread,
+        days,
         page = 1,
         limit = 10
       } = req.query;
@@ -123,11 +125,21 @@ class ConversacionController {
         whereClause.id_cliente = id_cliente;
       }
 
-      // Filtrar por rango de fechas
+      // Filtrar por rango de fechas (actividad)
       if (start_date && end_date) {
-        whereClause.created_at = {
-          [Op.between]: [new Date(start_date), new Date(end_date)]
+        whereClause.updated_at = {
+          [Op.between]: [new Date(start_date), new Date(`${end_date}T23:59:59`)]
         };
+      } else if (start_date) {
+        whereClause.updated_at = { [Op.gte]: new Date(start_date) };
+      } else if (days) {
+        const n = Math.min(90, Math.max(1, Number(days) || 0));
+        if (n) {
+          const start = new Date();
+          start.setHours(0, 0, 0, 0);
+          start.setDate(start.getDate() - (n - 1));
+          whereClause.updated_at = { [Op.gte]: start };
+        }
       }
 
       // Búsqueda mejorada: buscar en múltiples campos
@@ -322,6 +334,16 @@ class ConversacionController {
           whereClause,
           conversationIdsWithEscalationCondition
         );
+      }
+
+      if (unread === 'true') {
+        whereClause = appendWhereCondition(whereClause, {
+          id: { [Op.in]: Sequelize.literal(`(
+            SELECT DISTINCT cc.fkid_conversacion
+            FROM conversaciones_chat AS cc
+            WHERE cc.leido = false AND cc.baja_logica = false
+          )`) },
+        });
       }
 
       const { count, rows: conversaciones } = await Conversacion.findAndCountAll({
