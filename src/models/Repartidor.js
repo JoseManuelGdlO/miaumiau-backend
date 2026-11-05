@@ -215,6 +215,20 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    lat_actual: {
+      type: DataTypes.DECIMAL(10, 8),
+      allowNull: true,
+      validate: { min: -90, max: 90 }
+    },
+    lng_actual: {
+      type: DataTypes.DECIMAL(11, 8),
+      allowNull: true,
+      validate: { min: -180, max: 180 }
+    },
+    ubicacion_at: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'repartidores',

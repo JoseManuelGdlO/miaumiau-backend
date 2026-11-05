@@ -1368,6 +1368,40 @@ class RutaController {
       });
     }
   }
+
+  async getTrazado(req, res) {
+    try {
+      const { id } = req.params;
+      const ruta = await Ruta.findByPk(id, {
+        include: [
+          { model: Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'] },
+          { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'] },
+          {
+            model: RutaPedido,
+            as: 'pedidos',
+            include: [{
+              model: Pedido,
+              as: 'pedido',
+              include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] }],
+            }],
+          },
+        ],
+      });
+      if (!ruta) {
+        return res.status(404).json({ success: false, message: 'Ruta no encontrada' });
+      }
+      const { construirTrazado } = require('../maps/google');
+      const data = await construirTrazado(ruta);
+      return res.json({ success: true, data });
+    } catch (error) {
+      log.error('Error al armar el trazado:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
+      });
+    }
+  }
 }
 
 module.exports = new RutaController();

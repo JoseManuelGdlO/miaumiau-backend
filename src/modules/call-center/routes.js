@@ -26,6 +26,7 @@ router.post('/pedidos/:id/orden', ...guard, controller.moverParada);
 router.post('/pedidos/:id/liberar-siguiente', ...guard, controller.liberarSiguiente);
 router.post('/pedidos/:id/cerrar-sin-codigo', ...guard, controller.cerrarSinCodigo);
 router.get('/velocidad', ...guard, controller.velocidad);
+router.get('/rutas/:id/trazado', ...guard, controller.trazado);
 router.get('/comprobantes', ...guard, controller.comprobantes);
 router.get('/corte', ...guard, controller.corte);
 router.post('/pedidos/:id/comprobante', ...guard, uploadComprobantes.single('comprobante'), controller.subirComprobante);

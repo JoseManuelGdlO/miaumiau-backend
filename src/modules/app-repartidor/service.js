@@ -1889,10 +1889,28 @@ async function estadisticas(deps = {}) {
   };
 }
 
+async function registrarUbicacion(deps = {}) {
+  const { puntoDe } = require('../maps/google');
+  const punto = puntoDe({ lat: deps.lat, lng: deps.lng });
+  if (!punto) fail(422, 'La ubicación no es válida');
+  const db = getModels(deps);
+  const at = deps.fecha ? new Date(deps.fecha) : new Date();
+  if (typeof db.Repartidor?.update === 'function') {
+    await db.Repartidor.update(
+      { lat_actual: punto.lat, lng_actual: punto.lng, ubicacion_at: at },
+      { where: { id: deps.repartidorId } },
+    );
+  }
+  return { lat: punto.lat, lng: punto.lng, ubicacion_at: at.toISOString() };
+}
+
 async function registrarVelocidad(deps = {}) {
   const kmh = Number(deps.velocidad_kmh ?? deps.velocidad);
   if (!Number.isFinite(kmh) || kmh < 0 || kmh > 180) fail(422, 'La velocidad no es válida');
   const db = getModels(deps);
+  if (Number.isFinite(Number(deps.lat)) && Number.isFinite(Number(deps.lng))) {
+    try { await registrarUbicacion(deps); } catch { /* velocidad se guarda igual */ }
+  }
   if (typeof db.LecturaVelocidad?.create !== 'function') return { promedio: null, lecturas: 0 };
   const jornada = await loadJornada(deps, { findOrCreate: false });
   await db.LecturaVelocidad.create({
@@ -1906,6 +1924,19 @@ async function registrarVelocidad(deps = {}) {
   return resumenVelocidad(deps);
 }
 
+function gpsDeFila(row) {
+  const { puntoDe } = require('../maps/google');
+  const punto = puntoDe({
+    lat: row?.lat_actual ?? row?.repartidor?.lat_actual,
+    lng: row?.lng_actual ?? row?.repartidor?.lng_actual,
+  });
+  return {
+    lat: punto?.lat ?? null,
+    lng: punto?.lng ?? null,
+    ubicacion_at: row?.ubicacion_at || row?.repartidor?.ubicacion_at || null,
+  };
+}
+
 async function resumenVelocidad(deps = {}) {
   const db = getModels(deps);
   if (typeof db.LecturaVelocidad?.findAll !== 'function') return [];
@@ -1914,14 +1945,28 @@ async function resumenVelocidad(deps = {}) {
   if (deps.repartidorId != null) where.fkid_repartidor = deps.repartidorId;
   const rows = await db.LecturaVelocidad.findAll({
     where,
-    include: db.Repartidor ? [{ model: db.Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo'], required: false }] : [],
+    include: db.Repartidor ? [{ model: db.Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'], required: false }] : [],
   });
   const grupos = new Map();
   for (const row of rows) {
     const id = row.fkid_repartidor;
-    const grupo = grupos.get(id) || { repartidor_id: id, nombre: row.repartidor?.nombre_completo || null, suma: 0, lecturas: 0 };
+    const gps = gpsDeFila(row);
+    const grupo = grupos.get(id) || {
+      repartidor_id: id,
+      nombre: row.repartidor?.nombre_completo || null,
+      suma: 0,
+      lecturas: 0,
+      lat: gps.lat,
+      lng: gps.lng,
+      ubicacion_at: gps.ubicacion_at,
+    };
     grupo.suma += Number(row.velocidad_kmh) || 0;
     grupo.lecturas += 1;
+    if (gps.lat != null) {
+      grupo.lat = gps.lat;
+      grupo.lng = gps.lng;
+      grupo.ubicacion_at = gps.ubicacion_at;
+    }
     grupos.set(id, grupo);
   }
   const lista = [...grupos.values()].map((grupo) => ({
@@ -1929,8 +1974,11 @@ async function resumenVelocidad(deps = {}) {
     nombre: grupo.nombre,
     promedio: Math.round((grupo.suma / grupo.lecturas) * 10) / 10,
     lecturas: grupo.lecturas,
+    lat: grupo.lat,
+    lng: grupo.lng,
+    ubicacion_at: grupo.ubicacion_at,
   }));
-  if (deps.repartidorId != null) return lista[0] || { promedio: null, lecturas: 0 };
+  if (deps.repartidorId != null) return lista[0] || { promedio: null, lecturas: 0, lat: null, lng: null, ubicacion_at: null };
   return lista;
 }
 
@@ -1980,11 +2028,36 @@ async function ubicacionPedido(deps = {}) {
       lng = null;
     }
   }
+  const { geometriaCached } = require('../maps/google');
+  const gps = puntoDeRepartidor(deps.repartidor);
+  let polyline = [];
+  if (Number.isFinite(lat) && Number.isFinite(lng) && gps && apiKey) {
+    try {
+      const geo = await geometriaCached(gps, { lat, lng }, apiKey, deps.geocodeGet || deps.httpGet);
+      polyline = geo?.puntos || [];
+    } catch {
+      polyline = [];
+    }
+  }
   return {
     lat: Number.isFinite(lat) ? lat : null,
     lng: Number.isFinite(lng) ? lng : null,
     link_ubicacion: rutaPedido.link_ubicacion || null,
+    link_navegacion: Number.isFinite(lat) && Number.isFinite(lng)
+      ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`
+      : null,
+    link_waze: Number.isFinite(lat) && Number.isFinite(lng)
+      ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
+      : null,
+    polyline,
   };
+}
+
+function puntoDeRepartidor(repartidor) {
+  const lat = Number(repartidor?.lat_actual);
+  const lng = Number(repartidor?.lng_actual);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
 }
 
 async function logros(deps = {}) {
@@ -2037,6 +2110,7 @@ module.exports = {
   listarPedidos,
   inventarioVehiculo,
   registrarVelocidad,
+  registrarUbicacion,
   resumenVelocidad,
   ubicacionPedido,
   detallePedido,

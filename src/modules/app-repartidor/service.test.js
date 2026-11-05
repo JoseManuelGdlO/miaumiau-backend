@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -680,4 +680,43 @@ test('avisarCodigoAlCrear no truena si WhatsApp falla', async () => {
   await expect(avisarCodigoAlCrear({
     sendWhatsAppTemplate: async () => { throw new Error('down'); },
   }, pedidoConCodigo())).resolves.toBeUndefined();
+});
+
+test('registrarUbicacion persiste lat_actual del repartidor', async () => {
+  const updates = [];
+  const data = await registrarUbicacion({
+    repartidorId: 3,
+    lat: 24.0277,
+    lng: -104.6532,
+    models: {
+      Repartidor: {
+        update: async (fields, opts) => updates.push({ fields, opts }),
+      },
+    },
+  });
+  expect(data.lat).toBe(24.0277);
+  expect(updates[0].fields.lat_actual).toBe(24.0277);
+  expect(updates[0].opts.where).toEqual({ id: 3 });
+});
+
+test('registrarVelocidad guarda GPS y lectura', async () => {
+  const created = [];
+  const updates = [];
+  await registrarVelocidad({
+    repartidorId: 3,
+    fecha: '2026-11-05',
+    velocidad_kmh: 32,
+    lat: 24.1,
+    lng: -104.6,
+    models: {
+      Repartidor: { update: async (fields) => updates.push(fields) },
+      LecturaVelocidad: {
+        create: async (row) => created.push(row),
+        findAll: async () => [{ fkid_repartidor: 3, velocidad_kmh: 32, repartidor: { nombre_completo: 'Ana', lat_actual: 24.1, lng_actual: -104.6 } }],
+      },
+      JornadaRepartidor: { findOne: async () => ({ id: 9 }) },
+    },
+  });
+  expect(updates[0].lat_actual).toBe(24.1);
+  expect(created[0].lat).toBe(24.1);
 });

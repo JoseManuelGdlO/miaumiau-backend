@@ -196,6 +196,34 @@ function velocidad(req, res) {
   }, 'velocidad');
 }
 
+function trazado(req, res) {
+  return handle(res, async () => {
+    const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente } = require('../../models');
+    const { construirTrazado } = require('../maps/google');
+    const ruta = await Ruta.findByPk(req.params.id, {
+      include: [
+        { model: Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'] },
+        { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'] },
+        {
+          model: RutaPedido,
+          as: 'pedidos',
+          include: [{
+            model: Pedido,
+            as: 'pedido',
+            include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] }],
+          }],
+        },
+      ],
+    });
+    if (!ruta) {
+      const error = new Error('Ruta no encontrada');
+      error.status = 404;
+      throw error;
+    }
+    return construirTrazado(ruta);
+  }, 'trazado');
+}
+
 function cambiarFranja(req, res) {
   return handle(res, () => service.cambiarFranja(live({
     pedidoId: req.params.id,
@@ -287,6 +315,7 @@ module.exports = {
   moverParada,
   liberarSiguiente,
   velocidad,
+  trazado,
   cambiarDireccion,
   comprobantes,
   corte,
