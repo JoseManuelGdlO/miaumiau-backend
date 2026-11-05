@@ -21,6 +21,7 @@ const {
   toSolicitudDetalle,
   toPedidoDia,
   toRepartidorOpcion,
+  estadoCobro,
   nombreRol,
   puedeAutorizarExcepcion,
   cierreDirectoCheck,
@@ -32,6 +33,7 @@ const {
 } = require('./domain');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { franjaDeHorario } = require('../pedidos/horario');
+const { exigirCupo, cuposPorRepartidor } = require('../rutas/cupo');
 const { registrarCambio } = require('../historial/service');
 const { reencolarNoEntregados, soltarParadasAbiertas } = require('../pedidos/reencolar');
 const usersWithPermission = require('../../utils/usersWithPermission');
@@ -497,6 +499,14 @@ async function reasignar(deps = {}) {
       bajaLogica: Boolean(driver?.baja_logica),
     });
     if (!fresh.ok) fail(fresh.statusCode, fresh.message);
+    if (Number(driver.id) !== Number(lockedRuta.fkid_repartidor)) {
+      await exigirCupo(db, {
+        repartidorId: driver.id,
+        fecha: fechaKey(lockedRuta.fecha_ruta),
+        extra: 1,
+        transaction: t,
+      });
+    }
 
     let destino = deps.rutaDestino || null;
     let creada = false;
@@ -735,11 +745,28 @@ async function listarPedidos(deps = {}) {
         where: { baja_logica: false },
         include: [
           { association: 'cliente' },
-          { association: 'productos', required: false },
+          {
+            association: 'productos',
+            required: false,
+            include: [{ association: 'producto', attributes: ['nombre'], required: false }],
+          },
+          {
+            association: 'paquetes',
+            required: false,
+            include: [{ association: 'paquete', attributes: ['nombre'], required: false }],
+          },
           { association: 'cobro_entrega', required: false },
         ],
       },
-      { association: 'ruta', required: true, where: rutaWhere, include: [{ association: 'repartidor' }] },
+      {
+        association: 'ruta',
+        required: true,
+        where: rutaWhere,
+        include: [
+          { association: 'repartidor' },
+          { association: 'ciudad', attributes: ['nombre', 'departamento'], required: false },
+        ],
+      },
     ],
     order: [['orden_entrega', 'ASC']],
   });
@@ -751,10 +778,15 @@ async function listarRepartidores(deps = {}) {
   const db = getModels(deps);
   const rows = await db.Repartidor.findAll({
     where: { fkid_ciudad: deps.ciudadId, estado: { [Op.in]: ACTIVE }, baja_logica: false },
-    attributes: ['id', 'nombre_completo', 'estado'],
+    attributes: ['id', 'nombre_completo', 'estado', 'es_prueba'],
     order: [['nombre_completo', 'ASC']],
   });
-  return rows.map(toRepartidorOpcion);
+  let cupos = {};
+  if (typeof db.Ruta?.findAll === 'function') {
+    const fecha = deps.fecha || await fechaDeHoy(deps);
+    cupos = await cuposPorRepartidor(db, rows.map((row) => row.id), fecha);
+  }
+  return rows.map((row) => toRepartidorOpcion(row, cupos[row.id] || 0));
 }
 
 async function liberarCierre(deps = {}) {
@@ -981,8 +1013,11 @@ async function listarComprobantes(deps = {}) {
       pedido_id: pedido.id,
       numero_pedido: pedido.numero_pedido,
       repartidor: row.ruta?.repartidor?.nombre_completo || null,
+      repartidor_id: row.ruta?.repartidor?.id || row.ruta?.fkid_repartidor || null,
       ciudad: pedido.ciudad?.nombre || null,
       metodo,
+      monto: Number(pedido.total) || 0,
+      estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
       nota: row.notas_entrega || null,
       fecha: row.ruta?.fecha_ruta || null,
       comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
@@ -1159,6 +1194,7 @@ async function asignarActividad(deps = {}) {
     }],
   });
   if (ya.length) fail(409, 'Ese pedido ya está en una ruta de hoy');
+  await exigirCupo(db, { repartidorId: driver.id, fecha, extra: 1 });
   let ruta = await db.Ruta.findOne({
     where: {
       fkid_repartidor: driver.id,
@@ -1199,6 +1235,37 @@ async function asignarActividad(deps = {}) {
   }
   await safeNotify(deps, driver.id, { type: 'ruta.actualizada', pedidoId: Number(pedido.id) });
   return { ruta_id: ruta.id, pedido_id: pedido.id };
+}
+
+async function corteDeRepartidor(deps = {}) {
+  const repartidorId = Number(deps.repartidorId);
+  if (!Number.isInteger(repartidorId) || repartidorId <= 0) fail(422, 'Elige un repartidor');
+  const fecha = String(deps.fecha || await fechaDeHoy(deps)).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fail(422, 'La fecha no es válida');
+  const db = getModels(deps);
+  const driver = deps.repartidor || await db.Repartidor.findByPk(repartidorId);
+  if (!driver || driver.baja_logica) fail(404, 'Repartidor no encontrado');
+  const paradas = await listarPedidos({ ...deps, fecha, repartidorId });
+  const rutas = typeof db.Ruta?.findAll === 'function'
+    ? await db.Ruta.findAll({
+      where: { fkid_repartidor: repartidorId, fecha_ruta: fecha, baja_logica: false },
+      attributes: ['distancia_estimada'],
+      include: [{ association: 'ciudad', attributes: ['nombre', 'departamento'], required: false }],
+    })
+    : [];
+  const km = rutas.reduce((acc, ruta) => acc + (Number(ruta.distancia_estimada) || 0), 0);
+  const ciudadRow = rutas.find((ruta) => ruta.ciudad)?.ciudad;
+  return {
+    fecha,
+    repartidor: {
+      id: driver.id,
+      nombre_completo: driver.nombre_completo,
+      es_prueba: Boolean(driver.es_prueba),
+    },
+    ciudad: ciudadRow?.nombre || ciudadRow?.departamento || paradas.find((p) => p.ciudad)?.ciudad || null,
+    km_esperados: km || null,
+    paradas,
+  };
 }
 
 async function listarContactos(deps = {}) {
@@ -1411,6 +1478,7 @@ module.exports = {
   listarDepositos,
   listarActividadesDisponibles,
   asignarActividad,
+  corteDeRepartidor,
   cerrarSinCodigo,
   responderRepartidor,
   resolverAyuda,

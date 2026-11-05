@@ -210,6 +210,11 @@ module.exports = (sequelize, DataTypes) => {
     foto: {
       type: DataTypes.STRING(255),
       allowNull: true
+    },
+    es_prueba: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     tableName: 'repartidores',
@@ -327,7 +332,8 @@ module.exports = (sequelize, DataTypes) => {
   Repartidor.findDisponibles = function(ciudadId = null) {
     const whereClause = {
       estado: 'disponible',
-      baja_logica: false
+      baja_logica: false,
+      es_prueba: false
     };
 
     if (ciudadId) {

@@ -1,4 +1,5 @@
-const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete } = require('../../models');
+const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete, CobroEntrega } = require('../../models');
+const { exigirCupo } = require('./cupo');
 const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
@@ -205,7 +206,24 @@ class RutaController {
                   {
                     model: Cliente,
                     as: 'cliente'
-                  }
+                  },
+                  {
+                    model: CobroEntrega,
+                    as: 'cobro_entrega',
+                    required: false,
+                  },
+                  {
+                    model: ProductoPedido,
+                    as: 'productos',
+                    required: false,
+                    include: [{ model: Inventario, as: 'producto', attributes: ['id', 'nombre'], required: false }],
+                  },
+                  {
+                    model: PaquetePedido,
+                    as: 'paquetes',
+                    required: false,
+                    include: [{ model: Paquete, as: 'paquete', attributes: ['id', 'nombre'], required: false }],
+                  },
                 ]
               }
             ]
@@ -298,6 +316,11 @@ class RutaController {
                     as: 'paquetes',
                     required: false,
                     separate: true
+                  },
+                  {
+                    model: CobroEntrega,
+                    as: 'cobro_entrega',
+                    required: false,
                   }
                 ]
               }
@@ -583,6 +606,11 @@ class RutaController {
                         as: 'categoria'
                       }
                     ]
+                  },
+                  {
+                    model: CobroEntrega,
+                    as: 'cobro_entrega',
+                    required: false,
                   }
                 ]
               }
@@ -786,6 +814,24 @@ class RutaController {
           message: 'Algunos pedidos ya están asignados a otras rutas',
           pedidos_conflictivos: rutasConflictivas
         });
+      }
+
+      if (ruta.fkid_repartidor) {
+        try {
+          await exigirCupo({ Ruta, RutaPedido }, {
+            repartidorId: ruta.fkid_repartidor,
+            fecha: ruta.fecha_ruta,
+            extra: pedidos.length,
+          });
+        } catch (error) {
+          if (error.status === 409) {
+            return res.status(409).json({
+              success: false,
+              message: error.message,
+            });
+          }
+          throw error;
+        }
       }
 
       // Crear las asignaciones de pedidos

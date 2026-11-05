@@ -1,4 +1,4 @@
-const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad } = require('./service');
+const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad, corteDeRepartidor } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -509,7 +509,15 @@ test('repartidores excluye inactivos', async () => {
     },
   };
   const rows = await listarRepartidores({ models, ciudadId: 2 });
-  expect(rows).toEqual([{ id: 3, nombre_completo: 'Luis', estado: 'activo' }]);
+  expect(rows).toEqual([{
+    id: 3,
+    nombre_completo: 'Luis',
+    estado: 'activo',
+    es_prueba: false,
+    paradas: 0,
+    max_paradas: 25,
+    saturado: false,
+  }]);
 });
 
 function parada(id, fecha, baja) {
@@ -1128,9 +1136,38 @@ test('listar comprobantes incluye la foto y permite subirla si falta', async () 
     },
   });
   expect(rows).toEqual([
-    expect.objectContaining({ pedido_id: 4, comprobante_url: '/uploads/comprobantes/a.jpg', puede_subir: false }),
-    expect.objectContaining({ pedido_id: 5, comprobante_url: null, puede_subir: true }),
+    expect.objectContaining({ pedido_id: 4, comprobante_url: '/uploads/comprobantes/a.jpg', puede_subir: false, estado_cobro: 'completo', monto: 0 }),
+    expect.objectContaining({ pedido_id: 5, comprobante_url: null, puede_subir: true, estado_cobro: 'falta cobro' }),
   ]);
+});
+
+test('el corte agrupa las paradas del repartidor en esa fecha', async () => {
+  const corte = await corteDeRepartidor({
+    fecha: '2026-10-19',
+    repartidorId: 8,
+    repartidor: { id: 8, nombre_completo: 'Ana', es_prueba: false },
+    models: {
+      RutaPedido: {
+        findAll: async () => [{
+          id: 1,
+          orden_entrega: 1,
+          estado_entrega: 'entregado',
+          pedido: {
+            id: 4,
+            numero_pedido: 'P-4',
+            estado: 'entregado',
+            metodo_pago: 'efectivo',
+            total: 80,
+            cobro_entrega: { metodo: 'efectivo', monto_efectivo: 80, monto_transferencia: 0 },
+          },
+          ruta: { fecha_ruta: '2026-10-19', fkid_ciudad: 1, fkid_repartidor: 8, repartidor: { id: 8, nombre_completo: 'Ana' } },
+        }],
+      },
+    },
+  });
+  expect(corte.fecha).toBe('2026-10-19');
+  expect(corte.repartidor.nombre_completo).toBe('Ana');
+  expect(corte.paradas[0].estado_cobro).toBe('completo');
 });
 
 test('subir comprobante a un pedido en efectivo ahora pasa', async () => {
@@ -1214,6 +1251,23 @@ test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', 
     efectivo_a_depositar: 80.5,
     comprobante_url: '/uploads/comprobantes/dep.jpg',
   }]);
+});
+
+test('asignar actividad rechaza la parada 26', async () => {
+  await expect(asignarActividad({
+    fecha: '2026-10-19',
+    pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1 },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    models: {
+      RutaPedido: {
+        findAll: async () => [],
+        count: async () => 25,
+      },
+      Ruta: {
+        findAll: async () => [{ id: 3 }],
+      },
+    },
+  })).rejects.toMatchObject({ status: 409, message: 'Ese repartidor ya tiene 25 pedidos hoy' });
 });
 
 test('asignar actividad extra la libera aunque falte el depósito', async () => {

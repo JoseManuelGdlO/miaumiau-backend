@@ -147,6 +147,13 @@ function comprobantes(req, res) {
   }), 'comprobantes');
 }
 
+function corte(req, res) {
+  return handle(res, () => service.corteDeRepartidor({
+    repartidorId: req.query.repartidorId || req.query.repartidor_id,
+    fecha: req.query.fecha || null,
+  }), 'corte');
+}
+
 function anotarComprobante(req, res) {
   return handle(res, () => service.anotarComprobante({
     pedidoId: req.params.id,
@@ -282,6 +289,7 @@ module.exports = {
   velocidad,
   cambiarDireccion,
   comprobantes,
+  corte,
   anotarComprobante,
   subirComprobante,
   depositos,
