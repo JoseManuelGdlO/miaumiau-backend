@@ -9,28 +9,13 @@ const { franjaDeHorario, idsExcedentesManana } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarParadasSiAplica } = require('../app-repartidor/service');
-const { resolverDireccion, enElEstado } = require('../maps/controller');
+const { geocodePedido, refrescarPolylineRuta } = require('../maps/google');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
 
 async function coordsDePedido(pedidoRow) {
-  if (!pedidoRow?.direccion_entrega || !process.env.GOOGLE_MAPS_API_KEY) return null;
-  let ciudad = pedidoRow.ciudad;
-  if (!ciudad && pedidoRow.fkid_ciudad) {
-    ciudad = await City.findByPk(pedidoRow.fkid_ciudad, { attributes: ['id', 'nombre', 'departamento'] });
-  }
-  const estado = ciudad?.departamento || null;
-  const punto = await resolverDireccion({
-    address: pedidoRow.direccion_entrega,
-    ciudad: ciudad?.nombre,
-    estado,
-  }, process.env.GOOGLE_MAPS_API_KEY);
-  if (!punto) return null;
-  if (estado && !enElEstado(punto.formatted_address, estado)) {
-    throw Object.assign(new Error(`Esa dirección no está en ${estado}`), { status: 422 });
-  }
-  return { lat: punto.lat, lng: punto.lng };
+  return geocodePedido(pedidoRow);
 }
 
 async function refrescarFotoDeRuta(repartidorId, fecha) {
@@ -847,7 +832,10 @@ class RutaController {
         try {
           log.debug(`[RUTAS] Intentando crear RutaPedido para pedido ${pedido.fkid_pedido}...`);
           const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido, {
-            include: [{ model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'], required: false }],
+            include: [
+              { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'], required: false },
+              { model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng', 'direccion_geo', 'direccion_entrega'], required: false },
+            ],
           });
           let lat = pedido.lat !== undefined && pedido.lat !== null ? parseFloat(pedido.lat) : null;
           let lng = pedido.lng !== undefined && pedido.lng !== null ? parseFloat(pedido.lng) : null;
@@ -914,6 +902,14 @@ class RutaController {
           await ordenarParadasSiAplica({ repartidorId: ruta.fkid_repartidor, fecha });
         } catch (ordenError) {
           log.warn('[RUTAS] No se pudo ordenar la ruta', { message: ordenError.message });
+        }
+        try {
+          const rutaConParadas = await Ruta.findByPk(id, {
+            include: [{ model: RutaPedido, as: 'pedidos' }],
+          });
+          await refrescarPolylineRuta(rutaConParadas);
+        } catch (polyError) {
+          log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
         }
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
@@ -1383,7 +1379,7 @@ class RutaController {
             include: [{
               model: Pedido,
               as: 'pedido',
-              include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] }],
+              include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng'] }],
             }],
           },
         ],

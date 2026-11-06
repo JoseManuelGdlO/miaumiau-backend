@@ -210,7 +210,7 @@ function trazado(req, res) {
           include: [{
             model: Pedido,
             as: 'pedido',
-            include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'] }],
+            include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng'] }],
           }],
         },
       ],

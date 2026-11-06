@@ -57,6 +57,13 @@ protectedRouter.put(
 );
 
 protectedRouter.put(
+  '/maps-api-apagada',
+  authenticateToken,
+  requireSuperAdminOrPermission('configurar_sistema'),
+  siteSettingsController.updateMapsApiApagada
+);
+
+protectedRouter.put(
   '/qr-actions',
   authenticateToken,
   requireSuperAdminOrPermission('configurar_qr'),

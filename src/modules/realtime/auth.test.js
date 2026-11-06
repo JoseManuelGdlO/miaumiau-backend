@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { verifyRepartidorToken } = require('./auth');
+const { verifyRepartidorToken, verifyCallCenterToken } = require('./auth');
 
 const secret = 'test-secret';
 
@@ -27,6 +27,16 @@ test.each([
     Repartidor: { findByPk: async () => repartidor() },
   });
   expect(result).toBeNull();
+});
+
+test('verifyCallCenterToken acepta operar_call_center', () => {
+  const token = jwt.sign({ userId: 2, role: 'operador', permissions: ['operar_call_center'] }, secret);
+  expect(verifyCallCenterToken(token, { secret })).toEqual({ userId: 2 });
+});
+
+test('verifyCallCenterToken rechaza repartidor y usuario sin permiso', () => {
+  expect(verifyCallCenterToken(jwt.sign({ tipo: 'repartidor', repartidorId: 7 }, secret), { secret })).toBeNull();
+  expect(verifyCallCenterToken(jwt.sign({ userId: 2, role: 'ventas', permissions: [] }, secret), { secret })).toBeNull();
 });
 
 test('rechaza repartidor inactivo o dado de baja', async () => {

@@ -1002,6 +1002,15 @@ async function moverParada(deps = {}) {
     await vecino.update({ orden_entrega: ordenActual });
   }
   olvidarOrdenRuta(parada.ruta?.fkid_repartidor, fechaKey(parada.ruta?.fecha_ruta));
+  try {
+    const ruta = await db.Ruta.findByPk(parada.fkid_ruta, {
+      include: [{ model: db.RutaPedido, as: 'pedidos' }],
+    });
+    const { refrescarPolylineRuta } = require('../maps/google');
+    await refrescarPolylineRuta(ruta);
+  } catch {
+    // El orden ya cambió; el mapa sigue con la polyline anterior o con pines.
+  }
   await safeNotify(deps, parada.ruta?.fkid_repartidor, { type: 'ruta.actualizada', pedidoId: Number(deps.pedidoId) });
   return { orden_entrega: ordenVecino, orden_manual: true };
 }

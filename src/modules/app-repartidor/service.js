@@ -734,6 +734,8 @@ async function ordenarParadasSiAplica(deps = {}) {
         }))
         .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
       if (paradas.length < 2) continue;
+      const { mapsApagada } = require('../maps/apagada');
+      if (await mapsApagada(deps)) continue;
       let matrix;
       try {
         matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
@@ -751,10 +753,20 @@ async function ordenarParadasSiAplica(deps = {}) {
     }
   }
   rutasOrdenadas.add(cacheKey);
+  const { refrescarPolylineRuta } = require('../maps/google');
+  for (const ruta of rutas) {
+    try {
+      await refrescarPolylineRuta(ruta, deps);
+    } catch {
+      // La orden queda; el trazado usa pines si no hay polyline.
+    }
+  }
 }
 
 async function anotarMinutos(deps, rutas) {
   if (process.env.NODE_ENV === 'test' && !deps.calcularMinutos) return;
+  const { mapsApagada } = require('../maps/apagada');
+  if (await mapsApagada(deps)) return;
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return;
   const paradas = (rutas || [])
@@ -2003,18 +2015,13 @@ async function ubicacionPedido(deps = {}) {
   const rutaPedido = await assertRutaDelRepartidor(deps);
   let lat = rutaPedido.lat == null ? null : Number(rutaPedido.lat);
   let lng = rutaPedido.lng == null ? null : Number(rutaPedido.lng);
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  const address = rutaPedido.pedido?.direccion_entrega;
-  if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && apiKey && address) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     try {
-      const httpGet = deps.geocodeGet || require('axios').get;
-      const response = await httpGet('https://maps.googleapis.com/maps/api/geocode/json', {
-        params: { address, key: apiKey, region: 'mx' },
-      });
-      const location = response.data?.results?.[0]?.geometry?.location;
-      if (response.data?.status === 'OK' && location) {
-        lat = Number(location.lat);
-        lng = Number(location.lng);
+      const { geocodePedido, puntoDe } = require('../maps/google');
+      const hit = puntoDe(await geocodePedido(rutaPedido.pedido, deps));
+      if (hit) {
+        lat = hit.lat;
+        lng = hit.lng;
         if (typeof rutaPedido.update === 'function') {
           await rutaPedido.update({
             lat,
@@ -2028,17 +2035,6 @@ async function ubicacionPedido(deps = {}) {
       lng = null;
     }
   }
-  const { geometriaCached } = require('../maps/google');
-  const gps = puntoDeRepartidor(deps.repartidor);
-  let polyline = [];
-  if (Number.isFinite(lat) && Number.isFinite(lng) && gps && apiKey) {
-    try {
-      const geo = await geometriaCached(gps, { lat, lng }, apiKey, deps.geocodeGet || deps.httpGet);
-      polyline = geo?.puntos || [];
-    } catch {
-      polyline = [];
-    }
-  }
   return {
     lat: Number.isFinite(lat) ? lat : null,
     lng: Number.isFinite(lng) ? lng : null,
@@ -2049,7 +2045,7 @@ async function ubicacionPedido(deps = {}) {
     link_waze: Number.isFinite(lat) && Number.isFinite(lng)
       ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
       : null,
-    polyline,
+    polyline: [],
   };
 }
 

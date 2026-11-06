@@ -1,10 +1,15 @@
 const crypto = require('crypto');
 const axios = require('axios');
+const { Logger } = require('../../utils/logger');
+const { mapsApagada } = require('./apagada');
+
+const log = new Logger('Maps');
 
 const GPS_FRESCO_MS = 5 * 60 * 1000;
 const ETA_CACHE_MS = 30 * 1000;
 const etaCache = new Map();
 const navCache = new Map();
+const BLOQUEADOS = new Set(['OVER_QUERY_LIMIT', 'REQUEST_DENIED']);
 
 function decodePolyline(encoded) {
   const points = [];
@@ -63,11 +68,37 @@ function gpsDe(repartidor, now = Date.now()) {
   };
 }
 
-async function obtenerGeometriaRuta({ origen, destino, waypoints }, apiKey, httpGet) {
+function normalizarDir(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function mapsRequest(url, params, httpGet, deps = {}) {
+  if (await mapsApagada(deps)) return null;
+  const get = httpGet || axios.get;
+  let response;
+  try {
+    response = await get(url, { params });
+  } catch (error) {
+    log.warn('Google Maps HTTP falló', { url, message: error.message });
+    return null;
+  }
+  const status = response?.data?.status;
+  if (BLOQUEADOS.has(status)) {
+    log.warn('Google Maps bloqueado', { status, url });
+    return null;
+  }
+  return response;
+}
+
+async function obtenerGeometriaRuta({ origen, destino, waypoints }, apiKey, httpGet, deps = {}) {
   const from = puntoDe(origen);
   const to = puntoDe(destino);
   if (!from || !to || !apiKey) return null;
-  const get = httpGet || axios.get;
   const params = {
     origin: `${from.lat},${from.lng}`,
     destination: `${to.lat},${to.lng}`,
@@ -76,8 +107,8 @@ async function obtenerGeometriaRuta({ origen, destino, waypoints }, apiKey, http
   };
   const vias = (waypoints || []).map(puntoDe).filter(Boolean);
   if (vias.length) params.waypoints = vias.map((punto) => `${punto.lat},${punto.lng}`).join('|');
-  const response = await get('https://maps.googleapis.com/maps/api/directions/json', { params });
-  const route = response.data?.status === 'OK' ? response.data.routes?.[0] : null;
+  const response = await mapsRequest('https://maps.googleapis.com/maps/api/directions/json', params, httpGet, deps);
+  const route = response?.data?.status === 'OK' ? response.data.routes?.[0] : null;
   if (!route) return null;
   const encoded = route.overview_polyline?.points || '';
   const legs = (route.legs || []).map((leg) => ({
@@ -89,21 +120,18 @@ async function obtenerGeometriaRuta({ origen, destino, waypoints }, apiKey, http
   return { encoded, puntos: decodePolyline(encoded), km, minutos, legs };
 }
 
-async function calcularETA({ origen, destinos }, apiKey, httpGet) {
+async function calcularETA({ origen, destinos }, apiKey, httpGet, deps = {}) {
   const from = puntoDe(origen);
   const tos = (destinos || []).map(puntoDe).filter(Boolean);
   if (!from || !tos.length || !apiKey) return [];
-  const get = httpGet || axios.get;
-  const response = await get('https://maps.googleapis.com/maps/api/distancematrix/json', {
-    params: {
-      origins: `${from.lat},${from.lng}`,
-      destinations: tos.map((punto) => `${punto.lat},${punto.lng}`).join('|'),
-      key: apiKey,
-      units: 'metric',
-      departure_time: 'now',
-    },
-  });
-  if (response.data?.status !== 'OK') return [];
+  const response = await mapsRequest('https://maps.googleapis.com/maps/api/distancematrix/json', {
+    origins: `${from.lat},${from.lng}`,
+    destinations: tos.map((punto) => `${punto.lat},${punto.lng}`).join('|'),
+    key: apiKey,
+    units: 'metric',
+    departure_time: 'now',
+  }, httpGet, deps);
+  if (response?.data?.status !== 'OK') return [];
   const elements = response.data.rows?.[0]?.elements || [];
   return elements.map((element, index) => {
     const duration = element.duration_in_traffic || element.duration;
@@ -115,19 +143,19 @@ async function calcularETA({ origen, destinos }, apiKey, httpGet) {
   });
 }
 
-async function geometriaCached(origen, destino, apiKey, httpGet, now = Date.now()) {
+async function geometriaCached(origen, destino, apiKey, httpGet, now = Date.now(), deps = {}) {
   const from = puntoDe(origen);
   const to = puntoDe(destino);
   if (!from || !to) return null;
   const key = `${from.lat.toFixed(4)},${from.lng.toFixed(4)}>${to.lat.toFixed(4)},${to.lng.toFixed(4)}`;
   const hit = navCache.get(key);
   if (hit && now - hit.at < ETA_CACHE_MS) return hit.geo;
-  const geo = await obtenerGeometriaRuta({ origen: from, destino: to, waypoints: [] }, apiKey, httpGet);
+  const geo = await obtenerGeometriaRuta({ origen: from, destino: to, waypoints: [] }, apiKey, httpGet, deps);
   if (geo) navCache.set(key, { at: now, geo });
   return geo;
 }
 
-async function asegurarPolyline(ruta, paradas, apiKey, httpGet) {
+async function asegurarPolyline(ruta, paradas, apiKey, httpGet, deps = {}) {
   const hash = hashParadas(paradas);
   if (ruta.polyline_hash === hash && ruta.polyline_encoded) {
     return { encoded: ruta.polyline_encoded, puntos: decodePolyline(ruta.polyline_encoded), km: Number(ruta.distancia_estimada) || 0, minutos: Number(ruta.tiempo_estimado) || 0, cached: true };
@@ -143,9 +171,9 @@ async function asegurarPolyline(ruta, paradas, apiKey, httpGet) {
     origen: paradas[0],
     destino: paradas[paradas.length - 1],
     waypoints: paradas.slice(1, -1),
-  }, apiKey, httpGet);
+  }, apiKey, httpGet, deps);
   if (!geo) {
-    return { encoded: '', puntos: paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) })), km: 0, minutos: 0, cached: false };
+    return { encoded: ruta.polyline_encoded || '', puntos: ruta.polyline_encoded ? decodePolyline(ruta.polyline_encoded) : paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) })), km: Number(ruta.distancia_estimada) || 0, minutos: Number(ruta.tiempo_estimado) || 0, cached: false };
   }
   if (typeof ruta.update === 'function') {
     await ruta.update({
@@ -158,12 +186,29 @@ async function asegurarPolyline(ruta, paradas, apiKey, httpGet) {
   return { ...geo, cached: false };
 }
 
-async function etaProxima(rutaId, origen, siguiente, apiKey, httpGet, now = Date.now(), cache = etaCache) {
+async function refrescarPolylineRuta(ruta, deps = {}) {
+  if (!ruta) return null;
+  const rows = [...(ruta.pedidos || [])].sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
+  const paradas = [];
+  for (const rp of rows) {
+    const punto = puntoDe(rp) || puntoDe(rp.pedido?.cliente);
+    if (!punto) continue;
+    paradas.push({ orden: Number(rp.orden_entrega) || paradas.length + 1, lat: punto.lat, lng: punto.lng });
+  }
+  return asegurarPolyline(ruta, paradas, deps.apiKey || process.env.GOOGLE_MAPS_API_KEY, deps.httpGet, deps);
+}
+
+function polylineDesdeCache(ruta, paradas) {
+  if (ruta?.polyline_encoded) return decodePolyline(ruta.polyline_encoded);
+  return paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) }));
+}
+
+async function etaProxima(rutaId, origen, siguiente, apiKey, httpGet, now = Date.now(), cache = etaCache, deps = {}) {
   if (!siguiente || !puntoDe(origen)) return null;
   const key = String(rutaId);
   const hit = cache.get(key);
   if (hit && now - hit.at < ETA_CACHE_MS && hit.pedido_id === siguiente.pedido_id) return hit.eta;
-  const rows = await calcularETA({ origen, destinos: [siguiente] }, apiKey, httpGet);
+  const rows = await calcularETA({ origen, destinos: [siguiente] }, apiKey, httpGet, deps);
   const first = rows[0];
   if (first?.minutos == null) return null;
   const eta = { pedido_id: siguiente.pedido_id, numero: siguiente.numero, minutos: first.minutos, km: first.km };
@@ -185,49 +230,72 @@ function dtoParada(rp) {
   };
 }
 
-async function geocodePedido(pedido) {
-  if (!pedido?.direccion_entrega || !process.env.GOOGLE_MAPS_API_KEY) return null;
-  const { resolverDireccion, enElEstado } = require('./controller');
-  const { City } = require('../../models');
+function cacheClienteVale(cliente, geo) {
+  const punto = puntoDe(cliente);
+  if (!punto) return null;
+  if (!geo) return punto;
+  if (cliente.direccion_geo) return cliente.direccion_geo === geo ? punto : null;
+  return normalizarDir(cliente.direccion_entrega) === geo ? punto : null;
+}
+
+async function cargarCliente(pedido, deps = {}) {
+  if (pedido?.cliente && (pedido.cliente.lat != null || typeof pedido.cliente.update === 'function')) {
+    return pedido.cliente;
+  }
+  const id = pedido?.fkid_cliente || pedido?.cliente?.id;
+  if (!id) return pedido?.cliente || null;
+  const Cliente = deps.Cliente || require('../../models').Cliente;
+  return Cliente.findByPk(id);
+}
+
+async function persistirCliente(cliente, punto, geo) {
+  if (!cliente || typeof cliente.update !== 'function' || !punto) return;
+  await cliente.update({ lat: punto.lat, lng: punto.lng, direccion_geo: geo });
+  cliente.lat = punto.lat;
+  cliente.lng = punto.lng;
+  cliente.direccion_geo = geo;
+}
+
+async function geocodePedido(pedido, deps = {}) {
+  if (!pedido?.direccion_entrega) return null;
+  const geo = normalizarDir(pedido.direccion_entrega);
+  const cliente = await cargarCliente(pedido, deps);
+  const cachedCliente = cacheClienteVale(cliente, geo);
+  if (cachedCliente) return cachedCliente;
+  const cachedPedido = puntoDe(pedido);
+  if (cachedPedido) {
+    await persistirCliente(cliente, cachedPedido, geo);
+    return cachedPedido;
+  }
+  if (await mapsApagada(deps)) return null;
+  const apiKey = deps.apiKey || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return null;
+  const maps = deps.resolver || require('./controller');
   let ciudad = pedido.ciudad;
   if (!ciudad && pedido.fkid_ciudad) {
+    const City = deps.City || require('../../models').City;
     ciudad = await City.findByPk(pedido.fkid_ciudad, { attributes: ['id', 'nombre', 'departamento'] });
   }
   const estado = ciudad?.departamento || null;
-  const punto = await resolverDireccion({
+  const punto = await maps.resolverDireccion({
     address: pedido.direccion_entrega,
     ciudad: ciudad?.nombre,
     estado,
-  }, process.env.GOOGLE_MAPS_API_KEY);
+  }, apiKey);
   if (!punto) return null;
-  if (estado && !enElEstado(punto.formatted_address, estado)) return null;
-  return { lat: punto.lat, lng: punto.lng };
+  if (estado && maps.enElEstado && !maps.enElEstado(punto.formatted_address, estado)) return null;
+  const coords = { lat: punto.lat, lng: punto.lng };
+  await persistirCliente(cliente, coords, geo);
+  return coords;
 }
 
 async function construirTrazado(ruta, deps = {}) {
   const now = deps.now || Date.now();
-  const apiKey = deps.apiKey || process.env.GOOGLE_MAPS_API_KEY;
-  const geocode = deps.geocode || geocodePedido;
   const rows = [...(ruta.pedidos || [])].sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
   const sin_coords = [];
   const paradas = [];
   for (const rp of rows) {
-    let punto = puntoDe(rp);
-    if (!punto && typeof geocode === 'function') {
-      try {
-        const hit = puntoDe(await geocode(rp.pedido));
-        if (hit) {
-          punto = hit;
-          if (typeof rp.update === 'function') {
-            await rp.update({ lat: hit.lat, lng: hit.lng, link_ubicacion: `https://maps.google.com/?q=${hit.lat},${hit.lng}` });
-          }
-          rp.lat = hit.lat;
-          rp.lng = hit.lng;
-        }
-      } catch {
-        punto = null;
-      }
-    }
+    const punto = puntoDe(rp) || puntoDe(rp.pedido?.cliente);
     if (!punto) {
       sin_coords.push({
         pedido_id: rp.pedido?.id || rp.fkid_pedido,
@@ -239,24 +307,15 @@ async function construirTrazado(ruta, deps = {}) {
     rp.lng = punto.lng;
     paradas.push(dtoParada(rp));
   }
-  const geo = await asegurarPolyline(ruta, paradas, apiKey, deps.httpGet);
-  if (geo.legs && !geo.cached) {
-    for (let i = 0; i < geo.legs.length; i += 1) {
-      const row = rows.filter((rp) => Number.isFinite(Number(rp.lat)) && Number.isFinite(Number(rp.lng)))[i + 1];
-      if (row && typeof row.update === 'function') {
-        await row.update({
-          distancia_desde_anterior: geo.legs[i].km,
-          tiempo_estimado_entrega: geo.legs[i].minutos,
-        });
-      }
-    }
-  }
+  const polyline = polylineDesdeCache(ruta, paradas);
   const gps = gpsDe(ruta.repartidor, now);
   const siguiente = paradas.find((parada) => parada.estado_entrega === 'en_camino')
     || paradas.find((parada) => parada.estado_entrega === 'pendiente');
-  const ultimaEntregada = [...paradas].reverse().find((parada) => parada.estado_entrega === 'entregado');
-  const origenEta = gps || ultimaEntregada || (siguiente ? { lat: siguiente.lat, lng: siguiente.lng } : null);
-  const eta = siguiente ? await etaProxima(ruta.id, origenEta, siguiente, apiKey, deps.httpGet, now, deps.etaCache || etaCache) : null;
+  const minutos = Number(ruta.tiempo_estimado);
+  const km = Number(ruta.distancia_estimada);
+  const eta = siguiente && Number.isFinite(minutos) && minutos > 0
+    ? { pedido_id: siguiente.pedido_id, numero: siguiente.numero, minutos, km: Number.isFinite(km) ? km : null }
+    : null;
   return {
     ruta_id: ruta.id,
     franja: ruta.franja === 'tarde' ? 'tarde' : 'manana',
@@ -268,7 +327,7 @@ async function construirTrazado(ruta, deps = {}) {
       ubicacion_at: gps?.at ?? null,
     },
     paradas,
-    polyline: geo.puntos || [],
+    polyline,
     eta,
     sin_coords,
   };
@@ -279,10 +338,13 @@ module.exports = {
   hashParadas,
   gpsDe,
   puntoDe,
+  normalizarDir,
+  mapsRequest,
   obtenerGeometriaRuta,
   calcularETA,
   geometriaCached,
   asegurarPolyline,
+  refrescarPolylineRuta,
   etaProxima,
   construirTrazado,
   geocodePedido,
