@@ -1,4 +1,5 @@
-const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage, Conversacion, ConversacionLog } = require('../../models');
+const { Pedido, Cliente, City, ProductoPedido, Inventario, PaquetePedido, Paquete, ProductoPaquete, Promotion, PromotionUsage, Conversacion, ConversacionLog, Repartidor, Ruta, RutaPedido } = require('../../models');
+const { listarDisponibilidad, exigirFechaLibre } = require('./disponibilidad');
 const { createStripePaymentLink } = require('../../services/stripePaymentLink');
 const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
@@ -808,6 +809,21 @@ class PedidoController {
       const rango = horarioDeEntrega(horario_preferente || horaFecha.slice(0, 5));
       if (!rango.ok) {
         return res.status(422).json({ success: false, message: rango.message });
+      }
+      const fechaEntrega = parseFechaEntregaEstimada(fecha_entrega_estimada);
+      if (fechaEntrega) {
+        const cupo = await exigirFechaLibre({ Pedido, Repartidor, Ruta, RutaPedido }, {
+          ciudad,
+          ciudadId: ciudadIdFinal,
+          fecha: fechaEntrega,
+        });
+        if (!cupo.ok) {
+          return res.status(cupo.status || 409).json({
+            success: false,
+            message: cupo.message,
+            data: { proxima_fecha: cupo.proxima_fecha || null },
+          });
+        }
       }
 
       const pedido = await Pedido.create({
@@ -1991,89 +2007,17 @@ class PedidoController {
         }
       }
 
-      // Obtener configuración de entregas de la ciudad o usar valores por defecto
-      const maxPedidosPorHorario = ciudadConfig ? ciudadConfig.getMaxPedidosPorHorario() : 5;
-      const diasTrabajo = ciudadConfig ? ciudadConfig.getDiasTrabajo() : [0, 1, 2, 3, 4, 5, 6];
-
-      // Calcular fecha de inicio (día siguiente)
       const fechaInicioDisponibilidad = new Date(fechaInicio);
       fechaInicioDisponibilidad.setDate(fechaInicioDisponibilidad.getDate() + 1);
-      
-      // Generar los próximos 7 días
-      const disponibilidad = [];
-      
-      for (let i = 0; i < 7; i++) {
-        const fecha = new Date(fechaInicioDisponibilidad);
-        fecha.setDate(fecha.getDate() + i);
-        
-        // Obtener el día de la semana (0=domingo, 6=sábado)
-        const diaSemana = fecha.getDay();
-        
-        // Verificar si este día está en los días de trabajo
-        const esDiaTrabajo = diasTrabajo.includes(diaSemana);
-        
-        // Formatear fecha como DD/MM/YYYY (formato usado en México)
-        const dia = String(fecha.getDate()).padStart(2, '0');
-        const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-        const anio = fecha.getFullYear();
-        const fechaStr = `${dia}-${mes}-${anio}`;
-        
-        // Si no es día de trabajo, marcar como no disponible
-        if (!esDiaTrabajo) {
-          disponibilidad.push({
-            fecha: fechaStr,
-            disponible: false,
-            pedidos: 0,
-            capacidad: maxPedidosPorHorario,
-            motivo_no_disponible: 'Día no laboral'
-          });
-          continue;
+      const { dias: disponibilidad, proxima_fecha } = await listarDisponibilidad(
+        { Pedido, Repartidor, Ruta, RutaPedido },
+        {
+          desde: fechaInicioDisponibilidad,
+          ciudad: ciudadConfig,
+          ciudadId: ciudadIdFinal,
+          dias: 7,
         }
-
-        // Horario de entrega para este día: por día de la semana o general de la ciudad (fallback 8-18)
-        let horaInicio = 8;
-        let horaFin = 18;
-        if (ciudadConfig && typeof ciudadConfig.getHorasEntregaParaDia === 'function') {
-          const horas = ciudadConfig.getHorasEntregaParaDia(diaSemana);
-          if (horas && typeof horas.inicio === 'number' && typeof horas.fin === 'number') {
-            horaInicio = horas.inicio;
-            horaFin = horas.fin;
-          }
-        }
-
-        // Rango del único horario de entrega (configurable: hora inicio, hora fin)
-        const inicioHorario = new Date(fecha);
-        inicioHorario.setHours(horaInicio, 0, 0, 0);
-        const finHorario = new Date(fecha);
-        finHorario.setHours(horaFin, 0, 0, 0);
-
-        // Construir condiciones de búsqueda
-        let whereClause = {
-          fecha_entrega_estimada: {
-            [Op.between]: [inicioHorario, finHorario]
-          },
-          estado: {
-            [Op.in]: ['pendiente', 'confirmado', 'en_preparacion', 'en_camino']
-          },
-          baja_logica: false
-        };
-
-        // Filtrar por ciudad si se especifica (usar el ID convertido)
-        if (ciudadIdFinal) {
-          whereClause.fkid_ciudad = ciudadIdFinal;
-        }
-
-        const pedidos = await Pedido.count({
-          where: whereClause
-        });
-
-        disponibilidad.push({
-          fecha: fechaStr,
-          disponible: pedidos < maxPedidosPorHorario,
-          pedidos,
-          capacidad: maxPedidosPorHorario
-        });
-      }
+      );
 
       // Obtener información de la ciudad si se especificó
       let ciudadInfo = null;
@@ -2094,6 +2038,7 @@ class PedidoController {
         success: true,
         data: {
           disponibilidad,
+          proxima_fecha,
           fecha_consulta: fecha_inicio,
           ciudad: ciudadInfo || null,
           total_dias: disponibilidad.length

@@ -45,6 +45,7 @@ class RepartidorController {
 
       if (disponibles === 'true') {
         whereClause.estado = 'disponible';
+        whereClause.es_prueba = false;
       }
 
       if (search) {
@@ -166,7 +167,8 @@ class RepartidorController {
         licencia_conducir,
         seguro_vehiculo,
         notas,
-        contrasena
+        contrasena,
+        es_prueba
       } = req.body;
 
       // Hashear la contraseña si se proporciona
@@ -195,7 +197,8 @@ class RepartidorController {
         licencia_conducir,
         seguro_vehiculo,
         notas,
-        contrasena: hashedPassword
+        contrasena: hashedPassword,
+        es_prueba: Boolean(es_prueba)
       });
 
       // No devolver la contraseña en la respuesta

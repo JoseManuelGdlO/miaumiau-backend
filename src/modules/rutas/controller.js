@@ -1,4 +1,5 @@
-const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete } = require('../../models');
+const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente, Inventario, CategoriaProducto, ProductoPedido, PaquetePedido, Paquete, CobroEntrega } = require('../../models');
+const { exigirCupo } = require('./cupo');
 const { Op } = require('sequelize');
 const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
@@ -8,28 +9,13 @@ const { franjaDeHorario, idsExcedentesManana } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarParadasSiAplica } = require('../app-repartidor/service');
-const { resolverDireccion, enElEstado } = require('../maps/controller');
+const { geocodePedido, refrescarPolylineRuta } = require('../maps/google');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
 
 async function coordsDePedido(pedidoRow) {
-  if (!pedidoRow?.direccion_entrega || !process.env.GOOGLE_MAPS_API_KEY) return null;
-  let ciudad = pedidoRow.ciudad;
-  if (!ciudad && pedidoRow.fkid_ciudad) {
-    ciudad = await City.findByPk(pedidoRow.fkid_ciudad, { attributes: ['id', 'nombre', 'departamento'] });
-  }
-  const estado = ciudad?.departamento || null;
-  const punto = await resolverDireccion({
-    address: pedidoRow.direccion_entrega,
-    ciudad: ciudad?.nombre,
-    estado,
-  }, process.env.GOOGLE_MAPS_API_KEY);
-  if (!punto) return null;
-  if (estado && !enElEstado(punto.formatted_address, estado)) {
-    throw Object.assign(new Error(`Esa dirección no está en ${estado}`), { status: 422 });
-  }
-  return { lat: punto.lat, lng: punto.lng };
+  return geocodePedido(pedidoRow);
 }
 
 async function refrescarFotoDeRuta(repartidorId, fecha) {
@@ -205,7 +191,24 @@ class RutaController {
                   {
                     model: Cliente,
                     as: 'cliente'
-                  }
+                  },
+                  {
+                    model: CobroEntrega,
+                    as: 'cobro_entrega',
+                    required: false,
+                  },
+                  {
+                    model: ProductoPedido,
+                    as: 'productos',
+                    required: false,
+                    include: [{ model: Inventario, as: 'producto', attributes: ['id', 'nombre'], required: false }],
+                  },
+                  {
+                    model: PaquetePedido,
+                    as: 'paquetes',
+                    required: false,
+                    include: [{ model: Paquete, as: 'paquete', attributes: ['id', 'nombre'], required: false }],
+                  },
                 ]
               }
             ]
@@ -298,6 +301,11 @@ class RutaController {
                     as: 'paquetes',
                     required: false,
                     separate: true
+                  },
+                  {
+                    model: CobroEntrega,
+                    as: 'cobro_entrega',
+                    required: false,
                   }
                 ]
               }
@@ -583,6 +591,11 @@ class RutaController {
                         as: 'categoria'
                       }
                     ]
+                  },
+                  {
+                    model: CobroEntrega,
+                    as: 'cobro_entrega',
+                    required: false,
                   }
                 ]
               }
@@ -759,7 +772,8 @@ class RutaController {
       // Verificar que los pedidos no estén ya asignados a otra ruta
       const pedidosAsignados = await RutaPedido.findAll({
         where: {
-          fkid_pedido: pedidoIds
+          fkid_pedido: pedidoIds,
+          estado_entrega: { [Op.notIn]: ['entregado', 'fallido'] }
         },
         include: [
           {
@@ -788,6 +802,24 @@ class RutaController {
         });
       }
 
+      if (ruta.fkid_repartidor) {
+        try {
+          await exigirCupo({ Ruta, RutaPedido }, {
+            repartidorId: ruta.fkid_repartidor,
+            fecha: ruta.fecha_ruta,
+            extra: pedidos.length,
+          });
+        } catch (error) {
+          if (error.status === 409) {
+            return res.status(409).json({
+              success: false,
+              message: error.message,
+            });
+          }
+          throw error;
+        }
+      }
+
       // Crear las asignaciones de pedidos
       log.debug(`[RUTAS] Asignando ${pedidos.length} pedidos a la ruta ${id}`);
       log.debug(`[RUTAS] Datos recibidos:`, JSON.stringify(pedidos, null, 2));
@@ -800,7 +832,10 @@ class RutaController {
         try {
           log.debug(`[RUTAS] Intentando crear RutaPedido para pedido ${pedido.fkid_pedido}...`);
           const pedidoAsignado = await Pedido.findByPk(pedido.fkid_pedido, {
-            include: [{ model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'], required: false }],
+            include: [
+              { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'], required: false },
+              { model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng', 'direccion_geo', 'direccion_entrega'], required: false },
+            ],
           });
           let lat = pedido.lat !== undefined && pedido.lat !== null ? parseFloat(pedido.lat) : null;
           let lng = pedido.lng !== undefined && pedido.lng !== null ? parseFloat(pedido.lng) : null;
@@ -867,6 +902,14 @@ class RutaController {
           await ordenarParadasSiAplica({ repartidorId: ruta.fkid_repartidor, fecha });
         } catch (ordenError) {
           log.warn('[RUTAS] No se pudo ordenar la ruta', { message: ordenError.message });
+        }
+        try {
+          const rutaConParadas = await Ruta.findByPk(id, {
+            include: [{ model: RutaPedido, as: 'pedidos' }],
+          });
+          await refrescarPolylineRuta(rutaConParadas);
+        } catch (polyError) {
+          log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
         }
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
@@ -1319,6 +1362,40 @@ class RutaController {
         success: false,
         message: 'Error interno del servidor',
         error: error.message
+      });
+    }
+  }
+
+  async getTrazado(req, res) {
+    try {
+      const { id } = req.params;
+      const ruta = await Ruta.findByPk(id, {
+        include: [
+          { model: Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'] },
+          { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'] },
+          {
+            model: RutaPedido,
+            as: 'pedidos',
+            include: [{
+              model: Pedido,
+              as: 'pedido',
+              include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng'] }],
+            }],
+          },
+        ],
+      });
+      if (!ruta) {
+        return res.status(404).json({ success: false, message: 'Ruta no encontrada' });
+      }
+      const { construirTrazado } = require('../maps/google');
+      const data = await construirTrazado(ruta);
+      return res.json({ success: true, data });
+    } catch (error) {
+      log.error('Error al armar el trazado:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
       });
     }
   }

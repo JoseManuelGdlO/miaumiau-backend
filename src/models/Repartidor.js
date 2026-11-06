@@ -210,6 +210,25 @@ module.exports = (sequelize, DataTypes) => {
     foto: {
       type: DataTypes.STRING(255),
       allowNull: true
+    },
+    es_prueba: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    lat_actual: {
+      type: DataTypes.DECIMAL(10, 8),
+      allowNull: true,
+      validate: { min: -90, max: 90 }
+    },
+    lng_actual: {
+      type: DataTypes.DECIMAL(11, 8),
+      allowNull: true,
+      validate: { min: -180, max: 180 }
+    },
+    ubicacion_at: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
   }, {
     tableName: 'repartidores',
@@ -327,7 +346,8 @@ module.exports = (sequelize, DataTypes) => {
   Repartidor.findDisponibles = function(ciudadId = null) {
     const whereClause = {
       estado: 'disponible',
-      baja_logica: false
+      baja_logica: false,
+      es_prueba: false
     };
 
     if (ciudadId) {

@@ -265,6 +265,15 @@ router.get('/pedidos-sin-asignar/:fecha',
   rutaController.getPedidosSinAsignar
 );
 
+// Trazado de la ruta (paradas + polyline + ETA)
+router.get('/:id/trazado',
+  authenticateToken,
+  requireSuperAdminOrPermission('ver_rutas'),
+  idValidation,
+  handleValidationErrors,
+  rutaController.getTrazado
+);
+
 // Obtener ruta por ID
 router.get('/:id',
   authenticateToken,

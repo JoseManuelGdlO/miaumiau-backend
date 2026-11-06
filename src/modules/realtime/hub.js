@@ -1,5 +1,6 @@
 function createHub() {
   const rooms = new Map();
+  const callCenter = new Set();
 
   function room(repartidorId) {
     return rooms.get(Number(repartidorId));
@@ -43,7 +44,42 @@ function createHub() {
     return room(repartidorId)?.size || 0;
   }
 
-  return { add, remove, notify, size };
+  function addCallCenter(socket) {
+    callCenter.add(socket);
+  }
+
+  function removeCallCenter(socket) {
+    callCenter.delete(socket);
+  }
+
+  function broadcastGps(repartidorId, punto) {
+    const payload = JSON.stringify({
+      type: 'gps',
+      repartidorId: Number(repartidorId),
+      lat: Number(punto.lat),
+      lng: Number(punto.lng),
+    });
+    let sent = 0;
+    for (const socket of callCenter) {
+      if (socket.readyState !== 1) {
+        callCenter.delete(socket);
+        continue;
+      }
+      try {
+        socket.send(payload);
+        sent += 1;
+      } catch {
+        callCenter.delete(socket);
+      }
+    }
+    return sent;
+  }
+
+  function callCenterSize() {
+    return callCenter.size;
+  }
+
+  return { add, remove, notify, size, addCallCenter, removeCallCenter, broadcastGps, callCenterSize };
 }
 
 module.exports = { createHub };

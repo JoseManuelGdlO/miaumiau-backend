@@ -734,6 +734,8 @@ async function ordenarParadasSiAplica(deps = {}) {
         }))
         .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
       if (paradas.length < 2) continue;
+      const { mapsApagada } = require('../maps/apagada');
+      if (await mapsApagada(deps)) continue;
       let matrix;
       try {
         matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
@@ -751,10 +753,20 @@ async function ordenarParadasSiAplica(deps = {}) {
     }
   }
   rutasOrdenadas.add(cacheKey);
+  const { refrescarPolylineRuta } = require('../maps/google');
+  for (const ruta of rutas) {
+    try {
+      await refrescarPolylineRuta(ruta, deps);
+    } catch {
+      // La orden queda; el trazado usa pines si no hay polyline.
+    }
+  }
 }
 
 async function anotarMinutos(deps, rutas) {
   if (process.env.NODE_ENV === 'test' && !deps.calcularMinutos) return;
+  const { mapsApagada } = require('../maps/apagada');
+  if (await mapsApagada(deps)) return;
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return;
   const paradas = (rutas || [])
@@ -1391,22 +1403,89 @@ async function avisosDelRepartidor(deps) {
   });
 }
 
-function textoDeAviso(row) {
+function createdAtDe(row) {
+  const raw = row?.created_at || row?.createdAt;
+  if (raw) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  const fecha = row?.fecha_creacion ? String(row.fecha_creacion).slice(0, 10) : '';
+  if (!fecha) return null;
+  const hora = row?.hora_creacion ? String(row.hora_creacion).slice(0, 8) : '00:00:00';
+  const d = new Date(`${fecha}T${hora.length === 5 ? `${hora}:00` : hora}`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function pedidoDeAviso(row, datos) {
+  const id = datos.pedido_id ? Number(datos.pedido_id) : null;
+  if (!id) return null;
+  const numero = datos.numero_pedido
+    || (datos.tipo === 'pago' && row?.descripcion)
+    || String(id);
+  const nombre = datos.cliente_nombre || datos.receptor_nombre || null;
+  return {
+    id,
+    numero_pedido: String(numero),
+    cliente: { nombre_completo: nombre },
+  };
+}
+
+function avisoDe(row) {
   const datos = row?.datos || {};
-  if (datos.tipo === 'llamada_cliente' && datos.intento_liberado) return 'Call Center liberó el intento de entrega';
-  if (datos.tipo === 'llamada_cliente' && (row.leida || datos.llamada_atendida)) return 'Call Center ya se comunicó con el cliente';
-  if (datos.ayuda === 'tercero' && (datos.autorizado || datos.receptor_nombre)) return 'Call Center autorizó la entrega a otra persona';
-  if (datos.ayuda === 'dejar' && datos.autorizado) return 'Call Center autorizó dejar el paquete';
-  if (datos.ayuda === 'codigo' && datos.autorizado) return 'Call Center autorizó la entrega sin el código';
-  return '';
+  const extra = {
+    id: row.id,
+    leido: Boolean(row.leida),
+    created_at: createdAtDe(row),
+    pedido: pedidoDeAviso(row, datos),
+  };
+  if (datos.tipo === 'pago') {
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Pago por transferencia', mensaje: 'Call Center registró el pago por transferencia', ...extra };
+  }
+  if (datos.tipo === 'llamada_cliente' && datos.intento_liberado) {
+    return { tipo: 'LIBERACION', titulo: 'Intento de entrega liberado', mensaje: 'Call Center liberó el intento de entrega', ...extra };
+  }
+  if (datos.tipo === 'llamada_cliente' && (row.leida || datos.llamada_atendida)) {
+    return { tipo: 'CONTACTO_CLIENTE', titulo: 'Cliente contactado por Call Center', mensaje: 'Call Center ya se comunicó con el cliente', ...extra };
+  }
+  if (datos.ayuda === 'tercero' && (datos.autorizado || datos.receptor_nombre)) {
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Entrega a otra persona', mensaje: 'Call Center autorizó la entrega a otra persona', ...extra };
+  }
+  if (datos.ayuda === 'dejar' && datos.autorizado) {
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Dejar el paquete', mensaje: 'Call Center autorizó dejar el paquete', ...extra };
+  }
+  if (datos.ayuda === 'codigo' && datos.autorizado) {
+    return { tipo: 'INSTRUCCION_ACTUALIZADA', titulo: 'Entrega sin código', mensaje: 'Call Center autorizó la entrega sin el código', ...extra };
+  }
+  return null;
 }
 
 async function listarAvisos(deps = {}) {
   const rows = await avisosDelRepartidor(deps);
-  return rows.map((row) => {
-    const texto = textoDeAviso(row);
-    return texto ? { id: row.id, texto } : null;
-  }).filter(Boolean).slice(0, 20);
+  const avisos = rows.map((row) => avisoDe(row)).filter(Boolean).slice(0, 20);
+  const ids = [...new Set(avisos.map((a) => a.pedido?.id).filter(Boolean))];
+  if (!ids.length) return avisos;
+  if (deps.notificaciones && typeof deps.models?.Pedido?.findAll !== 'function') return avisos;
+  const db = getModels(deps);
+  if (typeof db.Pedido?.findAll !== 'function') return avisos;
+  const pedidos = await db.Pedido.findAll({
+    where: { id: ids },
+    attributes: ['id', 'numero_pedido'],
+    include: db.Cliente ? [{ model: db.Cliente, as: 'cliente', attributes: ['nombre_completo'], required: false }] : [],
+  });
+  const porId = new Map(pedidos.map((p) => [Number(p.id), p]));
+  return avisos.map((aviso) => {
+    if (!aviso.pedido) return aviso;
+    const pedido = porId.get(aviso.pedido.id);
+    if (!pedido) return { ...aviso, pedido: null };
+    return {
+      ...aviso,
+      pedido: {
+        id: pedido.id,
+        numero_pedido: pedido.numero_pedido || String(pedido.id),
+        cliente: { nombre_completo: pedido.cliente?.nombre_completo || aviso.pedido.cliente?.nombre_completo || null },
+      },
+    };
+  });
 }
 
 async function findLlamadaCliente(deps) {
@@ -1822,10 +1901,28 @@ async function estadisticas(deps = {}) {
   };
 }
 
+async function registrarUbicacion(deps = {}) {
+  const { puntoDe } = require('../maps/google');
+  const punto = puntoDe({ lat: deps.lat, lng: deps.lng });
+  if (!punto) fail(422, 'La ubicación no es válida');
+  const db = getModels(deps);
+  const at = deps.fecha ? new Date(deps.fecha) : new Date();
+  if (typeof db.Repartidor?.update === 'function') {
+    await db.Repartidor.update(
+      { lat_actual: punto.lat, lng_actual: punto.lng, ubicacion_at: at },
+      { where: { id: deps.repartidorId } },
+    );
+  }
+  return { lat: punto.lat, lng: punto.lng, ubicacion_at: at.toISOString() };
+}
+
 async function registrarVelocidad(deps = {}) {
   const kmh = Number(deps.velocidad_kmh ?? deps.velocidad);
   if (!Number.isFinite(kmh) || kmh < 0 || kmh > 180) fail(422, 'La velocidad no es válida');
   const db = getModels(deps);
+  if (Number.isFinite(Number(deps.lat)) && Number.isFinite(Number(deps.lng))) {
+    try { await registrarUbicacion(deps); } catch { /* velocidad se guarda igual */ }
+  }
   if (typeof db.LecturaVelocidad?.create !== 'function') return { promedio: null, lecturas: 0 };
   const jornada = await loadJornada(deps, { findOrCreate: false });
   await db.LecturaVelocidad.create({
@@ -1839,6 +1936,19 @@ async function registrarVelocidad(deps = {}) {
   return resumenVelocidad(deps);
 }
 
+function gpsDeFila(row) {
+  const { puntoDe } = require('../maps/google');
+  const punto = puntoDe({
+    lat: row?.lat_actual ?? row?.repartidor?.lat_actual,
+    lng: row?.lng_actual ?? row?.repartidor?.lng_actual,
+  });
+  return {
+    lat: punto?.lat ?? null,
+    lng: punto?.lng ?? null,
+    ubicacion_at: row?.ubicacion_at || row?.repartidor?.ubicacion_at || null,
+  };
+}
+
 async function resumenVelocidad(deps = {}) {
   const db = getModels(deps);
   if (typeof db.LecturaVelocidad?.findAll !== 'function') return [];
@@ -1847,14 +1957,28 @@ async function resumenVelocidad(deps = {}) {
   if (deps.repartidorId != null) where.fkid_repartidor = deps.repartidorId;
   const rows = await db.LecturaVelocidad.findAll({
     where,
-    include: db.Repartidor ? [{ model: db.Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo'], required: false }] : [],
+    include: db.Repartidor ? [{ model: db.Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'], required: false }] : [],
   });
   const grupos = new Map();
   for (const row of rows) {
     const id = row.fkid_repartidor;
-    const grupo = grupos.get(id) || { repartidor_id: id, nombre: row.repartidor?.nombre_completo || null, suma: 0, lecturas: 0 };
+    const gps = gpsDeFila(row);
+    const grupo = grupos.get(id) || {
+      repartidor_id: id,
+      nombre: row.repartidor?.nombre_completo || null,
+      suma: 0,
+      lecturas: 0,
+      lat: gps.lat,
+      lng: gps.lng,
+      ubicacion_at: gps.ubicacion_at,
+    };
     grupo.suma += Number(row.velocidad_kmh) || 0;
     grupo.lecturas += 1;
+    if (gps.lat != null) {
+      grupo.lat = gps.lat;
+      grupo.lng = gps.lng;
+      grupo.ubicacion_at = gps.ubicacion_at;
+    }
     grupos.set(id, grupo);
   }
   const lista = [...grupos.values()].map((grupo) => ({
@@ -1862,8 +1986,11 @@ async function resumenVelocidad(deps = {}) {
     nombre: grupo.nombre,
     promedio: Math.round((grupo.suma / grupo.lecturas) * 10) / 10,
     lecturas: grupo.lecturas,
+    lat: grupo.lat,
+    lng: grupo.lng,
+    ubicacion_at: grupo.ubicacion_at,
   }));
-  if (deps.repartidorId != null) return lista[0] || { promedio: null, lecturas: 0 };
+  if (deps.repartidorId != null) return lista[0] || { promedio: null, lecturas: 0, lat: null, lng: null, ubicacion_at: null };
   return lista;
 }
 
@@ -1888,18 +2015,13 @@ async function ubicacionPedido(deps = {}) {
   const rutaPedido = await assertRutaDelRepartidor(deps);
   let lat = rutaPedido.lat == null ? null : Number(rutaPedido.lat);
   let lng = rutaPedido.lng == null ? null : Number(rutaPedido.lng);
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  const address = rutaPedido.pedido?.direccion_entrega;
-  if ((!Number.isFinite(lat) || !Number.isFinite(lng)) && apiKey && address) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     try {
-      const httpGet = deps.geocodeGet || require('axios').get;
-      const response = await httpGet('https://maps.googleapis.com/maps/api/geocode/json', {
-        params: { address, key: apiKey, region: 'mx' },
-      });
-      const location = response.data?.results?.[0]?.geometry?.location;
-      if (response.data?.status === 'OK' && location) {
-        lat = Number(location.lat);
-        lng = Number(location.lng);
+      const { geocodePedido, puntoDe } = require('../maps/google');
+      const hit = puntoDe(await geocodePedido(rutaPedido.pedido, deps));
+      if (hit) {
+        lat = hit.lat;
+        lng = hit.lng;
         if (typeof rutaPedido.update === 'function') {
           await rutaPedido.update({
             lat,
@@ -1917,7 +2039,21 @@ async function ubicacionPedido(deps = {}) {
     lat: Number.isFinite(lat) ? lat : null,
     lng: Number.isFinite(lng) ? lng : null,
     link_ubicacion: rutaPedido.link_ubicacion || null,
+    link_navegacion: Number.isFinite(lat) && Number.isFinite(lng)
+      ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`
+      : null,
+    link_waze: Number.isFinite(lat) && Number.isFinite(lng)
+      ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
+      : null,
+    polyline: [],
   };
+}
+
+function puntoDeRepartidor(repartidor) {
+  const lat = Number(repartidor?.lat_actual);
+  const lng = Number(repartidor?.lng_actual);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
 }
 
 async function logros(deps = {}) {
@@ -1970,6 +2106,7 @@ module.exports = {
   listarPedidos,
   inventarioVehiculo,
   registrarVelocidad,
+  registrarUbicacion,
   resumenVelocidad,
   ubicacionPedido,
   detallePedido,

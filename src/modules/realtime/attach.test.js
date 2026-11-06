@@ -128,3 +128,38 @@ test('no registra en el hub un socket que el timer ya cerró mientras verificaba 
   await close();
   server.close();
 });
+
+test('gps del repartidor llega a Call Center y persiste throttled', async () => {
+  const hub = createHub();
+  const onGps = jest.fn(async () => {});
+  const server = http.createServer();
+  const close = attachRealtime(server, {
+    hub,
+    authTimeoutMs: 500,
+    gpsThrottleMs: 50,
+    verifyToken: async () => ({ repartidorId: 4 }),
+    verifyCallCenter: async () => ({ userId: 9 }),
+    onGps,
+  });
+  const port = await listen(server);
+  const driver = await openSocket(port, '/api/app-repartidor/ws');
+  const cc = await openSocket(port, '/api/call-center/ws');
+  const driverReady = onceMessage(driver);
+  const ccReady = onceMessage(cc);
+  driver.send(JSON.stringify({ type: 'auth', token: 'ok' }));
+  cc.send(JSON.stringify({ type: 'auth', token: 'ok' }));
+  await driverReady;
+  await ccReady;
+  const gps = onceMessage(cc);
+  driver.send(JSON.stringify({ type: 'gps', lat: 24.02, lng: -104.66 }));
+  await expect(gps).resolves.toEqual({ type: 'gps', repartidorId: 4, lat: 24.02, lng: -104.66 });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(onGps).toHaveBeenCalledTimes(1);
+  driver.send(JSON.stringify({ type: 'gps', lat: 24.03, lng: -104.67 }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(onGps).toHaveBeenCalledTimes(1);
+  driver.close();
+  cc.close();
+  await close();
+  server.close();
+});

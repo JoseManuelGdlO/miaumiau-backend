@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -386,8 +386,79 @@ test('la campana solo lista avisos reales de Call Center', async () => {
     ],
   });
   expect(avisos).toEqual([
-    { id: 1, texto: 'Call Center ya se comunicó con el cliente' },
-    { id: 2, texto: 'Call Center autorizó la entrega a otra persona' },
+    {
+      id: 1,
+      tipo: 'CONTACTO_CLIENTE',
+      titulo: 'Cliente contactado por Call Center',
+      mensaje: 'Call Center ya se comunicó con el cliente',
+      leido: false,
+      created_at: null,
+      pedido: null,
+    },
+    {
+      id: 2,
+      tipo: 'INSTRUCCION_ACTUALIZADA',
+      titulo: 'Entrega a otra persona',
+      mensaje: 'Call Center autorizó la entrega a otra persona',
+      leido: false,
+      created_at: null,
+      pedido: null,
+    },
+  ]);
+});
+
+test('la campana lista el aviso de pago por transferencia', async () => {
+  const avisos = await listarAvisos({
+    repartidorId: 1,
+    notificaciones: [
+      {
+        id: 9,
+        descripcion: 'P-5',
+        created_at: '2026-11-04T18:20:00.000Z',
+        datos: { tipo: 'pago', pedido_id: 5, repartidor_id: 1 },
+      },
+    ],
+  });
+  expect(avisos).toEqual([
+    {
+      id: 9,
+      tipo: 'INSTRUCCION_ACTUALIZADA',
+      titulo: 'Pago por transferencia',
+      mensaje: 'Call Center registró el pago por transferencia',
+      leido: false,
+      created_at: '2026-11-04T18:20:00.000Z',
+      pedido: { id: 5, numero_pedido: 'P-5', cliente: { nombre_completo: null } },
+    },
+  ]);
+});
+
+test('la campana une pedido y cliente', async () => {
+  const avisos = await listarAvisos({
+    repartidorId: 1,
+    notificaciones: [
+      {
+        id: 1,
+        created_at: '2026-11-04T13:36:00.000Z',
+        datos: { tipo: 'llamada_cliente', intento_liberado: true, pedido_id: 55 },
+      },
+    ],
+    models: {
+      Pedido: {
+        findAll: async () => [{ id: 55, numero_pedido: '1042', cliente: { nombre_completo: 'Selma Embila' } }],
+      },
+      Cliente: {},
+    },
+  });
+  expect(avisos).toEqual([
+    {
+      id: 1,
+      tipo: 'LIBERACION',
+      titulo: 'Intento de entrega liberado',
+      mensaje: 'Call Center liberó el intento de entrega',
+      leido: false,
+      created_at: '2026-11-04T13:36:00.000Z',
+      pedido: { id: 55, numero_pedido: '1042', cliente: { nombre_completo: 'Selma Embila' } },
+    },
   ]);
 });
 
@@ -609,4 +680,43 @@ test('avisarCodigoAlCrear no truena si WhatsApp falla', async () => {
   await expect(avisarCodigoAlCrear({
     sendWhatsAppTemplate: async () => { throw new Error('down'); },
   }, pedidoConCodigo())).resolves.toBeUndefined();
+});
+
+test('registrarUbicacion persiste lat_actual del repartidor', async () => {
+  const updates = [];
+  const data = await registrarUbicacion({
+    repartidorId: 3,
+    lat: 24.0277,
+    lng: -104.6532,
+    models: {
+      Repartidor: {
+        update: async (fields, opts) => updates.push({ fields, opts }),
+      },
+    },
+  });
+  expect(data.lat).toBe(24.0277);
+  expect(updates[0].fields.lat_actual).toBe(24.0277);
+  expect(updates[0].opts.where).toEqual({ id: 3 });
+});
+
+test('registrarVelocidad guarda GPS y lectura', async () => {
+  const created = [];
+  const updates = [];
+  await registrarVelocidad({
+    repartidorId: 3,
+    fecha: '2026-11-05',
+    velocidad_kmh: 32,
+    lat: 24.1,
+    lng: -104.6,
+    models: {
+      Repartidor: { update: async (fields) => updates.push(fields) },
+      LecturaVelocidad: {
+        create: async (row) => created.push(row),
+        findAll: async () => [{ fkid_repartidor: 3, velocidad_kmh: 32, repartidor: { nombre_completo: 'Ana', lat_actual: 24.1, lng_actual: -104.6 } }],
+      },
+      JornadaRepartidor: { findOne: async () => ({ id: 9 }) },
+    },
+  });
+  expect(updates[0].lat_actual).toBe(24.1);
+  expect(created[0].lat).toBe(24.1);
 });

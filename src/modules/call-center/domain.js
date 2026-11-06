@@ -1,4 +1,5 @@
 const { dayKey } = require('../app-repartidor/domain');
+const { MAX_PARADAS_DIA } = require('../rutas/cupo');
 
 const NOTE_LIMIT = 1000;
 const TIPOS = ['check_in', 'llamada_cliente', 'soporte', 'cierre_dia'];
@@ -133,7 +134,18 @@ function isValidatedCheckIn(row) {
   return Boolean(row?.leida) && datos.tipo === 'check_in' && datos.estado_solicitud !== 'cancelada';
 }
 
-function toCargaValidada({ notificacion, repartidor, jornada }) {
+function cobroDeParada(row) {
+  const pedido = row?.pedido || {};
+  const cobro = pedido.cobro_entrega || pedido.cobroEntrega;
+  return {
+    numero_pedido: pedido.numero_pedido || null,
+    metodo: cobro?.metodo || pedido.metodo_pago || null,
+    estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
+    monto: Number(pedido.total) || 0,
+  };
+}
+
+function toCargaValidada({ notificacion, repartidor, jornada, cobros }) {
   return {
     ...toSolicitudDetalle({
       notificacion,
@@ -142,6 +154,9 @@ function toCargaValidada({ notificacion, repartidor, jornada }) {
       dineroEsperado: jornada?.dinero_esperado,
     }),
     validado_por_nombre: jornada?.validado_por_nombre || null,
+    efectivo_cobrado: Number(jornada?.efectivo_cobrado) || 0,
+    virtual_cobrado: Number(jornada?.virtual_cobrado) || 0,
+    cobros: cobros || [],
   };
 }
 
@@ -151,7 +166,19 @@ function repartidorDto(repartidor) {
     id: repartidor.id,
     nombre_completo: repartidor.nombre_completo,
     telefono: repartidor.telefono || null,
+    es_prueba: Boolean(repartidor.es_prueba),
   };
+}
+
+function estadoCobro({ cobro, metodo_pago } = {}) {
+  if (!cobro) return 'falta cobro';
+  const transfer = Number(cobro.monto_transferencia) > 0
+    || cobro.metodo === 'transferencia'
+    || cobro.metodo === 'mixto'
+    || metodo_pago === 'transferencia'
+    || metodo_pago === 'mixto';
+  if (transfer && !cobro.comprobante_path) return 'falta comprobante';
+  return 'completo';
 }
 
 function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
@@ -248,8 +275,34 @@ function estrella(notas, etiqueta) {
   return match ? Number(match[1]) : null;
 }
 
+function lineasProducto(pedido) {
+  const productos = [];
+  for (const linea of pedido?.productos || []) {
+    if (linea?.baja_logica) continue;
+    const nombre = linea.producto?.nombre || linea.nombre;
+    if (!nombre) continue;
+    productos.push({
+      nombre,
+      cantidad: Number(linea.cantidad) || 0,
+      precio_unidad: Number(linea.precio_unidad) || 0,
+    });
+  }
+  for (const linea of pedido?.paquetes || []) {
+    const nombre = linea.paquete?.nombre || linea.nombre;
+    if (!nombre) continue;
+    productos.push({
+      nombre,
+      cantidad: Number(linea.cantidad) || 0,
+      precio_unidad: Number(linea.precio_unidad) || 0,
+    });
+  }
+  return productos;
+}
+
 function toPedidoDia({ pedido, rutaPedido, ruta }) {
   const cobro = pedido.cobro_entrega || pedido.cobroEntrega || null;
+  const productos = lineasProducto(pedido);
+  const subtotal = productos.reduce((acc, linea) => acc + linea.cantidad * linea.precio_unidad, 0);
   return {
     id: pedido.id,
     ruta_pedido_id: rutaPedido.id,
@@ -265,14 +318,28 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     horario_preferente: pedido.horario_preferente ? String(pedido.horario_preferente).slice(0, 5) : null,
     metodo_pago: pedido.metodo_pago || null,
     orden_entrega: rutaPedido.orden_entrega ?? null,
+    ruta_id: ruta?.id ?? null,
+    lat: rutaPedido.lat == null ? null : Number(rutaPedido.lat),
+    lng: rutaPedido.lng == null ? null : Number(rutaPedido.lng),
     repartidor: repartidorDto(ruta?.repartidor),
     ciudad_id: ruta?.fkid_ciudad ?? null,
+    ciudad: ruta?.ciudad?.nombre || ruta?.ciudad?.departamento || null,
+    productos,
+    subtotal: subtotal || Number(pedido.total) || 0,
     total: Number(pedido.total) || 0,
     comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
     codigo_oculto: pedido.codigo_entrega ? '******' : null,
     fecha_propuesta: pedido.fecha_propuesta || null,
+    fecha_ruta: ruta?.fecha_ruta ? String(ruta.fecha_ruta).slice(0, 10) : null,
     calificacion_servicio: estrella(pedido.notas, 'Calificación del servicio'),
     calificacion_cliente: estrella(pedido.notas, 'Calificación al cliente'),
+    estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
+    cobro: cobro ? {
+      metodo: cobro.metodo,
+      monto_efectivo: Number(cobro.monto_efectivo) || 0,
+      monto_transferencia: Number(cobro.monto_transferencia) || 0,
+      tiene_comprobante: Boolean(cobro.comprobante_path),
+    } : null,
   };
 }
 
@@ -356,8 +423,17 @@ function puedeAutorizarExcepcion(rol) {
   return nombreRol(rol) === 'super_admin';
 }
 
-function toRepartidorOpcion(repartidor) {
-  return { id: repartidor.id, nombre_completo: repartidor.nombre_completo, estado: repartidor.estado };
+function toRepartidorOpcion(repartidor, paradas = 0) {
+  const n = Number(paradas) || 0;
+  return {
+    id: repartidor.id,
+    nombre_completo: repartidor.nombre_completo,
+    estado: repartidor.estado,
+    es_prueba: Boolean(repartidor.es_prueba),
+    paradas: n,
+    max_paradas: MAX_PARADAS_DIA,
+    saturado: n >= MAX_PARADAS_DIA,
+  };
 }
 
 module.exports = {
@@ -375,12 +451,14 @@ module.exports = {
   sigueHoy,
   esDeHoy,
   isValidatedCheckIn,
+  cobroDeParada,
   toCargaValidada,
   toSolicitudResumen,
   toSolicitudDetalle,
   toPedidoDia,
   fueModificado,
   comprobantePublicPath,
+  estadoCobro,
   toRepartidorOpcion,
   nombreRol,
   puedeAutorizarExcepcion,

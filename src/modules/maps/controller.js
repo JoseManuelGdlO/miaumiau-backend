@@ -1,10 +1,13 @@
 const axios = require('axios');
 const { Logger } = require('../../utils/logger');
+const { mapsApagada } = require('./apagada');
 
 const log = new Logger('Maps');
 
-// Helper: llamar a la API de geocoding de Google
+const BLOQUEADOS = new Set(['OVER_QUERY_LIMIT', 'REQUEST_DENIED']);
+
 async function callGeocodeApi(address, apiKey) {
+  if (await mapsApagada()) return { status: 'REQUEST_DENIED', results: [] };
   const response = await axios.get(
     `https://maps.googleapis.com/maps/api/geocode/json`,
     {
@@ -15,6 +18,11 @@ async function callGeocodeApi(address, apiKey) {
       }
     }
   );
+  const status = response.data?.status;
+  if (BLOQUEADOS.has(status)) {
+    log.warn('Google Maps bloqueado', { status });
+    return { status, results: [] };
+  }
   return response.data;
 }
 
@@ -96,6 +104,13 @@ class MapsController {
         });
       }
 
+      if (await mapsApagada()) {
+        return res.status(503).json({
+          success: false,
+          message: 'Google Maps está apagado',
+        });
+      }
+
       const apiKey = process.env.GOOGLE_MAPS_API_KEY;
       if (!apiKey) {
         return res.status(500).json({
@@ -144,6 +159,13 @@ class MapsController {
         return res.status(400).json({
           success: false,
           message: 'Los orígenes y destinos deben ser arrays'
+        });
+      }
+
+      if (await mapsApagada()) {
+        return res.status(503).json({
+          success: false,
+          message: 'Google Maps está apagado',
         });
       }
 
@@ -238,6 +260,12 @@ class MapsController {
   // Geocodificar múltiples direcciones
   async geocodeMultipleAddresses(req, res, next) {
     try {
+      if (await mapsApagada()) {
+        return res.status(503).json({
+          success: false,
+          message: 'Google Maps está apagado',
+        });
+      }
       const { addresses } = req.body;
 
       if (!addresses || !Array.isArray(addresses)) {
