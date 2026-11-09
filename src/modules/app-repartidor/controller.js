@@ -197,7 +197,12 @@ async function ubicacionGps(req, res) {
 async function ubicacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
-    return service.ubicacionPedido(depsFrom(req, { fecha, timezone }));
+    return service.ubicacionPedido(depsFrom(req, {
+      fecha,
+      timezone,
+      lat: req.query?.lat ?? req.body?.lat,
+      lng: req.query?.lng ?? req.body?.lng,
+    }));
   }, 'ubicacion');
 }
 

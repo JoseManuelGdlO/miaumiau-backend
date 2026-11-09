@@ -260,12 +260,14 @@ async function geocodePedido(pedido, deps = {}) {
   if (!pedido?.direccion_entrega) return null;
   const geo = normalizarDir(pedido.direccion_entrega);
   const cliente = await cargarCliente(pedido, deps);
-  const cachedCliente = cacheClienteVale(cliente, geo);
-  if (cachedCliente) return cachedCliente;
-  const cachedPedido = puntoDe(pedido);
-  if (cachedPedido) {
-    await persistirCliente(cliente, cachedPedido, geo);
-    return cachedPedido;
+  if (!deps.skipCache) {
+    const cachedCliente = cacheClienteVale(cliente, geo);
+    if (cachedCliente) return cachedCliente;
+    const cachedPedido = puntoDe(pedido);
+    if (cachedPedido) {
+      await persistirCliente(cliente, cachedPedido, geo);
+      return cachedPedido;
+    }
   }
   if (await mapsApagada(deps)) return null;
   const apiKey = deps.apiKey || process.env.GOOGLE_MAPS_API_KEY;

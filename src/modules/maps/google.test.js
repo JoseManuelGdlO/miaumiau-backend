@@ -74,6 +74,18 @@ test('parada sin coords va a sin_coords sin geocode', async () => {
   expect(data.eta).toBe(null);
 });
 
+test('geocodePedido skipCache ignora coords pegadas al GPS', async () => {
+  const resolverDireccion = jest.fn(async () => ({ lat: 24.05, lng: -104.70, formatted_address: 'Calle 1, Durango' }));
+  const punto = await geocodePedido({
+    direccion_entrega: 'Calle 1',
+    lat: 24.0277,
+    lng: -104.6532,
+    cliente: { lat: 24.0277, lng: -104.6532, direccion_geo: 'calle 1', update: jest.fn() },
+  }, { mapsApagada: false, skipCache: true, apiKey: 'k', resolver: { resolverDireccion } });
+  expect(punto).toEqual({ lat: 24.05, lng: -104.70 });
+  expect(resolverDireccion).toHaveBeenCalled();
+});
+
 test('geocodePedido no pega API si el cliente ya tiene coords', async () => {
   const resolverDireccion = jest.fn();
   const punto = await geocodePedido({

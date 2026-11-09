@@ -629,7 +629,7 @@ async function agregarExtra(deps = {}) {
 }
 
 function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
-  const clienteAttributes = ['id', 'nombre_completo'];
+  const clienteAttributes = ['id', 'nombre_completo', 'lat', 'lng', 'direccion_geo', 'direccion_entrega'];
   if (withPhone) clienteAttributes.push('telefono');
   return {
     model: db.Pedido,
@@ -637,6 +637,7 @@ function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
     attributes: withCode ? undefined : { exclude: ['codigo_entrega'] },
     include: [
       { model: db.Cliente, as: 'cliente', attributes: clienteAttributes },
+      { model: db.City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'], required: false },
       {
         model: db.ProductoPedido,
         as: 'productos',
@@ -1939,8 +1940,8 @@ async function registrarVelocidad(deps = {}) {
 function gpsDeFila(row) {
   const { puntoDe } = require('../maps/google');
   const punto = puntoDe({
-    lat: row?.lat_actual ?? row?.repartidor?.lat_actual,
-    lng: row?.lng_actual ?? row?.repartidor?.lng_actual,
+    lat: row?.lat ?? row?.lat_actual ?? row?.repartidor?.lat_actual,
+    lng: row?.lng ?? row?.lng_actual ?? row?.repartidor?.lng_actual,
   });
   return {
     lat: punto?.lat ?? null,
@@ -2013,38 +2014,49 @@ async function inventarioVehiculo(deps = {}) {
 
 async function ubicacionPedido(deps = {}) {
   const rutaPedido = await assertRutaDelRepartidor(deps);
-  let lat = rutaPedido.lat == null ? null : Number(rutaPedido.lat);
-  let lng = rutaPedido.lng == null ? null : Number(rutaPedido.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  const { geocodePedido, puntoDe } = require('../maps/google');
+  const direccion = String(rutaPedido.pedido?.direccion_entrega || '').trim();
+  const gps = puntoDe({ lat: deps.lat, lng: deps.lng })
+    || puntoDe({ lat: deps.repartidor?.lat_actual, lng: deps.repartidor?.lng_actual });
+  const pegadoAlGps = (p) => p && gps && Math.abs(p.lat - gps.lat) < 0.0007 && Math.abs(p.lng - gps.lng) < 0.0007;
+  let punto = puntoDe(rutaPedido);
+  // shortcut: coords pegadas al GPS son del repartidor, no del domicilio
+  if (pegadoAlGps(punto)) punto = null;
+  if (!punto) {
     try {
-      const { geocodePedido, puntoDe } = require('../maps/google');
-      const hit = puntoDe(await geocodePedido(rutaPedido.pedido, deps));
-      if (hit) {
-        lat = hit.lat;
-        lng = hit.lng;
-        if (typeof rutaPedido.update === 'function') {
-          await rutaPedido.update({
-            lat,
-            lng,
-            link_ubicacion: `https://maps.google.com/?q=${lat},${lng}`,
-          });
-        }
+      const cliente = puntoDe(rutaPedido.pedido?.cliente);
+      const cacheSucia = pegadoAlGps(cliente);
+      punto = cacheSucia ? null : cliente;
+      if (!punto) {
+        const delPedido = puntoDe(rutaPedido.pedido);
+        punto = pegadoAlGps(delPedido) ? null : delPedido;
+      }
+      if (!punto) punto = puntoDe(await geocodePedido(rutaPedido.pedido, { ...deps, skipCache: cacheSucia }));
+      if (pegadoAlGps(punto)) punto = null;
+      if (punto && typeof rutaPedido.update === 'function') {
+        await rutaPedido.update({
+          lat: punto.lat,
+          lng: punto.lng,
+          link_ubicacion: `https://maps.google.com/?q=${punto.lat},${punto.lng}`,
+        });
       }
     } catch {
-      lat = null;
-      lng = null;
+      punto = null;
     }
   }
+  const destinoTxt = punto ? `${punto.lat},${punto.lng}` : encodeURIComponent(direccion);
   return {
-    lat: Number.isFinite(lat) ? lat : null,
-    lng: Number.isFinite(lng) ? lng : null,
-    link_ubicacion: rutaPedido.link_ubicacion || null,
-    link_navegacion: Number.isFinite(lat) && Number.isFinite(lng)
-      ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`
-      : null,
-    link_waze: Number.isFinite(lat) && Number.isFinite(lng)
-      ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
-      : null,
+    lat: punto?.lat ?? null,
+    lng: punto?.lng ?? null,
+    link_ubicacion: punto
+      ? `https://maps.google.com/?q=${punto.lat},${punto.lng}`
+      : (direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}` : rutaPedido.link_ubicacion || null),
+    link_navegacion: punto
+      ? `https://www.google.com/maps/dir/?api=1${gps ? `&origin=${gps.lat},${gps.lng}` : ''}&destination=${punto.lat},${punto.lng}&travelmode=driving`
+      : (direccion ? `https://www.google.com/maps/dir/?api=1&destination=${destinoTxt}&travelmode=driving` : null),
+    link_waze: punto
+      ? `https://waze.com/ul?ll=${punto.lat},${punto.lng}&navigate=yes`
+      : (direccion ? `https://waze.com/ul?q=${encodeURIComponent(direccion)}&navigate=yes` : null),
     polyline: [],
   };
 }

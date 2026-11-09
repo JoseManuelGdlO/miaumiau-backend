@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -586,7 +586,7 @@ test('llegada envía codigo_paquete y solo entonces marca la llegada', async () 
     },
   });
   expect(pedidoQuery.attributes).toBeUndefined();
-  expect(pedidoQuery.include[0].attributes).toEqual(['id', 'nombre_completo', 'telefono']);
+  expect(pedidoQuery.include[0].attributes).toEqual(['id', 'nombre_completo', 'lat', 'lng', 'direccion_geo', 'direccion_entrega', 'telefono']);
   expect(sends).toEqual([]);
   expect(rutaPedido.estado_entrega).toBe('en_camino');
   expect(rutaPedido.llego_en).toBeInstanceOf(Date);
@@ -682,6 +682,119 @@ test('avisarCodigoAlCrear no truena si WhatsApp falla', async () => {
   }, pedidoConCodigo())).resolves.toBeUndefined();
 });
 
+test('ubicacionPedido no navega a 0,0 y usa el cache del cliente', async () => {
+  const update = jest.fn();
+  const data = await ubicacionPedido({
+    repartidorId: 3,
+    rutaPedido: {
+      lat: 0,
+      lng: 0,
+      link_ubicacion: 'https://maps.google.com/?q=0,0',
+      update,
+      ruta: { fkid_repartidor: 3, polyline_encoded: null },
+      pedido: {
+        direccion_entrega: 'Calle 1',
+        cliente: { lat: 24.02, lng: -104.66, direccion_geo: 'calle 1', direccion_entrega: 'Calle 1' },
+      },
+    },
+  });
+  expect(data.lat).toBe(24.02);
+  expect(data.lng).toBe(-104.66);
+  expect(data.link_navegacion).toContain('24.02');
+  expect(data.link_navegacion).not.toContain('destination=0,0');
+  expect(update).toHaveBeenCalled();
+});
+
+test('ubicacionPedido usa el cache del cliente y no pega Geocoding ni Directions', async () => {
+  const resolverDireccion = jest.fn();
+  const httpGet = jest.fn();
+  const data = await ubicacionPedido({
+    repartidorId: 3,
+    lat: 24.01,
+    lng: -104.65,
+    mapsApagada: false,
+    apiKey: 'k',
+    httpGet,
+    resolver: { resolverDireccion },
+    rutaPedido: {
+      lat: 24.02,
+      lng: -104.66,
+      ruta: { fkid_repartidor: 3 },
+      pedido: {
+        direccion_entrega: 'Calle 1',
+        cliente: { lat: 24.02, lng: -104.66, direccion_geo: 'calle 1' },
+      },
+    },
+  });
+  expect(data.lat).toBe(24.02);
+  expect(data.polyline).toEqual([]);
+  expect(resolverDireccion).not.toHaveBeenCalled();
+  expect(httpGet).not.toHaveBeenCalled();
+});
+
+test('ubicacionPedido geocodifica la dirección si las coords son el GPS', async () => {
+  const update = jest.fn();
+  const data = await ubicacionPedido({
+    repartidorId: 3,
+    lat: 24.0277,
+    lng: -104.6532,
+    mapsApagada: false,
+    apiKey: 'k',
+    httpGet: async () => ({ data: { status: 'ZERO_RESULTS' } }),
+    resolver: { resolverDireccion: async () => ({ lat: 24.05, lng: -104.70, formatted_address: 'Río, Durango' }) },
+    rutaPedido: {
+      lat: 24.0277,
+      lng: -104.6532,
+      update,
+      ruta: { fkid_repartidor: 3 },
+      pedido: {
+        direccion_entrega: 'Río de Janeiro 200 Durango',
+        cliente: { update: jest.fn() },
+      },
+    },
+  });
+  expect(data.lat).toBe(24.05);
+  expect(data.lng).toBe(-104.70);
+  expect(update).toHaveBeenCalled();
+});
+
+test('ubicacionPedido no usa el GPS como domicilio', async () => {
+  const update = jest.fn();
+  const data = await ubicacionPedido({
+    repartidorId: 3,
+    lat: 24.0277,
+    lng: -104.6532,
+    mapsApagada: true,
+    rutaPedido: {
+      lat: 24.0277,
+      lng: -104.6532,
+      update,
+      ruta: { fkid_repartidor: 3 },
+      pedido: { direccion_entrega: 'Río de Janeiro 200 Durango' },
+    },
+  });
+  expect(data.lat).toBe(null);
+  expect(data.link_waze).toContain('waze.com');
+  expect(update).not.toHaveBeenCalled();
+});
+
+test('ubicacionPedido arma Waze con la dirección si no hay coords', async () => {
+  const data = await ubicacionPedido({
+    repartidorId: 3,
+    mapsApagada: true,
+    rutaPedido: {
+      lat: null,
+      lng: null,
+      ruta: { fkid_repartidor: 3 },
+      pedido: { direccion_entrega: 'Río de Janeiro 200 Durango' },
+    },
+  });
+  expect(data.lat).toBe(null);
+  expect(data.link_waze).toContain('waze.com');
+  expect(data.link_waze).toContain('navigate=yes');
+  expect(decodeURIComponent(data.link_waze)).toContain('Río de Janeiro');
+});
+
 test('registrarUbicacion persiste lat_actual del repartidor', async () => {
   const updates = [];
   const data = await registrarUbicacion({
@@ -719,4 +832,25 @@ test('registrarVelocidad guarda GPS y lectura', async () => {
   });
   expect(updates[0].lat_actual).toBe(24.1);
   expect(created[0].lat).toBe(24.1);
+});
+
+test('resumenVelocidad expone lat/lng de la lectura', async () => {
+  const data = await resumenVelocidad({
+    fecha: '2026-11-05',
+    models: {
+      LecturaVelocidad: {
+        findAll: async () => [{
+          fkid_repartidor: 3,
+          velocidad_kmh: 12,
+          lat: 24.02,
+          lng: -104.66,
+          ubicacion_at: '2026-11-05T18:00:00Z',
+          repartidor: { nombre_completo: 'Ana' },
+        }],
+      },
+    },
+  });
+  expect(data[0].lat).toBe(24.02);
+  expect(data[0].lng).toBe(-104.66);
+  expect(data[0].lecturas).toBe(1);
 });

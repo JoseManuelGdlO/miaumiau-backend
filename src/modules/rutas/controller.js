@@ -837,13 +837,17 @@ class RutaController {
               { model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng', 'direccion_geo', 'direccion_entrega'], required: false },
             ],
           });
+          const { puntoDe } = require('../maps/google');
           let lat = pedido.lat !== undefined && pedido.lat !== null ? parseFloat(pedido.lat) : null;
           let lng = pedido.lng !== undefined && pedido.lng !== null ? parseFloat(pedido.lng) : null;
-          if (lat == null || lng == null) {
+          if (!puntoDe({ lat, lng })) {
             const coords = await coordsDePedido(pedidoAsignado);
             if (coords) {
               lat = coords.lat;
               lng = coords.lng;
+            } else {
+              lat = null;
+              lng = null;
             }
           }
           const rutaPedido = await RutaPedido.create({

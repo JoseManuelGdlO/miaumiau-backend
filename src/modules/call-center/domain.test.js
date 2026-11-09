@@ -91,12 +91,14 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
       codigo_entrega: '123456',
       telefono_referencia: '618111',
       direccion_entrega: 'Calle 1',
-      cliente: { nombre_completo: 'Ana', telefono: '618222' },
+      cliente: { nombre_completo: 'Ana', telefono: '618222', lat: 24.02, lng: -104.65 },
     },
     rutaPedido: { id: 9, estado_entrega: 'pendiente' },
     ruta: { fkid_ciudad: 2, fkid_repartidor: 3, repartidor: { id: 3, nombre_completo: 'Luis' } },
   });
   expect(dia.telefono).toBe('618111');
+  expect(dia.lat).toBe(24.02);
+  expect(dia.lng).toBe(-104.65);
   expect(dia.codigo_entrega).toBeUndefined();
   expect(dia.ciudad_id).toBe(2);
   expect(dia.modificado).toBe(false);
