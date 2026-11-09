@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { generateToken, generateRefreshToken } = require('../../utils/jwt');
 const { Sequelize } = require('sequelize');
 const { Logger } = require('../../utils/logger');
+const { codigoLibre } = require('./codigo');
 
 const log = new Logger('Repartidores');
 
@@ -45,6 +46,7 @@ class RepartidorController {
 
       if (disponibles === 'true') {
         whereClause.estado = 'disponible';
+        whereClause.es_prueba = false;
       }
 
       if (search) {
@@ -166,7 +168,8 @@ class RepartidorController {
         licencia_conducir,
         seguro_vehiculo,
         notas,
-        contrasena
+        contrasena,
+        es_prueba
       } = req.body;
 
       // Hashear la contraseña si se proporciona
@@ -175,8 +178,16 @@ class RepartidorController {
         hashedPassword = await bcrypt.hash(contrasena, 12);
       }
 
+      let ciudadNombre = '';
+      let ciudadDepto = '';
+      if (fkid_ciudad) {
+        const ciudad = await City.findByPk(fkid_ciudad, { attributes: ['nombre', 'departamento'] });
+        ciudadNombre = ciudad?.nombre || '';
+        ciudadDepto = ciudad?.departamento || '';
+      }
+      const codigo = await codigoLibre(Repartidor, codigo_repartidor, ciudadNombre, ciudadDepto);
       const repartidor = await Repartidor.create({
-        codigo_repartidor,
+        codigo_repartidor: codigo,
         nombre_completo,
         telefono,
         email,
@@ -195,7 +206,8 @@ class RepartidorController {
         licencia_conducir,
         seguro_vehiculo,
         notas,
-        contrasena: hashedPassword
+        contrasena: hashedPassword,
+        es_prueba: Boolean(es_prueba)
       });
 
       // No devolver la contraseña en la respuesta

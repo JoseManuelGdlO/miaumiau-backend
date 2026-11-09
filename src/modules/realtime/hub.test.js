@@ -45,3 +45,14 @@ test('remove deja la sala vacía y notify sin sala devuelve 0', () => {
   expect(hub.size(4)).toBe(0);
   expect(hub.notify(4, { type: 'ready' })).toBe(0);
 });
+
+test('broadcastGps llega a Call Center y no a la sala del repartidor', () => {
+  const hub = createHub();
+  const cc = fakeSocket();
+  const driver = fakeSocket();
+  hub.addCallCenter(cc);
+  hub.add(4, driver);
+  expect(hub.broadcastGps(4, { lat: 24.1, lng: -104.6 })).toBe(1);
+  expect(JSON.parse(cc.payloads[0])).toEqual({ type: 'gps', repartidorId: 4, lat: 24.1, lng: -104.6 });
+  expect(driver.payloads).toEqual([]);
+});

@@ -1,4 +1,4 @@
-const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad } = require('./service');
+const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad, corteDeRepartidor } = require('./service');
 
 function notificacion(data) {
   const row = {
@@ -509,7 +509,15 @@ test('repartidores excluye inactivos', async () => {
     },
   };
   const rows = await listarRepartidores({ models, ciudadId: 2 });
-  expect(rows).toEqual([{ id: 3, nombre_completo: 'Luis', estado: 'activo' }]);
+  expect(rows).toEqual([{
+    id: 3,
+    nombre_completo: 'Luis',
+    estado: 'activo',
+    es_prueba: false,
+    paradas: 0,
+    max_paradas: 25,
+    saturado: false,
+  }]);
 });
 
 function parada(id, fecha, baja) {
@@ -875,10 +883,19 @@ test('el histórico deja fuera abiertas y canceladas', async () => {
       Repartidor: { findByPk: async (id) => ({ id, nombre_completo: 'Luis' }) },
       JornadaRepartidor: {
         findByPk: async () => ({
+          fkid_repartidor: 3,
+          fecha: '2026-10-09',
           dinero_esperado: 80,
+          efectivo_cobrado: 40,
+          virtual_cobrado: 40,
           validado_por_nombre: 'Mariana G.',
           cargas: [{ id: 1, fkid_producto: 4, nombre: 'Arena', cantidad: 2, precio_unitario: 10, es_extra: false }],
         }),
+      },
+      RutaPedido: {
+        findAll: async () => [{
+          pedido: { numero_pedido: 'P-4', metodo_pago: 'efectivo', total: 80, cobro_entrega: { metodo: 'efectivo' } },
+        }],
       },
     },
   });
@@ -886,6 +903,7 @@ test('el histórico deja fuera abiertas y canceladas', async () => {
   expect(list[0].validado_por_nombre).toBe('Mariana G.');
   expect(list[0].dinero_esperado).toBe(80);
   expect(list[0].cargas[0].nombre).toBe('Arena');
+  expect(list[0].cobros[0]).toEqual(expect.objectContaining({ numero_pedido: 'P-4', metodo: 'efectivo' }));
 });
 
 test('la cola consulta solo solicitudes abiertas', async () => {
@@ -1128,9 +1146,39 @@ test('listar comprobantes incluye la foto y permite subirla si falta', async () 
     },
   });
   expect(rows).toEqual([
-    expect.objectContaining({ pedido_id: 4, comprobante_url: '/uploads/comprobantes/a.jpg', puede_subir: false }),
-    expect.objectContaining({ pedido_id: 5, comprobante_url: null, puede_subir: true }),
+    expect.objectContaining({ pedido_id: 4, comprobante_url: '/uploads/comprobantes/a.jpg', puede_subir: false, estado_cobro: 'completo', metodo_pedido: 'transferencia' }),
+    expect.objectContaining({ pedido_id: 5, comprobante_url: null, puede_subir: true, estado_cobro: 'falta cobro', metodo_pedido: 'mixto' }),
+    expect.objectContaining({ pedido_id: 6, comprobante_url: null, puede_subir: false, estado_cobro: 'falta cobro', metodo_pedido: 'efectivo' }),
   ]);
+});
+
+test('el corte agrupa las paradas del repartidor en esa fecha', async () => {
+  const corte = await corteDeRepartidor({
+    fecha: '2026-10-19',
+    repartidorId: 8,
+    repartidor: { id: 8, nombre_completo: 'Ana', es_prueba: false },
+    models: {
+      RutaPedido: {
+        findAll: async () => [{
+          id: 1,
+          orden_entrega: 1,
+          estado_entrega: 'entregado',
+          pedido: {
+            id: 4,
+            numero_pedido: 'P-4',
+            estado: 'entregado',
+            metodo_pago: 'efectivo',
+            total: 80,
+            cobro_entrega: { metodo: 'efectivo', monto_efectivo: 80, monto_transferencia: 0 },
+          },
+          ruta: { fecha_ruta: '2026-10-19', fkid_ciudad: 1, fkid_repartidor: 8, repartidor: { id: 8, nombre_completo: 'Ana' } },
+        }],
+      },
+    },
+  });
+  expect(corte.fecha).toBe('2026-10-19');
+  expect(corte.repartidor.nombre_completo).toBe('Ana');
+  expect(corte.paradas[0].estado_cobro).toBe('completo');
 });
 
 test('subir comprobante a un pedido en efectivo ahora pasa', async () => {
@@ -1214,6 +1262,49 @@ test('listar depósitos sigue mostrando el comprobante de una jornada cerrada', 
     efectivo_a_depositar: 80.5,
     comprobante_url: '/uploads/comprobantes/dep.jpg',
   }]);
+});
+
+test('un no entregado se puede volver a poner en ruta', async () => {
+  const pedido = {
+    id: 7,
+    baja_logica: false,
+    estado: 'no_entregado',
+    fkid_ciudad: 1,
+    update: async (data) => Object.assign(pedido, data),
+  };
+  const creadas = [];
+  await asignarActividad({
+    fecha: '2026-11-05',
+    pedido,
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    models: {
+      RutaPedido: { findAll: async () => [], max: async () => 0, create: async (row) => { creadas.push(row); return row; } },
+      Ruta: {
+        findAll: async () => [],
+        findOne: async () => ({ id: 20, franja: 'manana', total_pedidos: 0, update: async () => {} }),
+      },
+    },
+    notify: jest.fn(),
+  });
+  expect(pedido.estado).toBe('confirmado');
+  expect(creadas[0].fkid_pedido).toBe(7);
+});
+
+test('asignar actividad rechaza la parada 26', async () => {
+  await expect(asignarActividad({
+    fecha: '2026-10-19',
+    pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1 },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    models: {
+      RutaPedido: {
+        findAll: async () => [],
+        count: async () => 25,
+      },
+      Ruta: {
+        findAll: async () => [{ id: 3 }],
+      },
+    },
+  })).rejects.toMatchObject({ status: 409, message: 'Ese repartidor ya tiene 25 pedidos hoy' });
 });
 
 test('asignar actividad extra la libera aunque falte el depósito', async () => {

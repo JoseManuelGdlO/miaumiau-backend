@@ -147,6 +147,13 @@ function comprobantes(req, res) {
   }), 'comprobantes');
 }
 
+function corte(req, res) {
+  return handle(res, () => service.corteDeRepartidor({
+    repartidorId: req.query.repartidorId || req.query.repartidor_id,
+    fecha: req.query.fecha || null,
+  }), 'corte');
+}
+
 function anotarComprobante(req, res) {
   return handle(res, () => service.anotarComprobante({
     pedidoId: req.params.id,
@@ -187,6 +194,34 @@ function velocidad(req, res) {
     const fecha = await service.fechaDeHoy({});
     return resumenVelocidad({ fecha });
   }, 'velocidad');
+}
+
+function trazado(req, res) {
+  return handle(res, async () => {
+    const { Ruta, RutaPedido, Pedido, Repartidor, City, Cliente } = require('../../models');
+    const { construirTrazado } = require('../maps/google');
+    const ruta = await Ruta.findByPk(req.params.id, {
+      include: [
+        { model: Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'] },
+        { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento'] },
+        {
+          model: RutaPedido,
+          as: 'pedidos',
+          include: [{
+            model: Pedido,
+            as: 'pedido',
+            include: [{ model: Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng'] }],
+          }],
+        },
+      ],
+    });
+    if (!ruta) {
+      const error = new Error('Ruta no encontrada');
+      error.status = 404;
+      throw error;
+    }
+    return construirTrazado(ruta);
+  }, 'trazado');
 }
 
 function cambiarFranja(req, res) {
@@ -280,8 +315,10 @@ module.exports = {
   moverParada,
   liberarSiguiente,
   velocidad,
+  trazado,
   cambiarDireccion,
   comprobantes,
+  corte,
   anotarComprobante,
   subirComprobante,
   depositos,

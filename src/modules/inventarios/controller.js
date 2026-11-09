@@ -115,10 +115,13 @@ class InventarioController {
         ];
       }
 
-      const offset = (page - 1) * limit;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+      const offset = (pageNum - 1) * limitNum;
 
       const { count, rows: inventarios } = await Inventario.findAndCountAll({
         where: whereClause,
+        distinct: true,
         include: [
           {
             model: Peso,
@@ -142,19 +145,23 @@ class InventarioController {
           }
         ],
         order: [['created_at', 'DESC'], ['updated_at', 'DESC']],
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: limitNum,
+        offset,
       });
 
+      const totalItems = typeof count === 'number' ? count : count.length;
       res.json({
         success: true,
         data: {
           inventarios,
           pagination: {
-            total: count,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(count / limit)
+            total: totalItems,
+            totalItems,
+            page: pageNum,
+            currentPage: pageNum,
+            limit: limitNum,
+            itemsPerPage: limitNum,
+            totalPages: Math.max(1, Math.ceil(totalItems / limitNum)),
           }
         }
       });

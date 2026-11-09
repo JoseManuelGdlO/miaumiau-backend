@@ -187,10 +187,22 @@ async function velocidad(req, res) {
   }, 'velocidad');
 }
 
+async function ubicacionGps(req, res) {
+  return handle(req, res, async () => service.registrarUbicacion(depsFrom(req, {
+    lat: req.body?.lat,
+    lng: req.body?.lng,
+  })), 'ubicacionGps');
+}
+
 async function ubicacion(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
-    return service.ubicacionPedido(depsFrom(req, { fecha, timezone }));
+    return service.ubicacionPedido(depsFrom(req, {
+      fecha,
+      timezone,
+      lat: req.query?.lat ?? req.body?.lat,
+      lng: req.query?.lng ?? req.body?.lng,
+    }));
   }, 'ubicacion');
 }
 
@@ -333,6 +345,7 @@ module.exports = {
   replaceCarga,
   inventario,
   velocidad,
+  ubicacionGps,
   bodega,
   extras,
   paquetes,

@@ -18,7 +18,7 @@ const notFound = require('./middleware/notFound');
 const requestLogger = require('./middleware/requestLogger');
 const { Logger } = require('./utils/logger');
 const { attachRealtime } = require('./modules/realtime/attach');
-const { verifyRepartidorToken } = require('./modules/realtime/auth');
+const { verifyRepartidorToken, verifyCallCenterToken } = require('./modules/realtime/auth');
 const { getHub } = require('./modules/realtime');
 
 const log = new Logger('App');
@@ -355,9 +355,18 @@ const startServer = async () => {
     
     // Iniciar servidor
     const server = http.createServer(app);
+    const lastGpsWrite = new Map();
     attachRealtime(server, {
       hub: getHub(),
       verifyToken: (token) => verifyRepartidorToken(token),
+      verifyCallCenter: (token) => verifyCallCenterToken(token),
+      onGps: async (repartidorId, punto) => {
+        const now = Date.now();
+        if (now - (lastGpsWrite.get(repartidorId) || 0) < 20000) return;
+        lastGpsWrite.set(repartidorId, now);
+        const { registrarUbicacion } = require('./modules/app-repartidor/service');
+        await registrarUbicacion({ repartidorId, lat: punto.lat, lng: punto.lng });
+      },
     });
     server.listen(PORT, () => {
       log.info(`Servidor Miaumiau v${BACKEND_VERSION} corriendo en puerto ${PORT}`);

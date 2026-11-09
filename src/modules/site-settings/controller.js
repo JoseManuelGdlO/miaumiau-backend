@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { SiteSetting } = require('../../models');
 const { extractYoutubeVideoId } = require('../../utils/youtubeVideoId');
 const { Logger } = require('../../utils/logger');
+const { KEY_MAPS_API_APAGADA, invalidarMapsApagada, valorApagado } = require('../maps/apagada');
 
 const log = new Logger('SiteSettings');
 
@@ -337,7 +338,7 @@ function parseHttpUrlOrEmpty(raw) {
 }
 
 async function buildPublicData() {
-  const allKeys = [KEY_HERO_YOUTUBE, KEY_QR_ACTIONS, KEY_MAINTENANCE_PLACEHOLDER, ...PUBLIC_LINK_KEYS];
+  const allKeys = [KEY_HERO_YOUTUBE, KEY_QR_ACTIONS, KEY_MAINTENANCE_PLACEHOLDER, KEY_MAPS_API_APAGADA, ...PUBLIC_LINK_KEYS];
   const rows = await SiteSetting.findAll({
     where: { clave: { [Op.in]: allKeys } },
   });
@@ -357,6 +358,7 @@ async function buildPublicData() {
   const maintenancePlaceholder = maintenanceRaw == null || maintenanceRaw === ''
     ? true
     : !['false', '0'].includes(String(maintenanceRaw).trim().toLowerCase());
+  const mapsApiApagada = valorApagado(byClave[KEY_MAPS_API_APAGADA]);
 
   return {
     heroYoutubeVideoId,
@@ -366,6 +368,7 @@ async function buildPublicData() {
     mercadolibreUrl,
     qrActions,
     maintenancePlaceholder,
+    mapsApiApagada,
   };
 }
 
@@ -494,6 +497,30 @@ const updateMaintenancePlaceholder = async (req, res, next) => {
   }
 };
 
+const updateMapsApiApagada = async (req, res, next) => {
+  try {
+    const enabled = req.body && req.body.mapsApiApagada;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'Indica si Google Maps está apagado.',
+      });
+    }
+    await upsertValor(KEY_MAPS_API_APAGADA, enabled ? 'true' : 'false');
+    invalidarMapsApagada();
+    const data = await buildPublicData();
+    res.json({
+      success: true,
+      data,
+      message: enabled
+        ? 'Google Maps apagado. No se cobra API; el mapa embebido queda fuera.'
+        : 'Google Maps encendido otra vez.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updateQrActions = async (req, res, next) => {
   try {
     const incoming = req.body && req.body.qrActions;
@@ -616,6 +643,7 @@ module.exports = {
   updatePublicLinks,
   updateQrActions,
   updateMaintenancePlaceholder,
+  updateMapsApiApagada,
   uploadQrImage,
   KEY_HERO_YOUTUBE,
   DEFAULT_HERO_VIDEO_ID,

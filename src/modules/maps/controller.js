@@ -1,10 +1,13 @@
 const axios = require('axios');
 const { Logger } = require('../../utils/logger');
+const { mapsApagada } = require('./apagada');
 
 const log = new Logger('Maps');
 
-// Helper: llamar a la API de geocoding de Google
+const BLOQUEADOS = new Set(['OVER_QUERY_LIMIT', 'REQUEST_DENIED']);
+
 async function callGeocodeApi(address, apiKey) {
+  if (await mapsApagada()) return { status: 'REQUEST_DENIED', results: [] };
   const response = await axios.get(
     `https://maps.googleapis.com/maps/api/geocode/json`,
     {
@@ -15,6 +18,11 @@ async function callGeocodeApi(address, apiKey) {
       }
     }
   );
+  const status = response.data?.status;
+  if (BLOQUEADOS.has(status)) {
+    log.warn('Google Maps bloqueado', { status });
+    return { status, results: [] };
+  }
   return response.data;
 }
 
@@ -23,6 +31,14 @@ function direccionDeRespaldo(ciudad) {
   const lugar = String(ciudad || '').trim();
   if (lugar.length < 2) return '';
   return `${lugar}, México`;
+}
+
+function centroDeCiudad(ciudad, estado) {
+  const key = fold(`${ciudad || ''} ${estado || ''}`);
+  if (key.includes('durango')) {
+    return { lat: 24.0277, lng: -104.6532, formatted_address: 'Durango, México', aproximado: true };
+  }
+  return null;
 }
 
 function fold(value) {
@@ -69,9 +85,11 @@ async function resolverDireccion({ address, ciudad, colonia, codigo_postal, esta
   if (primero) return { ...primero, aproximado: true };
 
   const respaldo = direccionDeRespaldo(ciudad);
-  if (!respaldo) return null;
-  const ciudadHit = coordsDe(await callGeocodeApi(respaldo, apiKey));
-  return ciudadHit ? { ...ciudadHit, aproximado: true } : null;
+  if (respaldo) {
+    const ciudadHit = coordsDe(await callGeocodeApi(respaldo, apiKey));
+    if (ciudadHit) return { ...ciudadHit, aproximado: true };
+  }
+  return centroDeCiudad(ciudad, estado);
 }
 
 function isStreetFound(formattedAddress, searchedAddress) {
@@ -93,6 +111,13 @@ class MapsController {
         return res.status(400).json({
           success: false,
           message: 'La dirección es requerida'
+        });
+      }
+
+      if (await mapsApagada()) {
+        return res.status(503).json({
+          success: false,
+          message: 'Google Maps está apagado',
         });
       }
 
@@ -144,6 +169,13 @@ class MapsController {
         return res.status(400).json({
           success: false,
           message: 'Los orígenes y destinos deben ser arrays'
+        });
+      }
+
+      if (await mapsApagada()) {
+        return res.status(503).json({
+          success: false,
+          message: 'Google Maps está apagado',
         });
       }
 
@@ -238,6 +270,12 @@ class MapsController {
   // Geocodificar múltiples direcciones
   async geocodeMultipleAddresses(req, res, next) {
     try {
+      if (await mapsApagada()) {
+        return res.status(503).json({
+          success: false,
+          message: 'Google Maps está apagado',
+        });
+      }
       const { addresses } = req.body;
 
       if (!addresses || !Array.isArray(addresses)) {
@@ -306,4 +344,5 @@ module.exports = new MapsController();
 module.exports.direccionDeRespaldo = direccionDeRespaldo;
 module.exports.resolverDireccion = resolverDireccion;
 module.exports.enElEstado = enElEstado;
+module.exports.centroDeCiudad = centroDeCiudad;
 

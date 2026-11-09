@@ -123,6 +123,16 @@ const validateQuery = [
     .optional()
     .isIn(['true', 'false'])
     .withMessage('El parámetro has_escalation debe ser true o false'),
+
+  query('unread')
+    .optional()
+    .isIn(['true', 'false'])
+    .withMessage('El parámetro unread debe ser true o false'),
+
+  query('days')
+    .optional()
+    .isInt({ min: 1, max: 90 })
+    .withMessage('El parámetro days debe ser un número entre 1 y 90'),
   
   handleValidationErrors
 ];

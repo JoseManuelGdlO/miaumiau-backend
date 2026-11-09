@@ -20,6 +20,7 @@ router.get('/solicitudes/:notificacionId', controller.leerSolicitud);
 router.get('/inventario', controller.inventario);
 router.get('/velocidad', controller.velocidad);
 router.post('/velocidad', controller.velocidad);
+router.patch('/ubicacion', controller.ubicacionGps);
 router.get('/avisos', controller.avisos);
 router.get('/pedidos', controller.pedidos);
 router.get('/pedidos/:id/ubicacion', controller.ubicacion);

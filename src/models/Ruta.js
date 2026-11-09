@@ -110,6 +110,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    polyline_encoded: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    polyline_hash: {
+      type: DataTypes.STRING(40),
+      allowNull: true
     }
   }, {
     tableName: 'rutas',

@@ -54,6 +54,18 @@ module.exports = (sequelize, DataTypes) => {
         len: [0, 500]
       }
     },
+    lat: {
+      type: DataTypes.DECIMAL(10, 8),
+      allowNull: true,
+    },
+    lng: {
+      type: DataTypes.DECIMAL(11, 8),
+      allowNull: true,
+    },
+    direccion_geo: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
     puntos_lealtad: {
       type: DataTypes.INTEGER,
       allowNull: false,
