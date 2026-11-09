@@ -33,6 +33,14 @@ function direccionDeRespaldo(ciudad) {
   return `${lugar}, México`;
 }
 
+function centroDeCiudad(ciudad, estado) {
+  const key = fold(`${ciudad || ''} ${estado || ''}`);
+  if (key.includes('durango')) {
+    return { lat: 24.0277, lng: -104.6532, formatted_address: 'Durango, México', aproximado: true };
+  }
+  return null;
+}
+
 function fold(value) {
   return String(value || '')
     .normalize('NFD')
@@ -77,9 +85,11 @@ async function resolverDireccion({ address, ciudad, colonia, codigo_postal, esta
   if (primero) return { ...primero, aproximado: true };
 
   const respaldo = direccionDeRespaldo(ciudad);
-  if (!respaldo) return null;
-  const ciudadHit = coordsDe(await callGeocodeApi(respaldo, apiKey));
-  return ciudadHit ? { ...ciudadHit, aproximado: true } : null;
+  if (respaldo) {
+    const ciudadHit = coordsDe(await callGeocodeApi(respaldo, apiKey));
+    if (ciudadHit) return { ...ciudadHit, aproximado: true };
+  }
+  return centroDeCiudad(ciudad, estado);
 }
 
 function isStreetFound(formattedAddress, searchedAddress) {
@@ -334,4 +344,5 @@ module.exports = new MapsController();
 module.exports.direccionDeRespaldo = direccionDeRespaldo;
 module.exports.resolverDireccion = resolverDireccion;
 module.exports.enElEstado = enElEstado;
+module.exports.centroDeCiudad = centroDeCiudad;
 
