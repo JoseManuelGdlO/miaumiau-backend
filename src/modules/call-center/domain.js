@@ -162,11 +162,15 @@ function toCargaValidada({ notificacion, repartidor, jornada, cobros }) {
 
 function repartidorDto(repartidor) {
   if (!repartidor) return null;
+  const lat = Number(repartidor.lat_actual);
+  const lng = Number(repartidor.lng_actual);
   return {
     id: repartidor.id,
     nombre_completo: repartidor.nombre_completo,
     telefono: repartidor.telefono || null,
     es_prueba: Boolean(repartidor.es_prueba),
+    lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
+    lng: Number.isFinite(lng) && lng !== 0 ? lng : null,
   };
 }
 
