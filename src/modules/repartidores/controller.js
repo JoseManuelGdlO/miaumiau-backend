@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { generateToken, generateRefreshToken } = require('../../utils/jwt');
 const { Sequelize } = require('sequelize');
 const { Logger } = require('../../utils/logger');
+const { codigoLibre } = require('./codigo');
 
 const log = new Logger('Repartidores');
 
@@ -177,8 +178,16 @@ class RepartidorController {
         hashedPassword = await bcrypt.hash(contrasena, 12);
       }
 
+      let ciudadNombre = '';
+      let ciudadDepto = '';
+      if (fkid_ciudad) {
+        const ciudad = await City.findByPk(fkid_ciudad, { attributes: ['nombre', 'departamento'] });
+        ciudadNombre = ciudad?.nombre || '';
+        ciudadDepto = ciudad?.departamento || '';
+      }
+      const codigo = await codigoLibre(Repartidor, codigo_repartidor, ciudadNombre, ciudadDepto);
       const repartidor = await Repartidor.create({
-        codigo_repartidor,
+        codigo_repartidor: codigo,
         nombre_completo,
         telefono,
         email,
