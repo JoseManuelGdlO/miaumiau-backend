@@ -12,6 +12,7 @@ const {
   NOTE_LIMIT,
   transition,
   reassignCheck,
+  puedeAsignarConSiniestro,
   isOpenSolicitud,
   sigueHoy,
   esDeHoy,
@@ -477,6 +478,9 @@ async function reasignar(deps = {}) {
     bajaLogica: Boolean(driver?.baja_logica),
   });
   if (!check.ok) fail(check.statusCode, check.message);
+  if (!puedeAsignarConSiniestro(driver)) {
+    fail(409, 'Faltan datos de siniestro. No se le pueden asignar pedidos hasta completarlos.');
+  }
 
   const anterior = ruta?.fkid_repartidor;
   const nuevo = driver?.id;
@@ -821,7 +825,19 @@ async function listarRepartidores(deps = {}) {
   const db = getModels(deps);
   const rows = await db.Repartidor.findAll({
     where: { fkid_ciudad: deps.ciudadId, estado: { [Op.in]: ACTIVE }, baja_logica: false },
-    attributes: ['id', 'nombre_completo', 'estado', 'es_prueba'],
+    attributes: [
+      'id',
+      'nombre_completo',
+      'estado',
+      'es_prueba',
+      'licencia_vigencia',
+      'licencia_foto',
+      'seguro_social',
+      'tipo_sangre',
+      'consentimiento_at',
+      'consentimiento_archivo',
+      'ine_archivo',
+    ],
     order: [['nombre_completo', 'ASC']],
   });
   let cupos = {};
@@ -1240,6 +1256,9 @@ async function asignarActividad(deps = {}) {
   if (!driver || driver.baja_logica) fail(404, 'Repartidor no encontrado');
   if (Number(driver.fkid_ciudad) !== Number(pedido.fkid_ciudad)) {
     fail(422, 'El repartidor no es de la ciudad del pedido');
+  }
+  if (!puedeAsignarConSiniestro(driver)) {
+    fail(409, 'Faltan datos de siniestro. No se le pueden asignar pedidos hasta completarlos.');
   }
   const fecha = deps.fecha || await fechaDeHoy(deps);
   if (pedido.estado === 'no_entregado') {

@@ -6,6 +6,33 @@ const { authenticateRepartidor } = require('../../middleware/repartidorAuth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
+const { uploadRepartidores } = require('../../utils/uploadImages');
+
+function maybeUploadSiniestro(req, res, next) {
+  const type = String(req.headers['content-type'] || '');
+  if (!type.includes('multipart/form-data')) return next();
+  uploadRepartidores.fields([
+    { name: 'licencia_foto', maxCount: 1 },
+    { name: 'consentimiento_archivo', maxCount: 1 },
+    { name: 'ine_archivo', maxCount: 1 }
+  ])(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.code === 'LIMIT_FILE_SIZE' ? 'El archivo no debe superar 5 MB' : (err.message || 'Error al subir el archivo')
+      });
+    }
+    if (req.fileValidationError) {
+      return res.status(400).json({ success: false, message: req.fileValidationError });
+    }
+    for (const key of ['zona_cobertura', 'horario_trabajo']) {
+      const value = req.body?.[key];
+      if (typeof value !== 'string' || !value) continue;
+      try { req.body[key] = JSON.parse(value); } catch { /* el validador rechaza el string */ }
+    }
+    next();
+  });
+}
 
 // Validaciones
 const validateRepartidor = [
@@ -41,7 +68,7 @@ const validateRepartidor = [
     .withMessage('El ID de ciudad debe ser válido'),
   
   body('direccion')
-    .optional()
+    .optional({ checkFalsy: true })
     .isLength({ min: 5, max: 255 })
     .withMessage('La dirección debe tener entre 5 y 255 caracteres'),
   
@@ -91,14 +118,34 @@ const validateRepartidor = [
     .withMessage('La comisión debe estar entre 0 y 100'),
   
   body('fecha_ingreso')
-    .optional()
+    .optional({ checkFalsy: true })
     .isDate()
     .withMessage('La fecha de ingreso debe ser válida'),
   
   body('fecha_nacimiento')
-    .optional()
+    .optional({ checkFalsy: true })
     .isDate()
     .withMessage('La fecha de nacimiento debe ser válida'),
+
+  body('licencia_vigencia')
+    .optional({ checkFalsy: true })
+    .isDate()
+    .withMessage('La vigencia de la licencia debe ser una fecha válida'),
+
+  body('tipo_sangre')
+    .optional({ checkFalsy: true })
+    .isIn(['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'])
+    .withMessage('Tipo de sangre inválido'),
+
+  body('consentimiento_at')
+    .optional({ checkFalsy: true })
+    .custom((value) => !Number.isNaN(Date.parse(value)))
+    .withMessage('La hora del consentimiento debe ser una fecha válida'),
+
+  body('seguro_social')
+    .optional({ checkFalsy: true })
+    .isLength({ max: 50 })
+    .withMessage('El seguro social no puede exceder 50 caracteres'),
   
   body('contrasena')
     .optional()
@@ -129,7 +176,7 @@ const validateQuery = [
   
   query('estado')
     .optional()
-    .isIn(['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta'])
+    .isIn(['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta', 'no_disponible', 'permiso_economico', 'incapacitado', 'baja'])
     .withMessage('Estado inválido'),
   
   query('tipo_vehiculo')
@@ -142,7 +189,7 @@ const validateQuery = [
 
 const validateEstado = [
   body('estado')
-    .isIn(['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta'])
+    .isIn(['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta', 'no_disponible', 'permiso_economico', 'incapacitado', 'baja'])
     .withMessage('Estado inválido'),
   
   handleValidationErrors
@@ -231,6 +278,7 @@ router.get('/:id',
 router.post('/',
   authenticateToken,
   requireSuperAdminOrPermission('crear_repartidores'),
+  maybeUploadSiniestro,
   validateRepartidor,
   repartidorController.createRepartidor
 );
@@ -239,6 +287,7 @@ router.put('/:id',
   authenticateToken,
   requireSuperAdminOrPermission('editar_repartidores'),
   validateId,
+  maybeUploadSiniestro,
   validateRepartidor,
   repartidorController.updateRepartidor
 );

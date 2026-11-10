@@ -84,6 +84,24 @@ function transition(from, to) {
   return { ok: true, method: METHODS[to], route };
 }
 
+function filled(value) {
+  return value != null && String(value).trim() !== '';
+}
+
+function siniestroCompleto(row) {
+  return filled(row?.licencia_vigencia)
+    && filled(row?.licencia_foto)
+    && filled(row?.seguro_social)
+    && filled(row?.tipo_sangre)
+    && filled(row?.consentimiento_at)
+    && filled(row?.consentimiento_archivo)
+    && filled(row?.ine_archivo);
+}
+
+function puedeAsignarConSiniestro(row) {
+  return Boolean(row?.es_prueba) || siniestroCompleto(row);
+}
+
 function reassignCheck({ pedidoEstado, sameDriver, driverFound, sameCity, driverEstado, bajaLogica }) {
   if (CLOSED.includes(pedidoEstado)) {
     return { ok: false, statusCode: 409, message: 'Ese pedido ya no se puede reasignar' };
@@ -434,6 +452,7 @@ function toRepartidorOpcion(repartidor, paradas = 0) {
     nombre_completo: repartidor.nombre_completo,
     estado: repartidor.estado,
     es_prueba: Boolean(repartidor.es_prueba),
+    siniestro_completo: siniestroCompleto(repartidor),
     paradas: n,
     max_paradas: MAX_PARADAS_DIA,
     saturado: n >= MAX_PARADAS_DIA,
@@ -449,6 +468,8 @@ module.exports = {
   appendNota,
   transition,
   reassignCheck,
+  siniestroCompleto,
+  puedeAsignarConSiniestro,
   stamp,
   phoneOf,
   isOpenSolicitud,

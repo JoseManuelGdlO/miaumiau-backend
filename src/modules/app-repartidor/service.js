@@ -31,6 +31,7 @@ const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
 const { soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
+const { mapaMetricas, fetchMetricas } = require('../repartidores/metricas');
 const { repartoBloqueado } = require('./deposito-pendiente');
 
 const log = new Logger('AppRepartidor');
@@ -1350,6 +1351,12 @@ async function entregar(deps = {}) {
     log.warn('no se pidió la calificación', { message: err.message });
   }
   await soltarSiguiente(deps);
+  try {
+    const rep = await db.Repartidor.findByPk(deps.repartidorId);
+    if (rep?.actualizarMetricas) await rep.actualizarMetricas(1);
+  } catch (err) {
+    log.warn('no se actualizó el conteo de entregas', { message: err.message });
+  }
 
   const timeZone = deps.timezone || deps.repartidor?.ciudad?.timezone;
   const stats = await logroStats(deps, timeZone, saldo);
@@ -1860,11 +1867,15 @@ async function perfil(deps = {}) {
       repartidor.id,
     );
   }
+  const metricas = mapaMetricas(await fetchMetricas(db.sequelize, [repartidor.id]))[repartidor.id] || {};
   return {
     id: repartidor.id,
     nombre: repartidor.nombre_completo,
     foto: urlFoto(repartidor.foto),
     entregas_hoy: stats.entregasHoy,
+    total_entregas: metricas.total_entregas ?? stats.totalEntregas ?? 0,
+    fecha_ultima_entrega: metricas.fecha_ultima_entrega || null,
+    calificacion_promedio: metricas.calificacion_promedio ?? null,
     efectivo_hoy: efectivo,
     puntos,
     jornada: jornada
@@ -1893,10 +1904,21 @@ async function estadisticas(deps = {}) {
   const weekStart = mondayOf(hoy);
   const weekEnd = addCalendarDays(weekStart, 6);
   const monthPrefix = hoy.slice(0, 7);
+  const db = getModels(deps);
+  const m = mapaMetricas(await fetchMetricas(db.sequelize, [repartidor.id]))[repartidor.id] || {};
+  const ultima = entregas.reduce((acc, p) => {
+    const when = p.fecha_entrega_real || p.updated_at;
+    if (!when) return acc;
+    const t = new Date(when).getTime();
+    return t > acc ? t : acc;
+  }, 0);
   return {
     hoy: days.filter((d) => d === hoy).length,
     semana: days.filter((d) => d >= weekStart && d <= weekEnd).length,
     mes: days.filter((d) => d.startsWith(monthPrefix)).length,
+    total: m.total_entregas ?? entregas.length,
+    fecha_ultima_entrega: m.fecha_ultima_entrega || (ultima ? new Date(ultima).toISOString() : null),
+    calificacion_promedio: m.calificacion_promedio ?? null,
     puntos,
     meta: META_DIARIA,
   };
