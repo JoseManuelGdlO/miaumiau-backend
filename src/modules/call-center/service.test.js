@@ -312,6 +312,18 @@ test('otra ciudad responde 403', async () => {
   })).rejects.toMatchObject({ status: 403 });
 });
 
+test('sin repartidor no se reasigna', async () => {
+  const rutaPedido = {
+    pedido: { estado: 'en_camino' },
+    ruta: { fkid_ciudad: 7, fkid_repartidor: 3, fecha_ruta: '2026-10-07' },
+  };
+  await expect(reasignar({
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    models: { Repartidor: { findByPk: async () => null } },
+  })).rejects.toMatchObject({ status: 404, message: 'Repartidor no encontrado' });
+});
+
 test('sin datos de siniestro no se reasigna, el de prueba sí', async () => {
   const rutaPedido = {
     fkid_ruta: 1,

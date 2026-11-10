@@ -186,7 +186,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATEONLY,
       allowNull: true,
       validate: {
-        isDate: true
+        isDate: true,
+        isYmd(value) {
+          if (value == null || value === '') return;
+          if (value instanceof Date && !Number.isNaN(value.getTime())) return;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value).slice(0, 10))) {
+            throw new Error('La vigencia de la licencia debe ser YYYY-MM-DD');
+          }
+        }
       }
     },
     licencia_foto: {
@@ -209,7 +216,10 @@ module.exports = (sequelize, DataTypes) => {
     },
     consentimiento_at: {
       type: DataTypes.DATE,
-      allowNull: true
+      allowNull: true,
+      validate: {
+        isDate: true
+      }
     },
     consentimiento_archivo: {
       type: DataTypes.STRING(255),

@@ -22,6 +22,26 @@ function archivoDe(files, field) {
   return files?.[field]?.[0]?.filename || null;
 }
 
+function tipoSangreDe(value) {
+  if (value === '' || value == null) return null;
+  return String(value).trim().toUpperCase();
+}
+
+function rejectUpload(req, res) {
+  if (req.fileValidationError) {
+    res.status(400).json({ success: false, message: req.fileValidationError });
+    return true;
+  }
+  for (const field of ['licencia_foto', 'consentimiento_archivo', 'ine_archivo']) {
+    const list = req.files?.[field];
+    if (list && list.length && !list[0]?.filename) {
+      res.status(400).json({ success: false, message: 'Error al subir el archivo' });
+      return true;
+    }
+  }
+  return false;
+}
+
 class RepartidorController {
   // Obtener todos los repartidores
   async getAllRepartidores(req, res, next) {
@@ -163,6 +183,7 @@ class RepartidorController {
   // Crear nuevo repartidor
   async createRepartidor(req, res, next) {
     try {
+      if (rejectUpload(req, res)) return;
       const {
         codigo_repartidor,
         nombre_completo,
@@ -227,7 +248,7 @@ class RepartidorController {
         licencia_vigencia: emptyToNull(licencia_vigencia),
         licencia_foto: archivoDe(req.files, 'licencia_foto'),
         seguro_social: emptyToNull(seguro_social),
-        tipo_sangre: emptyToNull(tipo_sangre),
+        tipo_sangre: tipoSangreDe(tipo_sangre),
         consentimiento_at: emptyToNull(consentimiento_at),
         consentimiento_archivo: archivoDe(req.files, 'consentimiento_archivo'),
         ine_archivo: archivoDe(req.files, 'ine_archivo'),
@@ -253,6 +274,7 @@ class RepartidorController {
   // Actualizar repartidor
   async updateRepartidor(req, res, next) {
     try {
+      if (rejectUpload(req, res)) return;
       const { id } = req.params;
       const updateData = { ...req.body };
 
@@ -277,6 +299,7 @@ class RepartidorController {
       ['licencia_vigencia', 'seguro_social', 'tipo_sangre', 'consentimiento_at'].forEach((key) => {
         if (updateData[key] === '') updateData[key] = null;
       });
+      if (updateData.tipo_sangre != null) updateData.tipo_sangre = tipoSangreDe(updateData.tipo_sangre);
 
       delete updateData.licencia_foto;
       delete updateData.consentimiento_archivo;

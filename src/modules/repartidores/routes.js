@@ -129,11 +129,12 @@ const validateRepartidor = [
 
   body('licencia_vigencia')
     .optional({ checkFalsy: true })
-    .isDate()
+    .isISO8601({ strict: true })
     .withMessage('La vigencia de la licencia debe ser una fecha válida'),
 
   body('tipo_sangre')
     .optional({ checkFalsy: true })
+    .customSanitizer((value) => String(value).trim().toUpperCase())
     .isIn(['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'])
     .withMessage('Tipo de sangre inválido'),
 

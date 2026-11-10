@@ -469,6 +469,7 @@ async function reasignar(deps = {}) {
     fail(409, 'Ese pedido no está en una ruta de hoy');
   }
   const driver = deps.repartidor || await db.Repartidor.findByPk(deps.repartidorId);
+  if (!driver) fail(404, 'Repartidor no encontrado');
   const check = reassignCheck({
     pedidoEstado: pedido.estado,
     sameDriver: driver ? Number(ruta.fkid_repartidor) === Number(driver.id) : false,
@@ -504,6 +505,9 @@ async function reasignar(deps = {}) {
       bajaLogica: Boolean(driver?.baja_logica),
     });
     if (!fresh.ok) fail(fresh.statusCode, fresh.message);
+    if (!puedeAsignarConSiniestro(driver)) {
+      fail(409, 'Faltan datos de siniestro. No se le pueden asignar pedidos hasta completarlos.');
+    }
     if (Number(driver.id) !== Number(lockedRuta.fkid_repartidor)) {
       await exigirCupo(db, {
         repartidorId: driver.id,

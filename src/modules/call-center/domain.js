@@ -89,13 +89,15 @@ function filled(value) {
 }
 
 function siniestroCompleto(row) {
-  return filled(row?.licencia_vigencia)
-    && filled(row?.licencia_foto)
-    && filled(row?.seguro_social)
-    && filled(row?.tipo_sangre)
-    && filled(row?.consentimiento_at)
-    && filled(row?.consentimiento_archivo)
-    && filled(row?.ine_archivo);
+  if (!row || typeof row !== 'object') return false;
+  const vigencia = diaMexico(row.licencia_vigencia);
+  if (!filled(vigencia) || vigencia < dayKey(new Date(), 'America/Mexico_City')) return false;
+  return filled(row.licencia_foto)
+    && filled(row.seguro_social)
+    && filled(row.tipo_sangre)
+    && filled(row.consentimiento_at)
+    && filled(row.consentimiento_archivo)
+    && filled(row.ine_archivo);
 }
 
 function puedeAsignarConSiniestro(row) {

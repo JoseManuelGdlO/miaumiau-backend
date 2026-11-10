@@ -69,8 +69,7 @@ const repartidoresFileFilter = (req, file, cb) => {
   if (REPARTIDORES_MIMES.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    req.fileValidationError = 'Solo se permiten imágenes (JPG, PNG, GIF, WEBP) o PDF';
-    cb(null, false);
+    cb(new Error('Solo se permiten imágenes (JPG, PNG, GIF, WEBP) o PDF'));
   }
 };
 
@@ -143,6 +142,7 @@ module.exports = {
   uploadComprobantes,
   uploadQr,
   uploadRepartidores,
+  repartidoresFileFilter,
   ensureUploadsDirs,
   deleteConversationImage,
   UPLOADS_BASE,

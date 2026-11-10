@@ -83,6 +83,11 @@ test('siniestro completo pide vigencia, fotos, nss, sangre, consentimiento e ine
   };
   expect(siniestroCompleto(ok)).toBe(true);
   expect(siniestroCompleto({ ...ok, ine_archivo: null })).toBe(false);
+  expect(siniestroCompleto({ ...ok, licencia_vigencia: '2020-01-01' })).toBe(false);
+  expect(siniestroCompleto(undefined)).toBe(false);
+  expect(siniestroCompleto(null)).toBe(false);
+  expect(siniestroCompleto({})).toBe(false);
+  expect(puedeAsignarConSiniestro(undefined)).toBe(false);
   expect(puedeAsignarConSiniestro({ es_prueba: true })).toBe(true);
   expect(puedeAsignarConSiniestro(ok)).toBe(true);
   expect(puedeAsignarConSiniestro({ ...ok, es_prueba: false, ine_archivo: '' })).toBe(false);
