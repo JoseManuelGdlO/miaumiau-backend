@@ -126,6 +126,25 @@ function diaDe(value) {
   return String(value || '').slice(0, 10);
 }
 
+function diaMexico(value) {
+  if (value == null || value === '') return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isNaN(date.getTime()) && (value instanceof Date || /T|\d{2}:\d{2}/.test(String(value)))) {
+    return dayKey(date, 'America/Mexico_City');
+  }
+  return diaDe(value);
+}
+
+function fechaIncidencia({ pedido, rutaPedido, ruta }) {
+  return diaMexico(
+    rutaPedido?.fecha_entrega_real
+    || pedido?.fecha_entrega_real
+    || pedido?.updated_at
+    || pedido?.updatedAt
+    || ruta?.fecha_ruta
+  ) || null;
+}
+
 function isOpenSolicitud(row) {
   const datos = row?.datos || {};
   return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada' && datos.estado_solicitud !== 'atendida';
@@ -213,7 +232,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
     pedido_id: datos.pedido_id ? Number(datos.pedido_id) : null,
     numero_pedido: numeroPedido || null,
     repartidor: repartidorDto(repartidor),
-    fecha: notificacion.fecha_creacion,
+    fecha: diaDeFila(notificacion) || notificacion.fecha_creacion,
     hora: notificacion.hora_creacion,
     ...(datos.espera_desde ? { espera_desde: datos.espera_desde } : {}),
     ...(datos.nota ? { nota: datos.nota } : {}),
@@ -353,6 +372,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     codigo_oculto: pedido.codigo_entrega ? '******' : null,
     fecha_propuesta: pedido.fecha_propuesta || null,
     fecha_ruta: ruta?.fecha_ruta ? String(ruta.fecha_ruta).slice(0, 10) : null,
+    fecha_incidencia: fechaIncidencia({ pedido, rutaPedido, ruta }),
     calificacion_servicio: estrella(pedido.notas, 'Calificación del servicio'),
     calificacion_cliente: estrella(pedido.notas, 'Calificación al cliente'),
     estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),

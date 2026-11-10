@@ -127,6 +127,11 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   expect(dia.modificado).toBe(false);
   expect(dia.comprobante_url).toBeNull();
   expect(dia.total).toBe(0);
+  expect(toPedidoDia({
+    pedido: { id: 8, numero_pedido: 'P-8', estado: 'no_entregado', fecha_entrega_real: '2026-11-09T23:30:00Z' },
+    rutaPedido: { id: 13, estado_entrega: 'fallido' },
+    ruta: {},
+  }).fecha_incidencia).toBe('2026-11-09');
   const tocado = toPedidoDia({
     pedido: {
       id: 4,
