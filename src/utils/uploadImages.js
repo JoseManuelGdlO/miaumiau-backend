@@ -30,6 +30,7 @@ function extFromMime(mimeType) {
   if (mimeType === 'image/png') return '.png';
   if (mimeType === 'image/gif') return '.gif';
   if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'application/pdf') return '.pdf';
   return '.jpg';
 }
 
@@ -53,12 +54,22 @@ function getStorage(subdir) {
   });
 }
 
+const REPARTIDORES_MIMES = [...ALLOWED_MIMES, 'application/pdf'];
+
 const fileFilter = (req, file, cb) => {
   if (ALLOWED_MIMES.includes(file.mimetype)) {
     cb(null, true);
   } else {
     req.fileValidationError = 'Solo se permiten imágenes (JPG, PNG, GIF, WEBP)';
     cb(null, false);
+  }
+};
+
+const repartidoresFileFilter = (req, file, cb) => {
+  if (REPARTIDORES_MIMES.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten imágenes (JPG, PNG, GIF, WEBP) o PDF'));
   }
 };
 
@@ -104,7 +115,7 @@ const uploadQr = multer({
 const uploadRepartidores = multer({
   storage: getStorage('repartidores'),
   limits: { fileSize: MAX_SIZE },
-  fileFilter
+  fileFilter: repartidoresFileFilter
 });
 
 function ensureUploadsDirs() {
@@ -131,6 +142,7 @@ module.exports = {
   uploadComprobantes,
   uploadQr,
   uploadRepartidores,
+  repartidoresFileFilter,
   ensureUploadsDirs,
   deleteConversationImage,
   UPLOADS_BASE,

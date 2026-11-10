@@ -1,5 +1,15 @@
 const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad, corteDeRepartidor } = require('./service');
 
+const siniestroOk = {
+  licencia_vigencia: '2027-01-01',
+  licencia_foto: 'lic.jpg',
+  seguro_social: '12345678901',
+  tipo_sangre: 'O+',
+  consentimiento_at: '2026-01-01T12:00:00.000Z',
+  consentimiento_archivo: 'ok.jpg',
+  ine_archivo: 'ine.jpg',
+};
+
 function notificacion(data) {
   const row = {
     id: 9,
@@ -203,7 +213,7 @@ test('reasignar crea la ruta, conserva el código y limpia la llegada', async ()
     models,
     rutaPedido,
     fechaHoy: '2026-10-07',
-    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo', ...siniestroOk },
     transaction: async (fn) => fn(),
   });
   expect(result).toEqual({ ruta_id: 20, creada: true, orden_entrega: 1 });
@@ -254,7 +264,7 @@ test('reasignar refresca la foto de los dos repartidores antes de avisar', async
     rutaPedido,
     pedidoId: 4,
     fechaHoy: '2026-10-07',
-    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo', ...siniestroOk },
     transaction: async (fn) => fn(),
     notify,
   });
@@ -300,6 +310,44 @@ test('otra ciudad responde 403', async () => {
     fechaHoy: '2026-10-07',
     repartidor: { id: 8, fkid_ciudad: 9, estado: 'inactivo', nombre_completo: 'Marta' },
   })).rejects.toMatchObject({ status: 403 });
+});
+
+test('sin repartidor no se reasigna', async () => {
+  const rutaPedido = {
+    pedido: { estado: 'en_camino' },
+    ruta: { fkid_ciudad: 7, fkid_repartidor: 3, fecha_ruta: '2026-10-07' },
+  };
+  await expect(reasignar({
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    models: { Repartidor: { findByPk: async () => null } },
+  })).rejects.toMatchObject({ status: 404, message: 'Repartidor no encontrado' });
+});
+
+test('sin datos de siniestro no se reasigna, el de prueba sí', async () => {
+  const rutaPedido = {
+    fkid_ruta: 1,
+    orden_entrega: 1,
+    estado_entrega: 'pendiente',
+    update: async (patch) => Object.assign(rutaPedido, patch),
+    pedido: { id: 4, estado: 'en_camino' },
+    ruta: { id: 1, fkid_ciudad: 7, fkid_repartidor: 3, fecha_ruta: '2026-10-07', total_pedidos: 1, estado: 'planificada', update: async (patch) => Object.assign(rutaPedido.ruta, patch) },
+  };
+  const destino = { id: 20, total_pedidos: 0, update: async (patch) => Object.assign(destino, patch) };
+  await expect(reasignar({
+    models: { Ruta: { findAll: async () => [destino] }, RutaPedido: { findAll: async () => [] } },
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    transaction: async (fn) => fn(),
+    repartidor: { id: 8, nombre_completo: 'Marta', fkid_ciudad: 7, estado: 'activo' },
+  })).rejects.toMatchObject({ status: 409, message: 'Faltan datos de siniestro. No se le pueden asignar pedidos hasta completarlos.' });
+  await reasignar({
+    models: { Ruta: { findAll: async () => [destino] }, RutaPedido: { findAll: async () => [] } },
+    rutaPedido,
+    fechaHoy: '2026-10-07',
+    transaction: async (fn) => fn(),
+    repartidor: { id: 8, nombre_completo: 'Marta', fkid_ciudad: 7, estado: 'activo', es_prueba: true },
+  });
 });
 
 test('guardarExtras reemplaza solo las líneas extra y no marca leída', async () => {
@@ -514,6 +562,7 @@ test('repartidores excluye inactivos', async () => {
     nombre_completo: 'Luis',
     estado: 'activo',
     es_prueba: false,
+    siniestro_completo: false,
     paradas: 0,
     max_paradas: 25,
     saturado: false,
@@ -599,7 +648,7 @@ test('reasignar mueve la parada viva de hoy y no la baja', async () => {
     models,
     pedidoId: 4,
     now,
-    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo', ...siniestroOk },
     transaction: async (fn) => fn(tx),
   });
   expect(result).toEqual({ ruta_id: 20, creada: true, orden_entrega: 1 });
@@ -838,7 +887,7 @@ test('reasignar bloquea el pedido, la parada y las rutas', async () => {
     models,
     rutaPedido,
     fechaHoy: '2026-10-07',
-    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo' },
+    repartidor: { id: 8, nombre_completo: 'Marta López', fkid_ciudad: 7, estado: 'activo', ...siniestroOk },
     transaction: async (fn) => fn(tx),
   });
   expect(result).toEqual({ ruta_id: 20, creada: false, orden_entrega: 4 });
@@ -1115,7 +1164,7 @@ test('reasignar avisa al repartidor que suelta y al que recibe', async () => {
     rutaPedido,
     fechaHoy: '2026-10-07',
     pedidoId: 4,
-    repartidor: { id: 9, nombre_completo: 'Ana', fkid_ciudad: 7, estado: 'activo', baja_logica: false },
+    repartidor: { id: 9, nombre_completo: 'Ana', fkid_ciudad: 7, estado: 'activo', baja_logica: false, ...siniestroOk },
     notify,
     transaction: async (fn) => fn(),
   });
@@ -1276,7 +1325,7 @@ test('un no entregado se puede volver a poner en ruta', async () => {
   await asignarActividad({
     fecha: '2026-11-05',
     pedido,
-    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana', ...siniestroOk },
     models: {
       RutaPedido: { findAll: async () => [], max: async () => 0, create: async (row) => { creadas.push(row); return row; } },
       Ruta: {
@@ -1294,7 +1343,7 @@ test('asignar actividad rechaza la parada 26', async () => {
   await expect(asignarActividad({
     fecha: '2026-10-19',
     pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1 },
-    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana', ...siniestroOk },
     models: {
       RutaPedido: {
         findAll: async () => [],
@@ -1329,7 +1378,7 @@ test('asignar actividad extra la libera aunque falte el depósito', async () => 
     fecha: '2026-10-19',
     now: ahora,
     pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1, codigo_entrega: '123456' },
-    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana' },
+    repartidor: { id: 8, baja_logica: false, fkid_ciudad: 1, nombre_completo: 'Ana', ...siniestroOk },
     models,
     notify: jest.fn(),
   });

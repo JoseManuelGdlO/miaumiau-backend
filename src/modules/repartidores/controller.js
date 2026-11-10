@@ -6,8 +6,41 @@ const { generateToken, generateRefreshToken } = require('../../utils/jwt');
 const { Sequelize } = require('sequelize');
 const { Logger } = require('../../utils/logger');
 const { codigoLibre } = require('./codigo');
+const { aplicarMetricas, fetchMetricas } = require('./metricas');
 
 const log = new Logger('Repartidores');
+
+function emptyToNull(value) {
+  return value === '' || value === undefined ? null : value;
+}
+
+function esPrueba(value) {
+  return value === true || value === 'true';
+}
+
+function archivoDe(files, field) {
+  return files?.[field]?.[0]?.filename || null;
+}
+
+function tipoSangreDe(value) {
+  if (value === '' || value == null) return null;
+  return String(value).trim().toUpperCase();
+}
+
+function rejectUpload(req, res) {
+  if (req.fileValidationError) {
+    res.status(400).json({ success: false, message: req.fileValidationError });
+    return true;
+  }
+  for (const field of ['licencia_foto', 'consentimiento_archivo', 'ine_archivo']) {
+    const list = req.files?.[field];
+    if (list && list.length && !list[0]?.filename) {
+      res.status(400).json({ success: false, message: 'Error al subir el archivo' });
+      return true;
+    }
+  }
+  return false;
+}
 
 class RepartidorController {
   // Obtener todos los repartidores
@@ -81,10 +114,12 @@ class RepartidorController {
         offset: parseInt(offset)
       });
 
+      const metricas = await fetchMetricas(Repartidor.sequelize, repartidores.map((row) => row.id));
+
       res.json({
         success: true,
         data: {
-          repartidores,
+          repartidores: aplicarMetricas(repartidores, metricas),
           total: count,
           page: parseInt(page),
           limit: parseInt(limit),
@@ -148,6 +183,7 @@ class RepartidorController {
   // Crear nuevo repartidor
   async createRepartidor(req, res, next) {
     try {
+      if (rejectUpload(req, res)) return;
       const {
         codigo_repartidor,
         nombre_completo,
@@ -167,6 +203,10 @@ class RepartidorController {
         documento_identidad,
         licencia_conducir,
         seguro_vehiculo,
+        licencia_vigencia,
+        seguro_social,
+        tipo_sangre,
+        consentimiento_at,
         notas,
         contrasena,
         es_prueba
@@ -199,15 +239,22 @@ class RepartidorController {
         horario_trabajo,
         tarifa_base,
         comision_porcentaje,
-        fecha_ingreso,
-        fecha_nacimiento,
+        fecha_ingreso: emptyToNull(fecha_ingreso),
+        fecha_nacimiento: emptyToNull(fecha_nacimiento),
         direccion,
         documento_identidad,
         licencia_conducir,
         seguro_vehiculo,
+        licencia_vigencia: emptyToNull(licencia_vigencia),
+        licencia_foto: archivoDe(req.files, 'licencia_foto'),
+        seguro_social: emptyToNull(seguro_social),
+        tipo_sangre: tipoSangreDe(tipo_sangre),
+        consentimiento_at: emptyToNull(consentimiento_at),
+        consentimiento_archivo: archivoDe(req.files, 'consentimiento_archivo'),
+        ine_archivo: archivoDe(req.files, 'ine_archivo'),
         notas,
         contrasena: hashedPassword,
-        es_prueba: Boolean(es_prueba)
+        es_prueba: esPrueba(es_prueba)
       });
 
       // No devolver la contraseña en la respuesta
@@ -227,6 +274,7 @@ class RepartidorController {
   // Actualizar repartidor
   async updateRepartidor(req, res, next) {
     try {
+      if (rejectUpload(req, res)) return;
       const { id } = req.params;
       const updateData = { ...req.body };
 
@@ -247,6 +295,23 @@ class RepartidorController {
           delete updateData[key];
         }
       });
+
+      ['licencia_vigencia', 'seguro_social', 'tipo_sangre', 'consentimiento_at'].forEach((key) => {
+        if (updateData[key] === '') updateData[key] = null;
+      });
+      if (updateData.tipo_sangre != null) updateData.tipo_sangre = tipoSangreDe(updateData.tipo_sangre);
+
+      delete updateData.licencia_foto;
+      delete updateData.consentimiento_archivo;
+      delete updateData.ine_archivo;
+      const licenciaFoto = archivoDe(req.files, 'licencia_foto');
+      if (licenciaFoto) updateData.licencia_foto = licenciaFoto;
+      const consentimientoArchivo = archivoDe(req.files, 'consentimiento_archivo');
+      if (consentimientoArchivo) updateData.consentimiento_archivo = consentimientoArchivo;
+      const ineArchivo = archivoDe(req.files, 'ine_archivo');
+      if (ineArchivo) updateData.ine_archivo = ineArchivo;
+
+      if ('es_prueba' in updateData) updateData.es_prueba = esPrueba(updateData.es_prueba);
 
       // Hashear la contraseña si se está actualizando
       if (updateData.contrasena) {
@@ -330,7 +395,7 @@ class RepartidorController {
       const { id } = req.params;
       const { estado } = req.body;
 
-      if (!['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta'].includes(estado)) {
+      if (!['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta', 'no_disponible', 'permiso_economico', 'incapacitado', 'baja'].includes(estado)) {
         return res.status(400).json({
           success: false,
           message: 'Estado inválido'

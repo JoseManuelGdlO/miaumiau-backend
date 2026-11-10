@@ -77,11 +77,31 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     estado: {
-      type: DataTypes.ENUM('activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta'),
+      type: DataTypes.ENUM(
+        'activo',
+        'inactivo',
+        'ocupado',
+        'disponible',
+        'en_ruta',
+        'no_disponible',
+        'permiso_economico',
+        'incapacitado',
+        'baja'
+      ),
       allowNull: false,
       defaultValue: 'disponible',
       validate: {
-        isIn: [['activo', 'inactivo', 'ocupado', 'disponible', 'en_ruta']]
+        isIn: [[
+          'activo',
+          'inactivo',
+          'ocupado',
+          'disponible',
+          'en_ruta',
+          'no_disponible',
+          'permiso_economico',
+          'incapacitado',
+          'baja',
+        ]]
       }
     },
     zona_cobertura: {
@@ -161,6 +181,53 @@ module.exports = (sequelize, DataTypes) => {
       validate: {
         len: [0, 100]
       }
+    },
+    licencia_vigencia: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      validate: {
+        isDate: true,
+        isYmd(value) {
+          if (value == null || value === '') return;
+          if (value instanceof Date && !Number.isNaN(value.getTime())) return;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value).slice(0, 10))) {
+            throw new Error('La vigencia de la licencia debe ser YYYY-MM-DD');
+          }
+        }
+      }
+    },
+    licencia_foto: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    seguro_social: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      validate: {
+        len: [0, 50]
+      }
+    },
+    tipo_sangre: {
+      type: DataTypes.STRING(3),
+      allowNull: true,
+      validate: {
+        isIn: [['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']]
+      }
+    },
+    consentimiento_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      validate: {
+        isDate: true
+      }
+    },
+    consentimiento_archivo: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    ine_archivo: {
+      type: DataTypes.STRING(255),
+      allowNull: true
     },
     notas: {
       type: DataTypes.TEXT,

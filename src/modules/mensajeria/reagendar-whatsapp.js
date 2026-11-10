@@ -145,6 +145,14 @@ async function atenderMensaje(message, phoneNumberId) {
     const previas = String(pedido.notas || '');
     const nota = `Calificación del servicio: ${calificacion[1]}`;
     await pedido.update({ notas: (previas.includes(nota) ? previas : `${previas ? `${previas}\n` : ''}${nota}`).slice(0, 1000) });
+    if (pedido.repartidor_id) {
+      try {
+        const rep = await db.Repartidor.findByPk(pedido.repartidor_id);
+        if (rep?.actualizarCalificacion) await rep.actualizarCalificacion(Number(calificacion[1]));
+      } catch (err) {
+        log.warn('no se actualizó la calificación del repartidor', { message: err.message });
+      }
+    }
     await sendWhatsAppMessage(telefono, 'Gracias. Si quieres, escribe un comentario de la entrega.', linea);
     return;
   }

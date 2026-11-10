@@ -4,6 +4,9 @@ const {
   appendNota,
   transition,
   reassignCheck,
+  siniestroCompleto,
+  puedeAsignarConSiniestro,
+  toRepartidorOpcion,
   stamp,
   phoneOf,
   isOpenSolicitud,
@@ -68,6 +71,29 @@ test('transiciones de la pantalla Pedidos', () => {
   expect(transition('entregado', 'cancelado').ok).toBe(false);
 });
 
+test('siniestro completo pide vigencia, fotos, nss, sangre, consentimiento e ine', () => {
+  const ok = {
+    licencia_vigencia: '2027-01-01',
+    licencia_foto: 'lic.jpg',
+    seguro_social: '123',
+    tipo_sangre: 'O+',
+    consentimiento_at: '2026-01-01',
+    consentimiento_archivo: 'ok.jpg',
+    ine_archivo: 'ine.jpg',
+  };
+  expect(siniestroCompleto(ok)).toBe(true);
+  expect(siniestroCompleto({ ...ok, ine_archivo: null })).toBe(false);
+  expect(siniestroCompleto({ ...ok, licencia_vigencia: '2020-01-01' })).toBe(false);
+  expect(siniestroCompleto(undefined)).toBe(false);
+  expect(siniestroCompleto(null)).toBe(false);
+  expect(siniestroCompleto({})).toBe(false);
+  expect(puedeAsignarConSiniestro(undefined)).toBe(false);
+  expect(puedeAsignarConSiniestro({ es_prueba: true })).toBe(true);
+  expect(puedeAsignarConSiniestro(ok)).toBe(true);
+  expect(puedeAsignarConSiniestro({ ...ok, es_prueba: false, ine_archivo: '' })).toBe(false);
+  expect(toRepartidorOpcion(ok).siniestro_completo).toBe(true);
+});
+
 test('reasignar rechaza cerrado, otra ciudad, inactivo y el mismo repartidor', () => {
   const base = { pedidoEstado: 'en_camino', sameDriver: false, driverFound: true, sameCity: true, driverEstado: 'en_ruta' };
   expect(reassignCheck(base).ok).toBe(true);
@@ -106,6 +132,11 @@ test('el teléfono prefiere la referencia y el dto no lleva código', () => {
   expect(dia.modificado).toBe(false);
   expect(dia.comprobante_url).toBeNull();
   expect(dia.total).toBe(0);
+  expect(toPedidoDia({
+    pedido: { id: 8, numero_pedido: 'P-8', estado: 'no_entregado', fecha_entrega_real: '2026-11-09T23:30:00Z' },
+    rutaPedido: { id: 13, estado_entrega: 'fallido' },
+    ruta: {},
+  }).fecha_incidencia).toBe('2026-11-09');
   const tocado = toPedidoDia({
     pedido: {
       id: 4,

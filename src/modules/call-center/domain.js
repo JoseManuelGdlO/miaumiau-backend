@@ -84,6 +84,26 @@ function transition(from, to) {
   return { ok: true, method: METHODS[to], route };
 }
 
+function filled(value) {
+  return value != null && String(value).trim() !== '';
+}
+
+function siniestroCompleto(row) {
+  if (!row || typeof row !== 'object') return false;
+  const vigencia = diaMexico(row.licencia_vigencia);
+  if (!filled(vigencia) || vigencia < dayKey(new Date(), 'America/Mexico_City')) return false;
+  return filled(row.licencia_foto)
+    && filled(row.seguro_social)
+    && filled(row.tipo_sangre)
+    && filled(row.consentimiento_at)
+    && filled(row.consentimiento_archivo)
+    && filled(row.ine_archivo);
+}
+
+function puedeAsignarConSiniestro(row) {
+  return Boolean(row?.es_prueba) || siniestroCompleto(row);
+}
+
 function reassignCheck({ pedidoEstado, sameDriver, driverFound, sameCity, driverEstado, bajaLogica }) {
   if (CLOSED.includes(pedidoEstado)) {
     return { ok: false, statusCode: 409, message: 'Ese pedido ya no se puede reasignar' };
@@ -106,6 +126,25 @@ function phoneOf(pedido) {
 function diaDe(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
   return String(value || '').slice(0, 10);
+}
+
+function diaMexico(value) {
+  if (value == null || value === '') return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isNaN(date.getTime()) && (value instanceof Date || /T|\d{2}:\d{2}/.test(String(value)))) {
+    return dayKey(date, 'America/Mexico_City');
+  }
+  return diaDe(value);
+}
+
+function fechaIncidencia({ pedido, rutaPedido, ruta }) {
+  return diaMexico(
+    rutaPedido?.fecha_entrega_real
+    || pedido?.fecha_entrega_real
+    || pedido?.updated_at
+    || pedido?.updatedAt
+    || ruta?.fecha_ruta
+  ) || null;
 }
 
 function isOpenSolicitud(row) {
@@ -195,7 +234,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
     pedido_id: datos.pedido_id ? Number(datos.pedido_id) : null,
     numero_pedido: numeroPedido || null,
     repartidor: repartidorDto(repartidor),
-    fecha: notificacion.fecha_creacion,
+    fecha: diaDeFila(notificacion) || notificacion.fecha_creacion,
     hora: notificacion.hora_creacion,
     ...(datos.espera_desde ? { espera_desde: datos.espera_desde } : {}),
     ...(datos.nota ? { nota: datos.nota } : {}),
@@ -335,6 +374,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     codigo_oculto: pedido.codigo_entrega ? '******' : null,
     fecha_propuesta: pedido.fecha_propuesta || null,
     fecha_ruta: ruta?.fecha_ruta ? String(ruta.fecha_ruta).slice(0, 10) : null,
+    fecha_incidencia: fechaIncidencia({ pedido, rutaPedido, ruta }),
     calificacion_servicio: estrella(pedido.notas, 'Calificación del servicio'),
     calificacion_cliente: estrella(pedido.notas, 'Calificación al cliente'),
     estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
@@ -434,6 +474,7 @@ function toRepartidorOpcion(repartidor, paradas = 0) {
     nombre_completo: repartidor.nombre_completo,
     estado: repartidor.estado,
     es_prueba: Boolean(repartidor.es_prueba),
+    siniestro_completo: siniestroCompleto(repartidor),
     paradas: n,
     max_paradas: MAX_PARADAS_DIA,
     saturado: n >= MAX_PARADAS_DIA,
@@ -449,6 +490,8 @@ module.exports = {
   appendNota,
   transition,
   reassignCheck,
+  siniestroCompleto,
+  puedeAsignarConSiniestro,
   stamp,
   phoneOf,
   isOpenSolicitud,
