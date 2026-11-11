@@ -32,7 +32,7 @@ function rejectUpload(req, res) {
     res.status(400).json({ success: false, message: req.fileValidationError });
     return true;
   }
-  for (const field of ['licencia_foto', 'consentimiento_archivo', 'ine_archivo']) {
+  for (const field of ['licencia_foto', 'consentimiento_archivo', 'ine_archivo', 'poliza_seguro_archivo']) {
     const list = req.files?.[field];
     if (list && list.length && !list[0]?.filename) {
       res.status(400).json({ success: false, message: 'Error al subir el archivo' });
@@ -136,44 +136,74 @@ class RepartidorController {
     try {
       const { id } = req.params;
 
-      const repartidor = await Repartidor.findByPk(id, {
-        where: { baja_logica: false },
-        attributes: {
-          exclude: ['contrasena']
-        },
-        include: [
-          {
-            model: City,
-            as: 'ciudad',
-            attributes: ['id', 'nombre', 'departamento']
-          },
-          {
-            model: User,
-            as: 'usuario',
-            attributes: ['id', 'nombre_completo', 'correo_electronico'],
-            required: false
-          },
-          {
-            model: Ruta,
-            as: 'rutas',
-            attributes: ['id', 'nombre_ruta', 'fecha_ruta', 'estado'],
-            limit: 5,
-            order: [['fecha_ruta', 'DESC']],
-            required: false
+      const [repartidor, rutas] = await Promise.all([
+        Repartidor.findByPk(id, {
+          attributes: { exclude: ['contrasena'] },
+          include: [
+            {
+              model: City,
+              as: 'ciudad',
+              attributes: ['id', 'nombre', 'departamento']
+            },
+            {
+              model: User,
+              as: 'usuario',
+              attributes: ['id', 'nombre_completo', 'correo_electronico'],
+              required: false
+            }
+          ]
+        }),
+        (async () => {
+          const cabeceras = await Ruta.findAll({
+            where: { fkid_repartidor: id, baja_logica: false },
+            attributes: ['id', 'nombre_ruta', 'fecha_ruta', 'estado', 'franja', 'distancia_estimada'],
+            order: [['fecha_ruta', 'DESC'], ['id', 'DESC']],
+            limit: 5
+          });
+          const ids = cabeceras.map((row) => row.id);
+          if (!ids.length) return [];
+          const paradas = await RutaPedido.findAll({
+            where: { fkid_ruta: { [Op.in]: ids } },
+            include: [{
+              model: Pedido,
+              as: 'pedido',
+              required: false,
+              attributes: ['id', 'numero_pedido', 'direccion_entrega', 'estado'],
+              include: [{
+                model: Cliente,
+                as: 'cliente',
+                attributes: ['nombre_completo'],
+                required: false
+              }]
+            }],
+            order: [['orden_entrega', 'ASC']]
+          });
+          const porRuta = {};
+          for (const parada of paradas) {
+            const json = parada.toJSON();
+            if (!porRuta[json.fkid_ruta]) porRuta[json.fkid_ruta] = [];
+            porRuta[json.fkid_ruta].push(json);
           }
-        ]
-      });
+          return cabeceras.map((ruta) => ({
+            ...ruta.toJSON(),
+            pedidos: porRuta[ruta.id] || []
+          }));
+        })()
+      ]);
 
-      if (!repartidor) {
+      if (!repartidor || repartidor.baja_logica) {
         return res.status(404).json({
           success: false,
           message: 'Repartidor no encontrado'
         });
       }
 
+      const metricas = await fetchMetricas(Repartidor.sequelize, [repartidor.id]);
+      const data = aplicarMetricas([repartidor], metricas)[0];
+      data.rutas = rutas;
       res.json({
         success: true,
-        data: repartidor
+        data
       });
     } catch (error) {
       next(error);
@@ -252,6 +282,7 @@ class RepartidorController {
         consentimiento_at: emptyToNull(consentimiento_at),
         consentimiento_archivo: archivoDe(req.files, 'consentimiento_archivo'),
         ine_archivo: archivoDe(req.files, 'ine_archivo'),
+        poliza_seguro_archivo: archivoDe(req.files, 'poliza_seguro_archivo'),
         notas,
         contrasena: hashedPassword,
         es_prueba: esPrueba(es_prueba)
@@ -304,12 +335,15 @@ class RepartidorController {
       delete updateData.licencia_foto;
       delete updateData.consentimiento_archivo;
       delete updateData.ine_archivo;
+      delete updateData.poliza_seguro_archivo;
       const licenciaFoto = archivoDe(req.files, 'licencia_foto');
       if (licenciaFoto) updateData.licencia_foto = licenciaFoto;
       const consentimientoArchivo = archivoDe(req.files, 'consentimiento_archivo');
       if (consentimientoArchivo) updateData.consentimiento_archivo = consentimientoArchivo;
       const ineArchivo = archivoDe(req.files, 'ine_archivo');
       if (ineArchivo) updateData.ine_archivo = ineArchivo;
+      const polizaArchivo = archivoDe(req.files, 'poliza_seguro_archivo');
+      if (polizaArchivo) updateData.poliza_seguro_archivo = polizaArchivo;
 
       if ('es_prueba' in updateData) updateData.es_prueba = esPrueba(updateData.es_prueba);
 
