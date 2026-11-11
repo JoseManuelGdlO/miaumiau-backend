@@ -15,7 +15,7 @@ const COMPROBANTES_DIR = path.join(UPLOADS_BASE, 'comprobantes');
 const QR_DIR = path.join(UPLOADS_BASE, 'qr');
 const REPARTIDORES_DIR = path.join(UPLOADS_BASE, 'repartidores');
 
-const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_MIMES = ['image/jpeg', 'image/jpg', 'image/pjpeg', 'image/png', 'image/gif', 'image/webp'];
 const CONVERSACIONES_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -26,7 +26,7 @@ function ensureDir(dir) {
 }
 
 function extFromMime(mimeType) {
-  if (mimeType === 'image/jpeg') return '.jpg';
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg' || mimeType === 'image/pjpeg') return '.jpg';
   if (mimeType === 'image/png') return '.png';
   if (mimeType === 'image/gif') return '.gif';
   if (mimeType === 'image/webp') return '.webp';
@@ -55,6 +55,18 @@ function getStorage(subdir) {
 }
 
 const REPARTIDORES_MIMES = [...ALLOWED_MIMES, 'application/pdf'];
+const REPARTIDOR_FILE_FIELDS = ['licencia_foto', 'consentimiento_archivo', 'ine_archivo', 'poliza_seguro_archivo'];
+
+function groupRepartidorFiles(files) {
+  const map = {};
+  for (const file of files || []) {
+    const name = file?.fieldname;
+    if (!REPARTIDOR_FILE_FIELDS.includes(name)) continue;
+    if (map[name]) continue;
+    map[name] = [file];
+  }
+  return map;
+}
 
 const fileFilter = (req, file, cb) => {
   if (ALLOWED_MIMES.includes(file.mimetype)) {
@@ -142,6 +154,8 @@ module.exports = {
   uploadComprobantes,
   uploadQr,
   uploadRepartidores,
+  groupRepartidorFiles,
+  REPARTIDOR_FILE_FIELDS,
   repartidoresFileFilter,
   ensureUploadsDirs,
   deleteConversationImage,

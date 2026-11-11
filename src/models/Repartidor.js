@@ -229,6 +229,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING(255),
       allowNull: true
     },
+    poliza_seguro_archivo: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
     notas: {
       type: DataTypes.TEXT,
       allowNull: true

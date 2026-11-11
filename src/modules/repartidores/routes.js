@@ -6,22 +6,19 @@ const { authenticateRepartidor } = require('../../middleware/repartidorAuth');
 const { requireSuperAdminOrPermission } = require('../../middleware/permissions');
 const { body, param, query } = require('express-validator');
 const { handleValidationErrors } = require('../../utils/validation');
-const { uploadRepartidores } = require('../../utils/uploadImages');
+const { uploadRepartidores, groupRepartidorFiles } = require('../../utils/uploadImages');
 
 function maybeUploadSiniestro(req, res, next) {
   const type = String(req.headers['content-type'] || '');
   if (!type.includes('multipart/form-data')) return next();
-  uploadRepartidores.fields([
-    { name: 'licencia_foto', maxCount: 1 },
-    { name: 'consentimiento_archivo', maxCount: 1 },
-    { name: 'ine_archivo', maxCount: 1 }
-  ])(req, res, (err) => {
+  uploadRepartidores.any()(req, res, (err) => {
     if (err) {
       return res.status(400).json({
         success: false,
         message: err.code === 'LIMIT_FILE_SIZE' ? 'El archivo no debe superar 5 MB' : (err.message || 'Error al subir el archivo')
       });
     }
+    req.files = groupRepartidorFiles(req.files);
     if (req.fileValidationError) {
       return res.status(400).json({ success: false, message: req.fileValidationError });
     }
