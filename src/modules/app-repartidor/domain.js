@@ -112,14 +112,23 @@ function precioNoNulo(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function nombreCarga(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function fkidProducto(value) {
+  if (value == null || value === '') return null;
+  const id = Number(value);
+  return Number.isNaN(id) ? null : id;
+}
+
 function agruparCarga(lineas) {
   const groups = new Map();
   for (const line of lineas || []) {
-    const rawId = line.fkid_producto;
-    const id = rawId == null || rawId === '' ? null : Number(rawId);
-    const fkid = id == null || Number.isNaN(id) ? null : id;
-    const nombre = String(line.nombre || '');
-    const key = fkid == null ? `nombre:${nombre}` : `id:${fkid}`;
+    const fkid = fkidProducto(line.fkid_producto);
+    const nombre = nombreCarga(line.nombre);
+    const key = nombre ? `nombre:${nombre.toLowerCase()}` : (fkid == null ? '' : `id:${fkid}`);
+    if (!key) continue;
     const cantidad = Number(line.cantidad) || 0;
     const precio = precioNoNulo(line.precio_unitario);
     const existing = groups.get(key);
@@ -130,17 +139,87 @@ function agruparCarga(lineas) {
         cantidad,
         precio_unitario: precio,
         es_extra: false,
+        ...(line.id != null ? { id: line.id } : {}),
       });
       continue;
     }
     existing.cantidad += cantidad;
     if (existing.precio_unitario == null && precio != null) existing.precio_unitario = precio;
     if (!existing.nombre && nombre) existing.nombre = nombre;
+    if (existing.fkid_producto == null && fkid != null) existing.fkid_producto = fkid;
   }
   return [...groups.values()].map((row) => ({
     ...row,
     precio_unitario: row.precio_unitario == null ? 0 : row.precio_unitario,
   }));
+}
+
+function agruparCargasLeidas(lineas) {
+  const pedidos = [];
+  const extras = [];
+  for (const line of lineas || []) {
+    (line && line.es_extra ? extras : pedidos).push(line);
+  }
+  return [
+    ...agruparCarga(pedidos),
+    ...agruparCarga(extras).map((row) => ({ ...row, es_extra: true })),
+  ];
+}
+
+function lineasDeProductos(rows) {
+  const raw = [];
+  for (const prod of rows || []) {
+    if (prod && prod.baja_logica) continue;
+    const nombre = nombreCarga(prod?.producto?.nombre || prod?.nombre);
+    const fkid = fkidProducto(prod?.fkid_producto ?? prod?.producto?.id);
+    if (!nombre && fkid == null) continue;
+    raw.push({
+      fkid_producto: fkid,
+      nombre,
+      cantidad: Number(prod.cantidad) || 0,
+      precio_unitario: prod.precio_unidad != null
+        ? Number(prod.precio_unidad)
+        : Number(prod.producto?.precio_venta) || 0,
+    });
+  }
+  return agruparCarga(raw).map((row) => ({
+    fkid_producto: row.fkid_producto,
+    nombre: row.nombre,
+    cantidad: row.cantidad,
+    precio_unidad: row.precio_unitario,
+  }));
+}
+
+function restarLineas(base, quitar) {
+  const map = new Map(base.map((row) => [String(row.nombre || '').toLowerCase(), { ...row }]));
+  for (const row of quitar || []) {
+    const key = String(row.nombre || '').toLowerCase();
+    const existing = map.get(key);
+    if (!existing) continue;
+    existing.cantidad -= Number(row.cantidad) || 0;
+    if (existing.cantidad <= 0) map.delete(key);
+  }
+  return [...map.values()];
+}
+
+function desglosePedido(pedido) {
+  const extra = String(pedido?.numero_pedido || '').startsWith('EXTRA-');
+  const paquetes = [];
+  for (const pp of pedido?.paquetes || []) {
+    const factor = Number(pp.cantidad) || 0;
+    const nombre = nombreCarga(pp.paquete?.nombre);
+    const productos = lineasDeProductos((pp.paquete?.productos || []).map((item) => ({
+      ...item,
+      cantidad: (Number(item.cantidad) || 0) * factor,
+    })));
+    if (!nombre && !productos.length) continue;
+    paquetes.push({ nombre, cantidad: factor, productos });
+  }
+  const sueltos = lineasDeProductos(pedido?.productos);
+  return {
+    sueltos: extra ? restarLineas(sueltos, paquetes.flatMap((pack) => pack.productos)) : sueltos,
+    paquetes,
+  };
 }
 
 const AYUDA_CODIGO_MS = 15 * 60 * 1000;
@@ -189,6 +268,8 @@ module.exports = {
   stripPhone,
   dayKey,
   agruparCarga,
+  agruparCargasLeidas,
+  desglosePedido,
   ayudaCodigoVencida,
   avisaReagendo,
   urlFoto,

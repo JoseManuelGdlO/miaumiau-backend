@@ -15,6 +15,8 @@ const {
   stripPhone,
   dayKey,
   agruparCarga,
+  agruparCargasLeidas,
+  desglosePedido,
   avisaReagendo,
   urlFoto,
   META_DIARIA,
@@ -92,6 +94,7 @@ function toPedidoDto(pedido, rutaPedido) {
     rest.pagado = true;
     rest.comprobante_url = comprobantePublicPath(cobro.comprobante_path);
   }
+  rest.desglose = desglosePedido(raw);
   return rest;
 }
 
@@ -264,19 +267,18 @@ function resumenDesdeRutas(rutas) {
     for (const rp of ruta.pedidos || []) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
-      const productos = [];
-      for (const prod of pedido.productos || []) {
-        if (prod.baja_logica) continue;
-        const nombre = prod.producto?.nombre || prod.nombre;
-        if (!nombre) continue;
-        productos.push({ nombre, cantidad: Number(prod.cantidad) || 0 });
-      }
+      const { sueltos, paquetes } = desglosePedido(pedido);
       pedidos.push({
         id: pedido.id ?? null,
         numero_pedido: pedido.numero_pedido || (pedido.id != null ? String(pedido.id) : ''),
         cliente: pedido.cliente?.nombre_completo || '',
         direccion: pedido.direccion_entrega || '',
-        productos,
+        productos: sueltos.map((linea) => ({ nombre: linea.nombre, cantidad: linea.cantidad })),
+        paquetes: paquetes.map((pack) => ({
+          nombre: pack.nombre,
+          cantidad: pack.cantidad,
+          productos: pack.productos.map((linea) => ({ nombre: linea.nombre, cantidad: linea.cantidad })),
+        })),
       });
     }
   }
@@ -308,6 +310,7 @@ async function resumenPedidosDelDia(deps = {}) {
             required: false,
             include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'] }],
           },
+          paquetesPedidoInclude(db),
         ],
       }],
     }],
@@ -535,7 +538,7 @@ async function obtenerJornada(deps = {}) {
       estado: 'borrador',
       dinero_esperado: dineroConExtras(calculo.dinero_esperado, extras),
       validado_por_nombre: null,
-      cargas: [...calculo.lineas, ...extras],
+      cargas: agruparCargasLeidas([...calculo.lineas, ...extras]),
       pedidos,
     };
     if (!jornada) return base;
@@ -567,7 +570,7 @@ async function obtenerJornada(deps = {}) {
     cerrada_en: raw.cerrada_en,
     dinero_esperado: raw.dinero_esperado == null ? 0 : Number(raw.dinero_esperado),
     validado_por_nombre: raw.validado_por_nombre || null,
-    cargas: (raw.cargas || []).map(cargaDto),
+    cargas: agruparCargasLeidas((raw.cargas || []).map(cargaDto)),
     pedidos,
   };
 }
@@ -629,6 +632,24 @@ async function agregarExtra(deps = {}) {
   return obtenerJornada({ ...deps, jornada });
 }
 
+function paquetesPedidoInclude(db) {
+  return {
+    model: db.PaquetePedido,
+    as: 'paquetes',
+    required: false,
+    include: [{
+      model: db.Paquete,
+      as: 'paquete',
+      attributes: ['id', 'nombre'],
+      include: [{
+        model: db.ProductoPaquete,
+        as: 'productos',
+        include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre', 'precio_venta'] }],
+      }],
+    }],
+  };
+}
+
 function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
   const clienteAttributes = ['id', 'nombre_completo', 'lat', 'lng', 'direccion_geo', 'direccion_entrega'];
   if (withPhone) clienteAttributes.push('telefono');
@@ -646,6 +667,7 @@ function pedidoInclude(db, { withCode = false, withPhone = false } = {}) {
         where: { baja_logica: false },
         include: [{ model: db.Inventario, as: 'producto', attributes: ['id', 'nombre'] }],
       },
+      paquetesPedidoInclude(db),
       ...(db.CobroEntrega ? [{
         model: db.CobroEntrega,
         as: 'cobro_entrega',

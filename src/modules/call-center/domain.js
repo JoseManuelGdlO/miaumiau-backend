@@ -1,4 +1,4 @@
-const { dayKey } = require('../app-repartidor/domain');
+const { agruparCargasLeidas, dayKey } = require('../app-repartidor/domain');
 const { MAX_PARADAS_DIA } = require('../rutas/cupo');
 
 const NOTE_LIMIT = 1000;
@@ -252,14 +252,14 @@ function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPe
       ...base,
       dinero_esperado: dineroEsperado == null || dineroEsperado === '' ? 0 : Number(dineroEsperado),
       espera_reenvio: Boolean(datos.espera_reenvio),
-      cargas: (cargas || []).map((c) => ({
+      cargas: agruparCargasLeidas((cargas || []).map((c) => ({
         id: c.id ?? null,
         fkid_producto: c.fkid_producto ?? null,
         nombre: c.nombre,
         cantidad: c.cantidad,
         precio_unitario: c.precio_unitario,
         es_extra: Boolean(c.es_extra),
-      })),
+      }))),
     };
   }
   if (datos.tipo === 'cierre_dia') {

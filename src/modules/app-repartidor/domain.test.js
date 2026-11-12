@@ -12,6 +12,8 @@ const {
   stripPhone,
   dayKey,
   agruparCarga,
+  agruparCargasLeidas,
+  desglosePedido,
   ayudaCodigoVencida,
   avisaReagendo,
   urlFoto,
@@ -137,6 +139,91 @@ describe('domain app-repartidor', () => {
     ])).toEqual([
       { fkid_producto: null, nombre: 'Regalo', cantidad: 3, precio_unitario: 0, es_extra: false },
     ]);
+  });
+
+  test('agruparCarga junta el mismo nombre con distinto id', () => {
+    expect(agruparCarga([
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 5, precio_unitario: 10 },
+      { fkid_producto: 11, nombre: 'perlas aromáticas', cantidad: 1, precio_unitario: 20 },
+      { fkid_producto: 9, nombre: 'Costal de 20 kg', cantidad: 1, precio_unitario: 10 },
+    ])).toEqual([
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 6, precio_unitario: 10, es_extra: false },
+      { fkid_producto: 11, nombre: 'perlas aromáticas', cantidad: 1, precio_unitario: 20, es_extra: false },
+    ]);
+  });
+
+  test('agruparCarga agrupa por id si no hay nombre', () => {
+    expect(agruparCarga([
+      { fkid_producto: 4, nombre: '', cantidad: 1, precio_unitario: 10 },
+      { fkid_producto: 4, cantidad: 2, precio_unitario: 10 },
+    ])).toEqual([
+      { fkid_producto: 4, nombre: '', cantidad: 3, precio_unitario: 10, es_extra: false },
+    ]);
+  });
+
+  test('agruparCargasLeidas no mezcla extras con la carga de pedidos', () => {
+    expect(agruparCargasLeidas([
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 5, precio_unitario: 10, es_extra: false },
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 1, precio_unitario: 10, es_extra: true },
+      { fkid_producto: 9, nombre: 'Costal de 20 kg', cantidad: 1, precio_unitario: 10, es_extra: false },
+    ])).toEqual([
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 6, precio_unitario: 10, es_extra: false },
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 1, precio_unitario: 10, es_extra: true },
+    ]);
+  });
+
+  test('desglosePedido junta sueltos y marca las piezas del paquete', () => {
+    expect(desglosePedido({
+      productos: [
+        { fkid_producto: 4, cantidad: 5, precio_unidad: 10, producto: { id: 4, nombre: 'Costal de 20 kg' } },
+        { fkid_producto: 4, cantidad: 1, precio_unidad: 10, producto: { id: 4, nombre: 'Costal de 20 kg' } },
+      ],
+      paquetes: [{
+        cantidad: 1,
+        paquete: {
+          nombre: 'Kit arena',
+          productos: [{
+            fkid_producto: 4,
+            cantidad: 1,
+            producto: { id: 4, nombre: 'Costal de 20 kg', precio_venta: 10 },
+          }],
+        },
+      }],
+    })).toEqual({
+      sueltos: [{ fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 6, precio_unidad: 10 }],
+      paquetes: [{
+        nombre: 'Kit arena',
+        cantidad: 1,
+        productos: [{ fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 1, precio_unidad: 10 }],
+      }],
+    });
+  });
+
+  test('desglosePedido de EXTRA no duplica las piezas del paquete', () => {
+    expect(desglosePedido({
+      numero_pedido: 'EXTRA-1',
+      productos: [
+        { fkid_producto: 4, cantidad: 2, precio_unidad: 10, producto: { id: 4, nombre: 'Costal de 20 kg' } },
+      ],
+      paquetes: [{
+        cantidad: 1,
+        paquete: {
+          nombre: 'Kit arena',
+          productos: [{
+            fkid_producto: 4,
+            cantidad: 2,
+            producto: { id: 4, nombre: 'Costal de 20 kg', precio_venta: 10 },
+          }],
+        },
+      }],
+    })).toEqual({
+      sueltos: [],
+      paquetes: [{
+        nombre: 'Kit arena',
+        cantidad: 1,
+        productos: [{ fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 2, precio_unidad: 10 }],
+      }],
+    });
   });
 
   test('la foto del repartidor es una ruta publica del archivo', () => {
