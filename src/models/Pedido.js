@@ -135,6 +135,10 @@ module.exports = (sequelize, DataTypes) => {
         len: [0, 1000]
       }
     },
+    incidencia: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     codigo_promocion: {
       type: DataTypes.STRING(50),
       allowNull: true,

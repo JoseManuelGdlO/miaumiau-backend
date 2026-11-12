@@ -14,6 +14,8 @@ const {
   reassignCheck,
   puedeAsignarConSiniestro,
   isOpenSolicitud,
+  alertaIncidencia,
+  INCIDENCIAS_DESDE,
   sigueHoy,
   esDeHoy,
   isValidatedCheckIn,
@@ -157,6 +159,9 @@ function openSolicitudWhere() {
       ),
       literal(
         "(JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.estado_solicitud')) <> 'cancelada')"
+      ),
+      literal(
+        "(JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.archivada')) IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.archivada')) <> 'true')"
       ),
     ],
   };
@@ -607,18 +612,95 @@ async function listarSolicitudes(deps = {}) {
   const open = rows.filter((row) => isOpenSolicitud(row) && sigueHoy(row, hoy));
   const result = [];
   for (const row of open) {
-    const datos = row.datos || {};
-    const repartidor = datos.repartidor_id
-      ? await db.Repartidor.findByPk(datos.repartidor_id, { attributes: ['id', 'nombre_completo'] })
-      : null;
-    let numero = null;
-    if (datos.pedido_id) {
-      const pedido = await db.Pedido.findByPk(datos.pedido_id, { attributes: ['numero_pedido'] });
-      numero = pedido?.numero_pedido || null;
-    }
-    result.push({ ...toSolicitudResumen(row, repartidor, numero), de_hoy: esDeHoy(row, hoy) });
+    result.push(await toSolicitudLista(db, row, hoy));
   }
   return result;
+}
+
+async function toSolicitudLista(db, row, hoy) {
+  const datos = row.datos || {};
+  const repartidor = datos.repartidor_id
+    ? await db.Repartidor.findByPk(datos.repartidor_id, { attributes: ['id', 'nombre_completo'] })
+    : null;
+  let pedido = null;
+  if (datos.pedido_id && typeof db.Pedido?.findByPk === 'function') {
+    pedido = await db.Pedido.findByPk(datos.pedido_id, {
+      attributes: ['numero_pedido', 'telefono_referencia', 'direccion_entrega'],
+      include: db.Pedido.associations?.cliente
+        ? [{ association: 'cliente', attributes: ['nombre_completo', 'telefono'], required: false }]
+        : [],
+    });
+  }
+  const numero = pedido?.numero_pedido || null;
+  const dto = toSolicitudResumen(row, repartidor, numero);
+  if (pedido) {
+    dto.cliente = pedido.cliente?.nombre_completo || null;
+    dto.telefono = phoneOf(pedido) || null;
+    dto.direccion = pedido.direccion_entrega || null;
+  }
+  dto.de_hoy = esDeHoy(row, hoy);
+  dto.alerta = alertaIncidencia(row, hoy);
+  dto.archivada = Boolean(datos.archivada);
+  dto.solucionada = Boolean(datos.solucionada);
+  return dto;
+}
+
+async function archivarSolicitud(deps = {}) {
+  const db = getModels(deps);
+  const notificacion = deps.notificacion || await db.Notificacion.findByPk(deps.notificacionId);
+  if (!notificacion) fail(404, 'Solicitud no encontrada');
+  const datos = { ...(notificacion.datos || {}) };
+  if (datos.tipo !== 'soporte' && datos.tipo !== 'llamada_cliente') {
+    fail(422, 'Esa solicitud no se puede archivar');
+  }
+  const solucionada = deps.accion === 'solucionar';
+  if (datos.archivada === true && Boolean(datos.solucionada) === solucionada) {
+    return { archivada: true, solucionada };
+  }
+  await notificacion.update({
+    datos: { ...datos, archivada: true, ...(solucionada ? { solucionada: true } : {}) },
+  });
+  return { archivada: true, solucionada };
+}
+
+async function cerrarIncidenciaPedido(deps = {}) {
+  const db = getModels(deps);
+  const pedido = deps.pedido || await db.Pedido.findByPk(deps.pedidoId);
+  if (!pedido || pedido.baja_logica) fail(404, 'Pedido no encontrado');
+  const accion = deps.accion === 'solucionar' ? 'solucionada' : 'archivada';
+  await pedido.update({ incidencia: accion });
+  return { incidencia: accion };
+}
+
+async function listarIncidenciasArchivadas(deps = {}) {
+  const db = getModels(deps);
+  const rows = deps.rows || await db.Notificacion.findAll({
+    where: {
+      [Op.and]: [
+        literal("JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.tipo')) IN ('soporte', 'llamada_cliente')"),
+        literal("JSON_UNQUOTE(JSON_EXTRACT(`datos`, '$.archivada')) = 'true'"),
+      ],
+    },
+    order: [['id', 'DESC']],
+    limit: 50,
+  });
+  const hoy = deps.fecha || await fechaDeHoy(deps);
+  const solicitudes = [];
+  for (const row of rows) {
+    solicitudes.push(await toSolicitudLista(db, row, hoy));
+  }
+  let pedidos = [];
+  if (typeof db.Pedido?.findAll === 'function') {
+    const cerrados = await db.Pedido.findAll({
+      where: { incidencia: { [Op.in]: ['archivada', 'solucionada'] }, baja_logica: false },
+      attributes: { exclude: ['codigo_entrega'] },
+      include: [{ association: 'cliente', required: false }],
+      order: [['updated_at', 'DESC']],
+      limit: 50,
+    });
+    pedidos = cerrados.map((pedido) => toPedidoDia({ pedido, rutaPedido: {}, ruta: {} }));
+  }
+  return { solicitudes, pedidos };
 }
 
 async function listarCargasValidadas(deps = {}) {
@@ -808,6 +890,11 @@ async function listarPedidos(deps = {}) {
     where: {
       baja_logica: false,
       estado: 'no_entregado',
+      incidencia: null,
+      [Op.or]: [
+        { fecha_entrega_real: { [Op.gte]: INCIDENCIAS_DESDE } },
+        { fecha_pedido: { [Op.gte]: INCIDENCIAS_DESDE } },
+      ],
       ...(deps.ciudadId ? { fkid_ciudad: deps.ciudadId } : {}),
     },
     attributes: { exclude: ['codigo_entrega'] },
@@ -1544,6 +1631,9 @@ module.exports = {
   cambiarEstado,
   reasignar,
   listarSolicitudes,
+  archivarSolicitud,
+  cerrarIncidenciaPedido,
+  listarIncidenciasArchivadas,
   listarCargasValidadas,
   detalleSolicitud,
   listarPedidos,

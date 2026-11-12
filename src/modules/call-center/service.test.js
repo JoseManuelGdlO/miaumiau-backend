@@ -1,4 +1,4 @@
-const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad, corteDeRepartidor } = require('./service');
+const { aprobar, atender, guardarExtras, buscarInventario, cambiarEstado, reasignar, listarSolicitudes, archivarSolicitud, cerrarIncidenciaPedido, listarIncidenciasArchivadas, listarCargasValidadas, detalleSolicitud, listarPedidos, listarRepartidores, listarComprobantes, subirComprobante, listarDepositos, asignarActividad, corteDeRepartidor } = require('./service');
 
 const siniestroOk = {
   licencia_vigencia: '2027-01-01',
@@ -488,6 +488,69 @@ test('la lista deja fuera lo leído y arma el detalle sin código', async () => 
   expect(detail.dinero_esperado).toBe(40);
   expect(detail.codigo_entrega).toBeUndefined();
   expect(detail.ya_validada).toBe(false);
+});
+
+test('archivar saca la incidencia de la cola y la deja en archivadas', async () => {
+  const datos = { tipo: 'soporte', estado_solicitud: 'abierta', repartidor_id: 3, motivo: 'incidencia', nota: 'Se cayó un costal' };
+  const row = {
+    id: 11,
+    leida: false,
+    prioridad: 'media',
+    fecha_creacion: '2026-11-12',
+    hora_creacion: '10:00:00',
+    datos,
+    update: async (patch) => Object.assign(row, patch),
+  };
+  const models = {
+    Repartidor: { findByPk: async () => ({ id: 3, nombre_completo: 'Luis' }) },
+    Pedido: { findByPk: async () => null },
+  };
+  expect((await listarSolicitudes({ models, fecha: '2026-11-12', rows: [row] })).map((item) => item.id)).toEqual([11]);
+  await archivarSolicitud({ notificacion: row });
+  expect(row.datos.archivada).toBe(true);
+  expect(await listarSolicitudes({ models, fecha: '2026-11-12', rows: [row] })).toEqual([]);
+  const archivadas = await listarIncidenciasArchivadas({ models, fecha: '2026-11-12', rows: [row] });
+  expect(archivadas.solicitudes).toEqual([expect.objectContaining({ id: 11, archivada: true, nota: 'Se cayó un costal' })]);
+  expect(archivadas.pedidos).toEqual([]);
+});
+
+test('solucionar marca la incidencia y un pedido viejo no entra a la cola', async () => {
+  const datos = { tipo: 'soporte', estado_solicitud: 'abierta', motivo: 'incidencia' };
+  const row = {
+    id: 12,
+    leida: false,
+    datos,
+    update: async (patch) => Object.assign(row, patch),
+  };
+  await archivarSolicitud({ notificacion: row, accion: 'solucionar' });
+  expect(row.datos).toMatchObject({ archivada: true, solucionada: true });
+
+  const pedido = {
+    id: 80,
+    baja_logica: false,
+    update: async (patch) => Object.assign(pedido, patch),
+  };
+  expect(await cerrarIncidenciaPedido({ pedido, accion: 'solucionar' })).toEqual({ incidencia: 'solucionada' });
+  expect(pedido.incidencia).toBe('solucionada');
+
+  let filtro;
+  const rows = await listarPedidos({
+    now: new Date('2026-11-12T18:00:00Z'),
+    models: {
+      City: { findByPk: async () => ({ timezone: 'America/Mexico_City' }) },
+      RutaPedido: { findAll: async () => [] },
+      Pedido: {
+        findAll: async (query) => {
+          filtro = query.where;
+          return [];
+        },
+      },
+    },
+  });
+  expect(rows).toEqual([]);
+  expect(filtro.estado).toBe('no_entregado');
+  expect(filtro.incidencia).toBe(null);
+  expect(filtro[require('sequelize').Op.or][0].fecha_entrega_real[require('sequelize').Op.gte]).toBe('2026-11-12');
 });
 
 test('el detalle de un check-in ya aprobado no responde como si no existiera', async () => {

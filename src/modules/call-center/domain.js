@@ -149,7 +149,25 @@ function fechaIncidencia({ pedido, rutaPedido, ruta }) {
 
 function isOpenSolicitud(row) {
   const datos = row?.datos || {};
-  return !row?.leida && TIPOS.includes(datos.tipo) && datos.estado_solicitud !== 'cancelada' && datos.estado_solicitud !== 'atendida';
+  return !row?.leida
+    && datos.archivada !== true
+    && TIPOS.includes(datos.tipo)
+    && datos.estado_solicitud !== 'cancelada'
+    && datos.estado_solicitud !== 'atendida';
+}
+
+const ALERTA_INCIDENCIA_DIAS = 5;
+const INCIDENCIAS_DESDE = '2026-11-12';
+
+function alertaIncidencia(row, hoy) {
+  const dia = diaDeFila(row);
+  const hoyDia = diaDe(hoy);
+  if (!dia || !hoyDia) return false;
+  const start = Date.parse(`${dia}T00:00:00.000Z`);
+  const today = Date.parse(`${hoyDia}T00:00:00.000Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(today)) return false;
+  const days = Math.round((today - start) / 86400000);
+  return days >= 0 && days < ALERTA_INCIDENCIA_DIAS;
 }
 
 function diaDeFila(row) {
@@ -240,6 +258,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
     ...(datos.nota ? { nota: datos.nota } : {}),
     ...(datos.llamada_atendida ? { llamada_atendida: true } : {}),
     ...(datos.fecha_propuesta ? { fecha_propuesta: datos.fecha_propuesta } : {}),
+    ...(notificacion.descripcion ? { descripcion: notificacion.descripcion } : {}),
     prioridad: notificacion.prioridad,
   };
 }
@@ -375,6 +394,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     fecha_propuesta: pedido.fecha_propuesta || null,
     fecha_ruta: ruta?.fecha_ruta ? String(ruta.fecha_ruta).slice(0, 10) : null,
     fecha_incidencia: fechaIncidencia({ pedido, rutaPedido, ruta }),
+    incidencia: pedido.incidencia || null,
     calificacion_servicio: estrella(pedido.notas, 'Calificación del servicio'),
     calificacion_cliente: estrella(pedido.notas, 'Calificación al cliente'),
     estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
@@ -495,6 +515,9 @@ module.exports = {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  alertaIncidencia,
+  ALERTA_INCIDENCIA_DIAS,
+  INCIDENCIAS_DESDE,
   sigueHoy,
   esDeHoy,
   isValidatedCheckIn,
