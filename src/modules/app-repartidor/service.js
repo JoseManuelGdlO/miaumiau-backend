@@ -35,6 +35,7 @@ const { soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
 const { mapaMetricas, fetchMetricas } = require('../repartidores/metricas');
 const { repartoBloqueado } = require('./deposito-pendiente');
+const { geocodePedido, puntoDe } = require('../maps/google');
 
 const log = new Logger('AppRepartidor');
 const PACKAGE_CODE_TEMPLATE_NAME = 'codigo_paquete';
@@ -260,6 +261,52 @@ async function calcularCargaDelDia(deps = {}) {
   return resumirRutas(rutas);
 }
 
+function esCentroCiudad(punto) {
+  return Boolean(punto)
+    && Math.abs(punto.lat - 24.0277) < 0.0003
+    && Math.abs(punto.lng + 104.6532) < 0.0003;
+}
+
+function polylineDelDia(rutas) {
+  for (const ruta of rutas || []) {
+    if (ruta.estado === 'cancelada') continue;
+    if (ruta.polyline_encoded) return ruta.polyline_encoded;
+  }
+  return null;
+}
+
+async function asegurarCoordsRuta(rutas, deps = {}) {
+  for (const ruta of rutas || []) {
+    if (ruta.estado === 'cancelada') continue;
+    for (const rp of ruta.pedidos || []) {
+      const pedido = rp.pedido;
+      if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
+      const actual = puntoDe(rp) || puntoDe(pedido.cliente);
+      if (actual && !esCentroCiudad(actual)) {
+        if (!puntoDe(rp)) {
+          rp.lat = actual.lat;
+          rp.lng = actual.lng;
+        }
+        continue;
+      }
+      const coords = await geocodePedido(pedido, {
+        ...deps,
+        skipCache: !actual || esCentroCiudad(actual),
+      });
+      if (!coords) continue;
+      rp.lat = coords.lat;
+      rp.lng = coords.lng;
+      if (typeof rp.update === 'function') {
+        try {
+          await rp.update({ lat: coords.lat, lng: coords.lng });
+        } catch (error) {
+          log.warn('No se guardaron coords de parada', { message: error.message });
+        }
+      }
+    }
+  }
+}
+
 function resumenDesdeRutas(rutas) {
   const pedidos = [];
   for (const ruta of rutas || []) {
@@ -268,8 +315,11 @@ function resumenDesdeRutas(rutas) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
       const { sueltos, paquetes } = desglosePedido(pedido);
-      const lat = rp.lat == null ? null : Number(rp.lat);
-      const lng = rp.lng == null ? null : Number(rp.lng);
+      const fuente = Number.isFinite(Number(rp.lat)) && Number(rp.lat) !== 0 && Number.isFinite(Number(rp.lng)) && Number(rp.lng) !== 0
+        ? rp
+        : pedido.cliente;
+      const lat = fuente?.lat == null ? null : Number(fuente.lat);
+      const lng = fuente?.lng == null ? null : Number(fuente.lng);
       pedidos.push({
         id: pedido.id ?? null,
         numero_pedido: pedido.numero_pedido || (pedido.id != null ? String(pedido.id) : ''),
@@ -292,7 +342,7 @@ function resumenDesdeRutas(rutas) {
 
 async function resumenPedidosDelDia(deps = {}) {
   const db = getModels(deps);
-  if (typeof db.Ruta?.findAll !== 'function') return [];
+  if (typeof db.Ruta?.findAll !== 'function') return { pedidos: [], polyline_encoded: null };
   const rutas = await db.Ruta.findAll({
     where: {
       fkid_repartidor: deps.repartidorId,
@@ -308,7 +358,7 @@ async function resumenPedidosDelDia(deps = {}) {
         as: 'pedido',
         required: false,
         include: [
-          { model: db.Cliente, as: 'cliente', attributes: ['id', 'nombre_completo'], required: false },
+          { model: db.Cliente, as: 'cliente', attributes: ['id', 'nombre_completo', 'lat', 'lng'], required: false },
           {
             model: db.ProductoPedido,
             as: 'productos',
@@ -320,7 +370,11 @@ async function resumenPedidosDelDia(deps = {}) {
       }],
     }],
   });
-  return resumenDesdeRutas(rutas);
+  await asegurarCoordsRuta(rutas, deps);
+  return {
+    pedidos: resumenDesdeRutas(rutas),
+    polyline_encoded: polylineDelDia(rutas),
+  };
 }
 
 async function replaceCarga() {
@@ -535,7 +589,7 @@ async function refrescarCargaEnValidacion(deps = {}) {
 
 async function obtenerJornada(deps = {}) {
   const jornada = await loadJornada(deps, { findOrCreate: false });
-  const pedidos = await resumenPedidosDelDia(deps);
+  const { pedidos, polyline_encoded } = await resumenPedidosDelDia(deps);
   if (!jornada || jornada.estado === 'borrador') {
     const calculo = await calcularCargaDelDia(deps);
     const extras = lineasExtra(jornada).map(cargaDto);
@@ -545,6 +599,7 @@ async function obtenerJornada(deps = {}) {
       validado_por_nombre: null,
       cargas: agruparCargasLeidas([...calculo.lineas, ...extras]),
       pedidos,
+      polyline_encoded,
     };
     if (!jornada) return base;
     const raw = plain(jornada);
@@ -577,6 +632,7 @@ async function obtenerJornada(deps = {}) {
     validado_por_nombre: raw.validado_por_nombre || null,
     cargas: agruparCargasLeidas((raw.cargas || []).map(cargaDto)),
     pedidos,
+    polyline_encoded,
   };
 }
 

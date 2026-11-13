@@ -230,6 +230,102 @@ test('obtenerJornada en borrador recalcula la ruta y conserva el extra', async (
   expect(data.validado_por_nombre).toBeNull();
 });
 
+test('obtenerJornada geocodifica paradas sin pin y manda el trazado', async () => {
+  const parada = {
+    lat: null,
+    lng: null,
+    orden_entrega: 1,
+    update: jest.fn(async (patch) => Object.assign(parada, patch)),
+    pedido: {
+      id: 9,
+      numero_pedido: 'P-9',
+      estado: 'confirmado',
+      direccion_entrega: 'Hidalgo 431, Zona Centro, 34000 Durango',
+      cliente: { nombre_completo: 'Ana' },
+      productos: [],
+      paquetes: [],
+    },
+  };
+  const resolverDireccion = jest.fn(async () => ({
+    lat: 24.024,
+    lng: -104.67,
+    formatted_address: 'Hidalgo 431, Zona Centro, 34000 Durango, Durango, México',
+    aproximado: false,
+  }));
+  const data = await obtenerJornada({
+    jornada: {
+      id: 3,
+      fecha: '2026-10-09',
+      estado: 'borrador',
+      fkid_notificacion: null,
+      cargas: [],
+      efectivo_a_depositar: 0,
+      comprobante_deposito_path: null,
+      cerrada_en: null,
+    },
+    mapsApagada: false,
+    apiKey: 'k',
+    resolver: {
+      resolverDireccion,
+      esDomicilio: () => true,
+      enElEstado: () => true,
+    },
+    models: {
+      Ruta: {
+        findAll: async () => [{
+          estado: 'planificada',
+          polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+          pedidos: [parada],
+        }],
+      },
+    },
+  });
+  expect(data.pedidos).toEqual([
+    expect.objectContaining({ lat: 24.024, lng: -104.67, orden_entrega: 1 }),
+  ]);
+  expect(data.polyline_encoded).toBe('_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+  expect(parada.update).toHaveBeenCalledWith({ lat: 24.024, lng: -104.67 });
+});
+
+test('obtenerJornada usa coords del cliente si la parada no las tiene', async () => {
+  const data = await obtenerJornada({
+    jornada: {
+      id: 3,
+      fecha: '2026-10-09',
+      estado: 'borrador',
+      fkid_notificacion: null,
+      cargas: [],
+      efectivo_a_depositar: 0,
+      comprobante_deposito_path: null,
+      cerrada_en: null,
+    },
+    models: {
+      Ruta: {
+        findAll: async () => [{
+          estado: 'planificada',
+          pedidos: [{
+            lat: null,
+            lng: null,
+            orden_entrega: 1,
+            pedido: {
+              id: 9,
+              numero_pedido: 'P-9',
+              estado: 'confirmado',
+              direccion_entrega: 'Calle 9',
+              cliente: { nombre_completo: 'Ana', lat: 24.05, lng: -104.70 },
+              productos: [],
+              paquetes: [],
+            },
+          }],
+        }],
+      },
+    },
+  });
+  expect(data.pedidos).toEqual([
+    expect.objectContaining({ lat: 24.05, lng: -104.70, orden_entrega: 1 }),
+  ]);
+});
+
 test('obtenerJornada manda coords y orden de cada parada', async () => {
   const data = await obtenerJornada({
     jornada: {
