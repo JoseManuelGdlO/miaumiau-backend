@@ -1,6 +1,6 @@
 const { exigirCupo, idsPedidosDePrueba, MAX_PARADAS_DIA } = require('./cupo');
 
-test('no se agrega la parada 26', async () => {
+test('no se agrega la parada 31', async () => {
   const db = {
     Ruta: {
       findAll: async () => [{ id: 1 }],
@@ -10,11 +10,11 @@ test('no se agrega la parada 26', async () => {
     },
   };
   await expect(exigirCupo(db, { repartidorId: 8, fecha: '2026-10-19', extra: 1 }))
-    .rejects.toMatchObject({ status: 409, message: 'Ese repartidor ya tiene 25 pedidos hoy' });
+    .rejects.toMatchObject({ status: 409, message: 'Ese repartidor ya tiene 30 pedidos hoy' });
   await expect(exigirCupo({
     Ruta: { findAll: async () => [{ id: 1 }] },
-    RutaPedido: { count: async () => 24 },
-  }, { repartidorId: 8, fecha: '2026-10-19' })).resolves.toBe(24);
+    RutaPedido: { count: async () => 29 },
+  }, { repartidorId: 8, fecha: '2026-10-19' })).resolves.toBe(29);
 });
 
 test('un repartidor es_prueba no entra en el conteo de disponibilidad', async () => {

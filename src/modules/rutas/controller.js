@@ -9,13 +9,37 @@ const { franjaDeHorario, idsExcedentesManana } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { getHub } = require('../realtime');
 const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarParadasSiAplica } = require('../app-repartidor/service');
-const { geocodePedido, refrescarPolylineRuta } = require('../maps/google');
+const { geocodePedido, refrescarPolylineRuta, puntoDe } = require('../maps/google');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Rutas');
 
 async function coordsDePedido(pedidoRow) {
   return geocodePedido(pedidoRow);
+}
+
+async function rellenarCoordsParada(rutaPedido, data) {
+  // shortcut: solo geocodifica paradas sin pin y las guarda, para no pegarle a Maps en cada reload
+  const actual = puntoDe({ lat: data.lat, lng: data.lng });
+  if (actual) {
+    data.lat = actual.lat;
+    data.lng = actual.lng;
+    return false;
+  }
+  const coords = puntoDe(data.pedido?.cliente) || await coordsDePedido(rutaPedido.pedido);
+  if (!coords) {
+    data.lat = null;
+    data.lng = null;
+    return false;
+  }
+  data.lat = coords.lat;
+  data.lng = coords.lng;
+  try {
+    await rutaPedido.update({ lat: coords.lat, lng: coords.lng });
+  } catch (error) {
+    log.warn('[RUTAS] No se guardaron coords de parada', { message: error.message });
+  }
+  return true;
 }
 
 async function refrescarFotoDeRuta(repartidorId, fecha) {
@@ -324,9 +348,11 @@ class RutaController {
         log.debug(`[getRutasByDate] Procesando ruta ${ruta.id} con ${ruta.pedidos.length} pedidos`);
         const rutaData = ruta.toJSON();
         const pedidosConDetalles = [];
+        let coordsNuevas = false;
         
         for (const rutaPedido of ruta.pedidos) {
           const rutaPedidoData = rutaPedido.toJSON();
+          if (await rellenarCoordsParada(rutaPedido, rutaPedidoData)) coordsNuevas = true;
           
           if (rutaPedidoData.pedido && rutaPedidoData.pedido.id) {
             // Cargar productos manualmente
@@ -365,6 +391,17 @@ class RutaController {
         }
         
         rutaData.pedidos = pedidosConDetalles;
+        if (coordsNuevas) {
+          try {
+            const rutaConParadas = await Ruta.findByPk(ruta.id, {
+              include: [{ model: RutaPedido, as: 'pedidos' }],
+            });
+            await refrescarPolylineRuta(rutaConParadas);
+            rutaData.polyline_encoded = rutaConParadas?.polyline_encoded || rutaData.polyline_encoded;
+          } catch (polyError) {
+            log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
+          }
+        }
         rutasConDetalles.push(rutaData);
       }
 
@@ -451,7 +488,7 @@ class RutaController {
           {
             model: Cliente,
             as: 'cliente',
-            attributes: ['id', 'nombre_completo', 'telefono', 'email', 'fkid_ciudad'],
+            attributes: ['id', 'nombre_completo', 'telefono', 'email', 'fkid_ciudad', 'lat', 'lng'],
             include: [
               {
                 model: City,
@@ -907,14 +944,6 @@ class RutaController {
         } catch (ordenError) {
           log.warn('[RUTAS] No se pudo ordenar la ruta', { message: ordenError.message });
         }
-        try {
-          const rutaConParadas = await Ruta.findByPk(id, {
-            include: [{ model: RutaPedido, as: 'pedidos' }],
-          });
-          await refrescarPolylineRuta(rutaConParadas);
-        } catch (polyError) {
-          log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
-        }
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
           const pedidoNuevo = Number(rutaPedidos[0].fkid_pedido);
@@ -926,6 +955,17 @@ class RutaController {
           log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
             message: notifyError.message,
           });
+        }
+      }
+
+      if (rutaPedidos.length > 0) {
+        try {
+          const rutaConParadas = await Ruta.findByPk(id, {
+            include: [{ model: RutaPedido, as: 'pedidos' }],
+          });
+          await refrescarPolylineRuta(rutaConParadas);
+        } catch (polyError) {
+          log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
         }
       }
       
@@ -1251,6 +1291,13 @@ class RutaController {
         await pedidosRestantes[i].update({
           orden_entrega: i + 1
         });
+      }
+
+      try {
+        await ruta.reload({ include: [{ model: RutaPedido, as: 'pedidos' }] });
+        await refrescarPolylineRuta(ruta);
+      } catch (polyError) {
+        log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
       }
 
       res.json({

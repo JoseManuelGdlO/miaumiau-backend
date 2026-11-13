@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 
-const MAX_PARADAS_DIA = 25;
-const CUPO_LLENO = 'Ese repartidor ya tiene 25 pedidos hoy';
+const MAX_PARADAS_DIA = 30;
+const CUPO_LLENO = `Ese repartidor ya tiene ${MAX_PARADAS_DIA} pedidos hoy`;
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });

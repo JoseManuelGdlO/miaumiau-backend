@@ -5,6 +5,7 @@ const { mapsApagada } = require('./apagada');
 const log = new Logger('Maps');
 
 const BLOQUEADOS = new Set(['OVER_QUERY_LIMIT', 'REQUEST_DENIED']);
+const AVISO_SIN_UBICAR = 'Esa dirección no se encontró en el mapa de esa ciudad. Comunícate a soporte para confirmarla.';
 
 async function callGeocodeApi(address, apiKey) {
   if (await mapsApagada()) return { status: 'REQUEST_DENIED', results: [] };
@@ -72,33 +73,31 @@ async function resolverDireccion({ address, ciudad, colonia, codigo_postal, esta
   if (codigo_postal) fullAddress += `, ${codigo_postal}`;
 
   const primero = coordsDe(await callGeocodeApi(fullAddress, apiKey));
-  if (primero && isStreetFound(primero.formatted_address, address)) {
+  if (primero && isStreetFound(primero.formatted_address, address) && enElEstado(primero.formatted_address, estado)) {
     return { ...primero, aproximado: false };
   }
-
-  if (colonia || codigo_postal) {
-    const fallbackAddress = [colonia, ciudad, estado, codigo_postal].filter(Boolean).join(', ');
-    const zona = coordsDe(await callGeocodeApi(fallbackAddress, apiKey));
-    if (zona) return { ...zona, aproximado: true };
-  }
-
-  if (primero) return { ...primero, aproximado: true };
-
-  const respaldo = direccionDeRespaldo(ciudad);
-  if (respaldo) {
-    const ciudadHit = coordsDe(await callGeocodeApi(respaldo, apiKey));
-    if (ciudadHit) return { ...ciudadHit, aproximado: true };
-  }
-  return centroDeCiudad(ciudad, estado);
+  return null;
 }
 
 function isStreetFound(formattedAddress, searchedAddress) {
-  const parts = formattedAddress.split(',').map(s => s.trim()).filter(Boolean);
-  if (parts.length <= 3) return false;
-  if (searchedAddress && formattedAddress.toLowerCase().includes(searchedAddress.toLowerCase())) return true;
-  const streetPrefixes = ['c.', 'av.', 'calle', 'blvd', 'boulevard', 'privada', 'priv.', 'prolongación'];
-  const firstPart = parts[0].toLowerCase();
-  return streetPrefixes.some(prefix => firstPart.startsWith(prefix));
+  const parts = String(formattedAddress || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length <= 2) return false;
+  const first = parts[0];
+  if (/^\d{5}(\s|$)/.test(first)) return false;
+  if (parts.length <= 3 && !/\d/.test(first)) return false;
+  const head = first.toLowerCase();
+  const streetPrefixes = ['c.', 'av.', 'calle', 'blvd', 'boulevard', 'privada', 'priv.', 'prolongación', 'prol.', 'andador', 'cerrada', 'calzada'];
+  if (streetPrefixes.some((prefix) => head.startsWith(prefix))) return true;
+  if (/\d/.test(first) && /[a-záéíóúñ]/i.test(first)) return true;
+  if (searchedAddress && formattedAddress.toLowerCase().includes(String(searchedAddress).toLowerCase())) return true;
+  return false;
+}
+
+function esDomicilio(punto, estado) {
+  if (!punto || punto.lat == null || punto.lng == null || punto.aproximado) return false;
+  if (estado && punto.formatted_address && !enElEstado(punto.formatted_address, estado)) return false;
+  if (punto.formatted_address && !isStreetFound(punto.formatted_address, '')) return false;
+  return true;
 }
 
 class MapsController {
@@ -133,19 +132,19 @@ class MapsController {
       if (punto && !enElEstado(punto.formatted_address, estado)) {
         return res.status(422).json({
           success: false,
-          message: `Esa dirección no está en ${estado}`
+          message: estado ? `Esa dirección no está en ${estado}. Comunícate a soporte para confirmarla.` : AVISO_SIN_UBICAR,
         });
       }
-      if (punto) {
+      if (punto && esDomicilio(punto, estado)) {
         return res.json({
           success: true,
           data: punto
         });
       }
 
-      return res.status(404).json({
+      return res.status(422).json({
         success: false,
-        message: 'No se pudo geocodificar la dirección'
+        message: AVISO_SIN_UBICAR,
       });
     } catch (error) {
       log.error('Error geocodificando dirección', { message: error.message, stack: error.stack });
@@ -304,11 +303,8 @@ class MapsController {
           const estado = typeof addressData === 'object' ? addressData.estado : undefined;
 
           const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey);
-          if (punto && !enElEstado(punto.formatted_address, estado)) {
-            return { address: addressKey, success: false, error: `Esa dirección no está en ${estado}` };
-          }
-          if (!punto) {
-            return { address: addressKey, success: false, error: 'ZERO_RESULTS' };
+          if (!esDomicilio(punto, estado)) {
+            return { address: addressKey, success: false, error: AVISO_SIN_UBICAR };
           }
           return {
             address: addressKey,
@@ -345,4 +341,7 @@ module.exports.direccionDeRespaldo = direccionDeRespaldo;
 module.exports.resolverDireccion = resolverDireccion;
 module.exports.enElEstado = enElEstado;
 module.exports.centroDeCiudad = centroDeCiudad;
+module.exports.isStreetFound = isStreetFound;
+module.exports.esDomicilio = esDomicilio;
+module.exports.AVISO_SIN_UBICAR = AVISO_SIN_UBICAR;
 
