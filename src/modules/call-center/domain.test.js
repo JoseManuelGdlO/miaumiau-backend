@@ -10,6 +10,7 @@ const {
   stamp,
   phoneOf,
   isOpenSolicitud,
+  alertaIncidencia,
   sigueHoy,
   esDeHoy,
   isValidatedCheckIn,
@@ -283,7 +284,11 @@ test('solo un super admin autoriza una excepción, un contacto o un cierre direc
 
 test('la cola ignora leídas, canceladas y otros tipos', () => {
   expect(isOpenSolicitud({ leida: false, datos: { tipo: 'soporte', estado_solicitud: 'abierta' } })).toBe(true);
+  expect(isOpenSolicitud({ leida: false, datos: { tipo: 'soporte', estado_solicitud: 'abierta', archivada: true } })).toBe(false);
   expect(isOpenSolicitud({ leida: true, datos: { tipo: 'soporte', estado_solicitud: 'abierta' } })).toBe(false);
+  expect(alertaIncidencia({ fecha_creacion: '2026-10-29', datos: { tipo: 'soporte' } }, '2026-10-29')).toBe(true);
+  expect(alertaIncidencia({ fecha_creacion: '2026-10-25', datos: { tipo: 'soporte' } }, '2026-10-29')).toBe(true);
+  expect(alertaIncidencia({ fecha_creacion: '2026-10-24', datos: { tipo: 'soporte' } }, '2026-10-29')).toBe(false);
   expect(isOpenSolicitud({ leida: false, datos: { tipo: 'check_in', estado_solicitud: 'cancelada' } })).toBe(false);
   expect(isOpenSolicitud({ leida: false, datos: { tipo: 'stock', estado_solicitud: 'abierta' } })).toBe(false);
   const ayer = { leida: false, fecha_creacion: '2026-10-28', datos: { tipo: 'cierre_dia', estado_solicitud: 'abierta' } };

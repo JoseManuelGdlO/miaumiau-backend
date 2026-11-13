@@ -3,7 +3,7 @@ const { getHub } = require('../realtime');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
-const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'cambiarDireccion', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'anotarComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder', 'liberarIntento', 'verCodigo', 'enviarCodigo', 'avisarFalla']);
+const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar', 'liberarCierre', 'cierreDirecto', 'reagendar', 'cambiarFranja', 'cambiarDireccion', 'moverParada', 'liberarSiguiente', 'subirComprobante', 'anotarComprobante', 'asignarActividad', 'cerrarSinCodigo', 'resolverAyuda', 'guardarContacto', 'responder', 'liberarIntento', 'verCodigo', 'enviarCodigo', 'avisarFalla', 'archivar']);
 
 function live(extra) {
   return {
@@ -29,7 +29,28 @@ async function handle(res, run, action) {
 }
 
 function solicitudes(req, res) {
-  return handle(res, () => service.listarSolicitudes({}), 'solicitudes');
+  const archivadas = req.query.archivadas === '1' || req.query.archivadas === 'true';
+  return handle(res, () => (
+    archivadas ? service.listarIncidenciasArchivadas({}) : service.listarSolicitudes({})
+  ), 'solicitudes');
+}
+
+function incidenciasArchivadas(req, res) {
+  return handle(res, () => service.listarIncidenciasArchivadas({}), 'incidenciasArchivadas');
+}
+
+function archivar(req, res) {
+  return handle(res, () => service.archivarSolicitud({
+    notificacionId: req.params.id,
+    accion: req.body?.accion,
+  }), 'archivar');
+}
+
+function incidenciaPedido(req, res) {
+  return handle(res, () => service.cerrarIncidenciaPedido({
+    pedidoId: req.params.id,
+    accion: req.body?.accion,
+  }), 'archivar');
 }
 
 function cargasValidadas(req, res) {
@@ -295,6 +316,9 @@ function reasignar(req, res) {
 
 module.exports = {
   solicitudes,
+  incidenciasArchivadas,
+  archivar,
+  incidenciaPedido,
   cargasValidadas,
   solicitud,
   aprobar,

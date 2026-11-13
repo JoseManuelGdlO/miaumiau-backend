@@ -7,7 +7,10 @@ const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper'
 const { parseFechaEntregaEstimada } = require('../../utils/date');
 const { horarioDeEntrega } = require('./horario');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
+const { calcularYValidarStock, lineaPaquete } = require('./stock');
 const { Logger } = require('../../utils/logger');
+
+const stockDb = { Inventario, Paquete, ProductoPaquete };
 
 const log = new Logger('Pedidos');
 
@@ -127,159 +130,6 @@ const logPedidoCreadoEnConversaciones = async (telefono, clienteId, pedido) => {
     log.error('Error al registrar log de pedido en conversaciones:', error);
     return 0;
   }
-};
-
-// Helper para calcular productos por paquete a partir de un payload simple
-const calcularProductosPorPaqueteDesdePayload = async (paquetesArray, erroresStock = []) => {
-  const productosPorPaquete = {};
-
-  if (!Array.isArray(paquetesArray) || paquetesArray.length === 0) {
-    return productosPorPaquete;
-  }
-
-  for (const paqueteItem of paquetesArray) {
-    if (!paqueteItem) continue;
-
-    const paqueteId = paqueteItem.fkid_paquete ?? paqueteItem.id;
-    const cantidadPaquetes = parseInt(paqueteItem.cantidad);
-
-    if (!paqueteId || isNaN(cantidadPaquetes) || cantidadPaquetes <= 0) {
-      continue;
-    }
-
-    const paqueteData = await Paquete.findByPk(paqueteId);
-    if (!paqueteData) {
-      erroresStock.push(`Paquete con ID ${paqueteId} no existe`);
-      continue;
-    }
-
-    if (paqueteData.is_active === false) {
-      erroresStock.push(`El paquete con ID ${paqueteId} no está activo`);
-      continue;
-    }
-
-    const productosPaquete = await ProductoPaquete.findAll({
-      where: {
-        fkid_paquete: paqueteId
-      }
-    });
-
-    if (productosPaquete.length === 0) {
-      erroresStock.push(`El paquete con ID ${paqueteId} no tiene productos asociados`);
-      continue;
-    }
-
-    for (const productoPaquete of productosPaquete) {
-      const cantidadTotal = cantidadPaquetes * productoPaquete.cantidad;
-      if (!productosPorPaquete[productoPaquete.fkid_producto]) {
-        productosPorPaquete[productoPaquete.fkid_producto] = 0;
-      }
-      productosPorPaquete[productoPaquete.fkid_producto] += cantidadTotal;
-    }
-  }
-
-  return productosPorPaquete;
-};
-
-// Helper principal para validar stock a partir de productos y paquetes
-const calcularYValidarStock = async ({ productos = [], paquetes = [] }) => {
-  const erroresStock = [];
-
-  const productosAProcesar = Array.isArray(productos)
-    ? productos
-        .map((producto, index) => {
-          if (!producto) return null;
-
-          const fkid_producto = producto.fkid_producto ?? producto.id;
-          const cantidad = parseInt(producto.cantidad);
-
-          if (!fkid_producto || isNaN(cantidad) || cantidad <= 0) {
-            erroresStock.push(`Producto en la posición ${index} tiene datos inválidos`);
-            return null;
-          }
-
-          return { fkid_producto, cantidad };
-        })
-        .filter(Boolean)
-    : [];
-
-  const productosPorPaquete = await calcularProductosPorPaqueteDesdePayload(paquetes, erroresStock);
-
-  // Conjunto de todos los IDs de productos en el carrito (directos + paquetes) para regla de compra mínima
-  const todosLosProductosIds = new Set([
-    ...productosAProcesar.map(p => p.fkid_producto),
-    ...Object.keys(productosPorPaquete).map(k => parseInt(k, 10))
-  ]);
-
-  const esProductoUnicoEnCarrito = (productoId) =>
-    todosLosProductosIds.size === 1 && todosLosProductosIds.has(productoId);
-
-  // Validar stock de productos directos (sumando si también están en paquetes)
-  for (const producto of productosAProcesar) {
-    const productoInventario = await Inventario.findByPk(producto.fkid_producto);
-    if (!productoInventario) {
-      erroresStock.push(`Producto con ID ${producto.fkid_producto} no encontrado en inventario`);
-      continue;
-    }
-
-    const cantidadDirecta = producto.cantidad;
-    const cantidadDePaquetes = productosPorPaquete[producto.fkid_producto] || 0;
-    const cantidadRequerida = cantidadDirecta + cantidadDePaquetes;
-
-    if (productoInventario.stock_inicial < cantidadRequerida) {
-      erroresStock.push(
-        `Stock insuficiente para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Disponible: ${productoInventario.stock_inicial}, Requerido: ${cantidadRequerida}`
-      );
-    }
-
-    // Validar compra mínima: solo aplica si es el único producto en el carrito
-    const compraMinima = productoInventario.compra_minima;
-    if (compraMinima != null && compraMinima >= 1 && esProductoUnicoEnCarrito(producto.fkid_producto)) {
-      if (cantidadRequerida < compraMinima) {
-        erroresStock.push(
-          `Compra mínima no cumplida para ${productoInventario.nombre} (SKU: ${productoInventario.sku}). Mínimo: ${compraMinima}, solicitado: ${cantidadRequerida}`
-        );
-      }
-    }
-  }
-
-  // Validar stock de productos solo en paquetes (que no están como productos directos)
-  const productosDirectosIds = productosAProcesar.map(p => p.fkid_producto);
-
-  for (const [productoId, cantidadTotal] of Object.entries(productosPorPaquete)) {
-    const productoIdInt = parseInt(productoId, 10);
-    // Solo validar si no está ya como producto directo
-    if (productosDirectosIds.includes(productoIdInt)) {
-      continue;
-    }
-
-    const producto = await Inventario.findByPk(productoId);
-    if (!producto) {
-      erroresStock.push(`Producto con ID ${productoId} no encontrado en inventario`);
-      continue;
-    }
-
-    if (producto.stock_inicial < cantidadTotal) {
-      erroresStock.push(
-        `Stock insuficiente para ${producto.nombre} (SKU: ${producto.sku}) en paquetes. Disponible: ${producto.stock_inicial}, Requerido: ${cantidadTotal}`
-      );
-    }
-
-    // Validar compra mínima para productos solo en paquetes
-    const compraMinima = producto.compra_minima;
-    if (compraMinima != null && compraMinima >= 1 && esProductoUnicoEnCarrito(productoIdInt)) {
-      if (cantidadTotal < compraMinima) {
-        erroresStock.push(
-          `Compra mínima no cumplida para ${producto.nombre} (SKU: ${producto.sku}). Mínimo: ${compraMinima}, solicitado: ${cantidadTotal}`
-        );
-      }
-    }
-  }
-
-  return {
-    isValid: erroresStock.length === 0,
-    erroresStock
-  };
 };
 
 class PedidoController {
@@ -901,7 +751,7 @@ class PedidoController {
       // Agregar paquetes al pedido si se proporcionan
       if (paquetes && paquetes.length > 0) {
         for (const paquete of paquetes) {
-          const { fkid_paquete, cantidad, precio_unidad, descuento_paquete = 0, notas_paquete } = paquete;
+          const { fkid_paquete, cantidad, descuento_paquete = 0, notas_paquete } = paquete;
           
           // Verificar que el paquete existe y está activo
           const paqueteData = await Paquete.findByPk(fkid_paquete);
@@ -919,11 +769,7 @@ class PedidoController {
             });
           }
 
-          // Usar el precio del paquete si no se proporciona precio_unidad
-          const precioPaquete = precio_unidad || parseFloat(paqueteData.precio_final);
-          const precioTotal = precioPaquete * parseInt(cantidad);
-          const descuento = (precioTotal * parseFloat(descuento_paquete)) / 100;
-          const precioFinal = precioTotal - descuento;
+          const { precio_unidad: precioPaquete, precio_total: precioFinal } = lineaPaquete(paqueteData, cantidad, descuento_paquete);
 
           await PaquetePedido.create({
             fkid_pedido: pedido.id,
@@ -977,7 +823,7 @@ class PedidoController {
 
       // Validar stock y compra mínima usando el helper compartido (excluye productos regalo sin fkid_producto)
       const productosParaValidar = productosAProcesar.filter(p => p.fkid_producto != null);
-      const { isValid, erroresStock } = await calcularYValidarStock({
+      const { isValid, erroresStock } = await calcularYValidarStock(stockDb, {
         productos: productosParaValidar,
         paquetes
       });
@@ -1181,7 +1027,7 @@ class PedidoController {
         });
       }
 
-      const { isValid, erroresStock } = await calcularYValidarStock({ productos, paquetes });
+      const { isValid, erroresStock } = await calcularYValidarStock(stockDb, { productos, paquetes });
 
       if (!isValid) {
         return res.status(200).json({
@@ -1288,17 +1134,14 @@ class PedidoController {
         let subtotalPaquetes = 0;
         if (updateData.paquetes.length > 0) {
           for (const paquete of updateData.paquetes) {
-            const { fkid_paquete, cantidad, precio_unidad, descuento_paquete = 0, notas_paquete } = paquete;
+            const { fkid_paquete, cantidad, descuento_paquete = 0, notas_paquete } = paquete;
             
             const paqueteData = await Paquete.findByPk(fkid_paquete);
             if (!paqueteData || !paqueteData.is_active) {
               continue; // Saltar paquetes inválidos o inactivos
             }
 
-            const precioPaquete = precio_unidad || parseFloat(paqueteData.precio_final);
-            const precioTotal = precioPaquete * parseInt(cantidad);
-            const descuento = (precioTotal * parseFloat(descuento_paquete)) / 100;
-            const precioFinal = precioTotal - descuento;
+            const { precio_unidad: precioPaquete, precio_total: precioFinal } = lineaPaquete(paqueteData, cantidad, descuento_paquete);
 
             await PaquetePedido.create({
               fkid_pedido: id,

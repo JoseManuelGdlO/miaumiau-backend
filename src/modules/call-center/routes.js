@@ -8,6 +8,9 @@ const router = express.Router();
 const guard = [authenticateToken, requireSuperAdminOrPermission('operar_call_center')];
 
 router.get('/solicitudes', ...guard, controller.solicitudes);
+router.get('/incidencias-archivadas', ...guard, controller.incidenciasArchivadas);
+router.post('/solicitudes/:id/archivar', ...guard, controller.archivar);
+router.post('/pedidos/:id/incidencia', ...guard, controller.incidenciaPedido);
 router.get('/cargas-validadas', ...guard, controller.cargasValidadas);
 router.get('/solicitudes/:id', ...guard, controller.solicitud);
 router.post('/solicitudes/:id/aprobar', ...guard, controller.aprobar);
