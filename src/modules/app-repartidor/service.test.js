@@ -230,6 +230,51 @@ test('obtenerJornada en borrador recalcula la ruta y conserva el extra', async (
   expect(data.validado_por_nombre).toBeNull();
 });
 
+test('obtenerJornada manda coords y orden de cada parada', async () => {
+  const data = await obtenerJornada({
+    jornada: {
+      id: 3,
+      fecha: '2026-10-09',
+      estado: 'borrador',
+      fkid_notificacion: null,
+      cargas: [],
+      efectivo_a_depositar: 0,
+      comprobante_deposito_path: null,
+      cerrada_en: null,
+    },
+    models: {
+      Ruta: {
+        findAll: async () => [{
+          estado: 'planificada',
+          pedidos: [{
+            lat: 24.11,
+            lng: -104.62,
+            orden_entrega: 2,
+            pedido: {
+              id: 9,
+              numero_pedido: 'P-9',
+              estado: 'confirmado',
+              direccion_entrega: 'Calle 9',
+              cliente: { nombre_completo: 'Ana' },
+              productos: [],
+              paquetes: [],
+            },
+          }],
+        }],
+      },
+    },
+  });
+  expect(data.pedidos).toEqual([
+    expect.objectContaining({
+      id: 9,
+      numero_pedido: 'P-9',
+      lat: 24.11,
+      lng: -104.62,
+      orden_entrega: 2,
+    }),
+  ]);
+});
+
 test('solicitarValidacion conserva el producto extra al volver a enviar', async () => {
   const created = [];
   const jornada = {
@@ -774,11 +819,12 @@ test('ubicacionPedido no usa el GPS como domicilio', async () => {
     },
   });
   expect(data.lat).toBe(null);
-  expect(data.link_waze).toContain('waze.com');
+  expect(data.link_navegacion).toContain('google.com/maps');
+  expect(data).not.toHaveProperty('link_waze');
   expect(update).not.toHaveBeenCalled();
 });
 
-test('ubicacionPedido arma Waze con la dirección si no hay coords', async () => {
+test('ubicacionPedido arma Maps con la dirección si no hay coords', async () => {
   const data = await ubicacionPedido({
     repartidorId: 3,
     mapsApagada: true,
@@ -790,9 +836,10 @@ test('ubicacionPedido arma Waze con la dirección si no hay coords', async () =>
     },
   });
   expect(data.lat).toBe(null);
-  expect(data.link_waze).toContain('waze.com');
-  expect(data.link_waze).toContain('navigate=yes');
-  expect(decodeURIComponent(data.link_waze)).toContain('Río de Janeiro');
+  expect(data.link_navegacion).toContain('google.com/maps');
+  expect(data.link_navegacion).toContain('destination=');
+  expect(decodeURIComponent(data.link_navegacion)).toContain('Río de Janeiro');
+  expect(data).not.toHaveProperty('link_waze');
 });
 
 test('registrarUbicacion persiste lat_actual del repartidor', async () => {

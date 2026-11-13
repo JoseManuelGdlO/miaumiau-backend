@@ -28,7 +28,7 @@ const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
-const { nearestNeighbor, distanceMatrix, ordenSinPisarManual } = require('./route-order');
+const { ordenDesdeBodega, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
 const { soltarParadasAbiertas } = require('../pedidos/reencolar');
@@ -268,11 +268,16 @@ function resumenDesdeRutas(rutas) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
       const { sueltos, paquetes } = desglosePedido(pedido);
+      const lat = rp.lat == null ? null : Number(rp.lat);
+      const lng = rp.lng == null ? null : Number(rp.lng);
       pedidos.push({
         id: pedido.id ?? null,
         numero_pedido: pedido.numero_pedido || (pedido.id != null ? String(pedido.id) : ''),
         cliente: pedido.cliente?.nombre_completo || '',
         direccion: pedido.direccion_entrega || '',
+        lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
+        lng: Number.isFinite(lng) && lng !== 0 ? lng : null,
+        orden_entrega: Number(rp.orden_entrega) || null,
         productos: sueltos.map((linea) => ({ nombre: linea.nombre, cantidad: linea.cantidad })),
         paquetes: paquetes.map((pack) => ({
           nombre: pack.nombre,
@@ -282,7 +287,7 @@ function resumenDesdeRutas(rutas) {
       });
     }
   }
-  return pedidos;
+  return pedidos.sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
 }
 
 async function resumenPedidosDelDia(deps = {}) {
@@ -725,6 +730,35 @@ function puntoParada(parada) {
   return { lat, lng };
 }
 
+const bodegaCache = new Map();
+
+async function coordsBodega(ruta, apiKey, deps = {}) {
+  const ciudadId = ruta?.fkid_ciudad || ruta?.ciudad?.id;
+  if (ciudadId != null && bodegaCache.has(ciudadId)) return bodegaCache.get(ciudadId);
+  const db = getModels(deps);
+  let ciudad = ruta?.ciudad;
+  if (!ciudad && ciudadId && typeof db.City?.findByPk === 'function') {
+    ciudad = await db.City.findByPk(ciudadId, {
+      attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones'],
+    });
+  }
+  const dir = String(ciudad?.direccion_operaciones || '').trim();
+  if (!dir) return null;
+  const maps = deps.resolver || require('../maps/controller');
+  const punto = await maps.resolverDireccion({
+    address: dir,
+    ciudad: ciudad.nombre,
+    estado: ciudad.departamento,
+  }, apiKey);
+  if (!punto || punto.aproximado) return null;
+  const lat = Number(punto.lat);
+  const lng = Number(punto.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const coords = { lat, lng };
+  if (ciudadId != null) bodegaCache.set(ciudadId, coords);
+  return coords;
+}
+
 async function ordenarParadasSiAplica(deps = {}) {
   if (process.env.NODE_ENV === 'test' && !deps.ordenarRutas) return;
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -733,13 +767,21 @@ async function ordenarParadasSiAplica(deps = {}) {
   if (rutasOrdenadas.has(cacheKey)) return;
   const db = getModels(deps);
   if (typeof db.Ruta?.findAll !== 'function') return;
+  const include = [{ model: db.RutaPedido, as: 'pedidos' }];
+  if (db.City) {
+    include.push({
+      model: db.City,
+      as: 'ciudad',
+      attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones'],
+    });
+  }
   const rutas = await db.Ruta.findAll({
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
       estado: { [Op.ne]: 'cancelada' },
     },
-    include: [{ model: db.RutaPedido, as: 'pedidos' }],
+    include,
   });
   for (const ruta of rutas) {
     const grupos = new Map();
@@ -749,6 +791,12 @@ async function ordenarParadasSiAplica(deps = {}) {
       grupo.push(row);
       grupos.set(franja, grupo);
     }
+    let bodega = null;
+    try {
+      bodega = await coordsBodega(ruta, apiKey, deps);
+    } catch {
+      bodega = null;
+    }
     for (const grupo of grupos.values()) {
       const paradas = grupo
         .map((rp) => ({
@@ -757,17 +805,18 @@ async function ordenarParadasSiAplica(deps = {}) {
           lng: rp.lng == null ? null : Number(rp.lng),
         }))
         .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
-      if (paradas.length < 2) continue;
+      if (paradas.length < 2 || !bodega) continue;
       const { mapsApagada } = require('../maps/apagada');
       if (await mapsApagada(deps)) continue;
+      const stops = [bodega, ...paradas];
       let matrix;
       try {
-        matrix = await distanceMatrix(paradas, apiKey, deps.distanceMatrixGet);
+        matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
       } catch {
         continue;
       }
       if (!matrix) continue;
-      const ordered = nearestNeighbor(paradas.map((rp) => rp.id), matrix);
+      const ordered = ordenDesdeBodega(paradas.map((rp) => rp.id), matrix);
       const asignaciones = ordenSinPisarManual(grupo, ordered);
       for (const item of asignaciones) {
         const row = grupo.find((rp) => rp.id === item.id);
@@ -2098,9 +2147,6 @@ async function ubicacionPedido(deps = {}) {
     link_navegacion: punto
       ? `https://www.google.com/maps/dir/?api=1${gps ? `&origin=${gps.lat},${gps.lng}` : ''}&destination=${punto.lat},${punto.lng}&travelmode=driving`
       : (direccion ? `https://www.google.com/maps/dir/?api=1&destination=${destinoTxt}&travelmode=driving` : null),
-    link_waze: punto
-      ? `https://waze.com/ul?ll=${punto.lat},${punto.lng}&navigate=yes`
-      : (direccion ? `https://waze.com/ul?q=${encodeURIComponent(direccion)}&navigate=yes` : null),
     polyline: [],
   };
 }

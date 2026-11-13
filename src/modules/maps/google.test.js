@@ -5,6 +5,7 @@ const {
   construirTrazado,
   geocodePedido,
   asegurarPolyline,
+  refrescarPolylineRuta,
   GPS_FRESCO_MS,
 } = require('./google');
 
@@ -120,6 +121,49 @@ test('OVER_QUERY_LIMIT no llama de nuevo ni guarda polyline', async () => {
   );
   expect(geo.encoded).toBe('');
   expect(update).not.toHaveBeenCalled();
+});
+
+test('geocodePedido no persiste un pin aproximado', async () => {
+  const update = jest.fn();
+  const punto = await geocodePedido({
+    direccion_entrega: 'Durango',
+    cliente: { lat: null, lng: null, update },
+  }, {
+    mapsApagada: false,
+    skipCache: true,
+    apiKey: 'k',
+    resolver: {
+      resolverDireccion: async () => ({
+        lat: 24.0277,
+        lng: -104.6532,
+        formatted_address: 'Durango, México',
+        aproximado: true,
+      }),
+    },
+  });
+  expect(punto).toBeNull();
+  expect(update).not.toHaveBeenCalled();
+});
+
+test('refrescarPolylineRuta traza sin repartidor', async () => {
+  const httpGet = jest.fn(async () => ({
+    data: {
+      status: 'OK',
+      routes: [{ overview_polyline: { points: GOOGLE_LINE }, legs: [{ distance: { value: 1200 }, duration: { value: 180 } }] }],
+    },
+  }));
+  const ruta = {
+    id: 11,
+    fkid_repartidor: null,
+    pedidos: [
+      { orden_entrega: 1, lat: 24.02, lng: -104.66 },
+      { orden_entrega: 2, lat: 24.03, lng: -104.67 },
+    ],
+    update: jest.fn(async (patch) => Object.assign(ruta, patch)),
+  };
+  await refrescarPolylineRuta(ruta, { apiKey: 'k', httpGet });
+  expect(httpGet).toHaveBeenCalled();
+  expect(ruta.polyline_encoded).toBe(GOOGLE_LINE);
 });
 
 test('geocodePedido y asegurarPolyline no llaman HTTP si Maps está apagado', async () => {

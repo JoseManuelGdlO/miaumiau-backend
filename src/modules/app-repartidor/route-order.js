@@ -1,3 +1,5 @@
+const BODEGA_ID = '__bodega__';
+
 function nearestNeighbor(ids, matrix) {
   if (!Array.isArray(ids) || ids.length < 2) return ids || [];
   const remaining = new Set(ids.map((_, index) => index));
@@ -41,6 +43,12 @@ async function distanceMatrix(stops, apiKey, httpGet) {
   ));
 }
 
+function ordenDesdeBodega(paradaIds, matrix) {
+  if (!Array.isArray(paradaIds) || paradaIds.length === 0) return paradaIds || [];
+  if (paradaIds.length === 1) return paradaIds;
+  return nearestNeighbor([BODEGA_ID, ...paradaIds], matrix).filter((id) => id !== BODEGA_ID);
+}
+
 function ordenSinPisarManual(rows, orderedIds) {
   const manual = (rows || []).filter((row) => row.orden_manual);
   const manualIds = new Set(manual.map((row) => row.id));
@@ -59,6 +67,8 @@ function ordenSinPisarManual(rows, orderedIds) {
 
 module.exports = {
   nearestNeighbor,
+  ordenDesdeBodega,
   distanceMatrix,
   ordenSinPisarManual,
+  BODEGA_ID,
 };
