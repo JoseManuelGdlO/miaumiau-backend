@@ -7,7 +7,7 @@ test('un día saturado apunta a la fecha libre más cercana', async () => {
     Pedido: {
       count: async () => {
         n += 1;
-        return n === 1 ? 25 : 3;
+        return n === 1 ? 30 : 3;
       },
     },
   };
@@ -22,7 +22,7 @@ test('un día saturado apunta a la fecha libre más cercana', async () => {
   expect(dias[0]).toEqual(expect.objectContaining({
     disponible: false,
     motivo_no_disponible: 'Saturado',
-    capacidad: 25,
+    capacidad: 30,
     mensaje: mensajeSaturado('05-11-2026', '06-11-2026'),
   }));
   expect(proxima_fecha).toBe('06-11-2026');
@@ -35,7 +35,7 @@ test('exigir fecha libre rechaza el día lleno', async () => {
     Pedido: {
       count: async () => {
         n += 1;
-        return n === 1 ? 25 : 0;
+        return n === 1 ? 30 : 0;
       },
     },
   };

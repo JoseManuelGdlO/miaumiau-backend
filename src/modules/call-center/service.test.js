@@ -627,7 +627,7 @@ test('repartidores excluye inactivos', async () => {
     es_prueba: false,
     siniestro_completo: false,
     paradas: 0,
-    max_paradas: 25,
+    max_paradas: 30,
     saturado: false,
   }]);
 });
@@ -1402,7 +1402,7 @@ test('un no entregado se puede volver a poner en ruta', async () => {
   expect(creadas[0].fkid_pedido).toBe(7);
 });
 
-test('asignar actividad rechaza la parada 26', async () => {
+test('asignar actividad rechaza la parada 31', async () => {
   await expect(asignarActividad({
     fecha: '2026-10-19',
     pedido: { id: 7, baja_logica: false, estado: 'confirmado', fkid_ciudad: 1 },
@@ -1410,13 +1410,13 @@ test('asignar actividad rechaza la parada 26', async () => {
     models: {
       RutaPedido: {
         findAll: async () => [],
-        count: async () => 25,
+        count: async () => 30,
       },
       Ruta: {
         findAll: async () => [{ id: 3 }],
       },
     },
-  })).rejects.toMatchObject({ status: 409, message: 'Ese repartidor ya tiene 25 pedidos hoy' });
+  })).rejects.toMatchObject({ status: 409, message: 'Ese repartidor ya tiene 30 pedidos hoy' });
 });
 
 test('asignar actividad extra la libera aunque falte el depósito', async () => {
