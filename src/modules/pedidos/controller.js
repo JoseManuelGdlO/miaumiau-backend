@@ -888,12 +888,16 @@ class PedidoController {
       // Actualizar subtotal del pedido
       await pedido.actualizarSubtotal(subtotal);
       if (codigoPromocionNormalizado) {
-        const promotion = await Promotion.findByCode(codigoPromocionNormalizado);
-        if (promotion && promotion.isActive && promotion.isActive()) {
-          if (aplicaACliente(promotion, Boolean(cliente?.es_distribuidor))) {
-            const monto = montoDescuento(promotion, subtotal);
-            if (monto > 0) await pedido.aplicarDescuento(monto);
+        try {
+          const promotion = await Promotion.findByCode(codigoPromocionNormalizado);
+          if (promotion && promotion.isActive && promotion.isActive()) {
+            if (aplicaACliente(promotion, Boolean(cliente?.es_distribuidor))) {
+              const monto = montoDescuento(promotion, subtotal);
+              if (monto > 0) await pedido.aplicarDescuento(monto);
+            }
           }
+        } catch (descuentoError) {
+          log.error('Error al aplicar descuento de promoción:', descuentoError);
         }
       }
 

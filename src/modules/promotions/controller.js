@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { query } = require('../../config/postgres');
 const { mapCityNameToId } = require('../../utils/cityMapper');
 const { aplicarLogicaDescuento, calcularTotalCarrito, productoCoincideConKeywords } = require('../descuentos/aplicarDescuentos');
-const { logicaDesdePromo, aplicaACliente } = require('./descuento');
+const { logicaDesdePromo, aplicaACliente, promoParaCliente } = require('./descuento');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Promotions');
@@ -718,14 +718,7 @@ class PromotionController {
           required: false,
         }],
       });
-      const ciudadId = Number(cliente.fkid_ciudad);
-      const matches = promotions.filter((promo) => {
-        if (!aplicaACliente(promo, Boolean(cliente.es_distribuidor))) return false;
-        const ciudades = promo.ciudades || [];
-        if (!ciudades.length) return true;
-        return ciudades.some((city) => Number(city.id) === ciudadId);
-      });
-      const hit = matches.find((promo) => promo.aplica_a === 'distribuidor') || matches[0] || null;
+      const hit = promoParaCliente(promotions, cliente);
       res.json({
         success: true,
         data: {

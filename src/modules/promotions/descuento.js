@@ -37,4 +37,15 @@ function aplicaACliente(promo, esDistribuidor) {
   return true;
 }
 
-module.exports = { montoDescuento, logicaDesdePromo, aplicaACliente };
+function promoParaCliente(promos, { es_distribuidor, fkid_ciudad } = {}) {
+  const ciudadId = Number(fkid_ciudad);
+  const matches = (promos || []).filter((promo) => {
+    if (!aplicaACliente(promo, Boolean(es_distribuidor))) return false;
+    const ciudades = promo.ciudades || [];
+    if (!ciudades.length) return true;
+    return ciudades.some((city) => Number(city.id) === ciudadId);
+  });
+  return matches.find((promo) => promo.aplica_a === 'distribuidor') || matches[0] || null;
+}
+
+module.exports = { montoDescuento, logicaDesdePromo, aplicaACliente, promoParaCliente };
