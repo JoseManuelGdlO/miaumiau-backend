@@ -9,16 +9,22 @@ const AVISO_SIN_UBICAR = 'Esa dirección no se encontró en el mapa de esa ciuda
 
 async function callGeocodeApi(address, apiKey) {
   if (await mapsApagada()) return { status: 'REQUEST_DENIED', results: [] };
-  const response = await axios.get(
-    `https://maps.googleapis.com/maps/api/geocode/json`,
-    {
-      params: {
-        address,
-        key: apiKey,
-        region: 'mx'
+  let response;
+  try {
+    response = await axios.get(
+      `https://maps.googleapis.com/maps/api/geocode/json`,
+      {
+        params: {
+          address,
+          key: apiKey,
+          region: 'mx'
+        }
       }
-    }
-  );
+    );
+  } catch (error) {
+    log.warn('Google Maps HTTP falló', { message: error.message });
+    return { status: 'ERROR', results: [] };
+  }
   const status = response.data?.status;
   if (BLOQUEADOS.has(status)) {
     log.warn('Google Maps bloqueado', { status });
@@ -58,11 +64,10 @@ function enElEstado(formatted, estado) {
 function coordsDe(data) {
   if (data?.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) return null;
   const result = data.results[0];
-  return {
-    lat: result.geometry.location.lat,
-    lng: result.geometry.location.lng,
-    formatted_address: result.formatted_address,
-  };
+  const lat = Number(result?.geometry?.location?.lat);
+  const lng = Number(result?.geometry?.location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng, formatted_address: result.formatted_address };
 }
 
 async function resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey) {
