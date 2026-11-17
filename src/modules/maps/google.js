@@ -279,13 +279,16 @@ async function geocodePedido(pedido, deps = {}) {
     ciudad = await City.findByPk(pedido.fkid_ciudad, { attributes: ['id', 'nombre', 'departamento'] });
   }
   const estado = ciudad?.departamento || null;
+  const codigo_postal = String(pedido.direccion_entrega).match(/\b(\d{5})\b/)?.[1];
   const punto = await maps.resolverDireccion({
     address: pedido.direccion_entrega,
     ciudad: ciudad?.nombre,
+    codigo_postal,
     estado,
   }, apiKey);
-  if (!punto) return null;
+  if (!punto || punto.aproximado) return null;
   if (estado && maps.enElEstado && !maps.enElEstado(punto.formatted_address, estado)) return null;
+  if (maps.esDomicilio && !maps.esDomicilio(punto, estado)) return null;
   const coords = { lat: punto.lat, lng: punto.lng };
   await persistirCliente(cliente, coords, geo);
   return coords;

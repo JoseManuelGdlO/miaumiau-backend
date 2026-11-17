@@ -212,13 +212,6 @@ module.exports = (sequelize, DataTypes) => {
     return null;
   };
 
-  RutaPedido.prototype.generarLinkWaze = function() {
-    if (this.tieneCoordenadas()) {
-      return `https://waze.com/ul?ll=${this.lat},${this.lng}&navigate=yes`;
-    }
-    return null;
-  };
-
   // Métodos estáticos
   RutaPedido.findByRuta = function(rutaId) {
     return this.findAll({

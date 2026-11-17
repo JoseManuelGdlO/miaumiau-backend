@@ -1,4 +1,4 @@
-const { nearestNeighbor } = require('./route-order');
+const { nearestNeighbor, ordenDesdeBodega } = require('./route-order');
 
 test('nearestNeighbor recorre la parada más cercana', () => {
   const matrix = [
@@ -11,6 +11,15 @@ test('nearestNeighbor recorre la parada más cercana', () => {
 
 test('nearestNeighbor deja una sola parada como está', () => {
   expect(nearestNeighbor([8], [[0]])).toEqual([8]);
+});
+
+test('ordenDesdeBodega no empieza en el punto más lejano', () => {
+  const matrix = [
+    [0, 100, 5],
+    [100, 0, 90],
+    [5, 90, 0],
+  ];
+  expect(ordenDesdeBodega([11, 22], matrix)).toEqual([22, 11]);
 });
 
 test('ordenSinPisarManual conserva la parada manual y acomoda el resto', () => {
