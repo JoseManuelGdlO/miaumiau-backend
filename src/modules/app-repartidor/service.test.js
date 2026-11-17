@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido, iniciarRuta, liberarSiguienteParada } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -1072,4 +1072,75 @@ test('entregar mixto actualiza el cobro existente', async () => {
   expect(cobro.monto_transferencia).toBe(60);
   expect(pedido.metodo_pago).toBe('mixto');
   expect(pedido.estado).toBe('entregado');
+});
+
+function paradaParaAviso(overrides = {}) {
+  const parada = {
+    id: 21,
+    orden_entrega: 1,
+    liberado_en: null,
+    aviso_siguiente_en: null,
+    fkid_pedido: 9,
+    pedido: {
+      id: 9,
+      estado: 'en_camino',
+      telefono_referencia: '6180000000',
+      cliente: { id: 4, nombre_completo: 'Ana', telefono: '6180000000' },
+    },
+    update: async (data) => Object.assign(parada, data),
+    ...overrides,
+  };
+  return parada;
+}
+
+test('iniciarRuta avisa al primer cliente', async () => {
+  const sends = [];
+  const parada = paradaParaAviso();
+  const result = await iniciarRuta({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    fecha: '2026-11-17',
+    avisarSiguiente: true,
+    models: {
+      Ruta: { findAll: async () => [{ pedidos: [parada] }] },
+    },
+    sendWhatsAppInteractive: async (...args) => {
+      sends.push(args);
+      return { success: true };
+    },
+  });
+  expect(result).toEqual({ iniciado: true });
+  expect(parada.liberado_en).toBeInstanceOf(Date);
+  expect(parada.aviso_siguiente_en).toBeInstanceOf(Date);
+  expect(sends[0][2].body.text).toMatch(/en camino/);
+  expect(sends[0][2].body.text).toMatch(/código de entrega/);
+});
+
+test('liberarSiguienteParada avisa al siguiente cliente', async () => {
+  const sends = [];
+  const hecha = paradaParaAviso({
+    id: 20,
+    orden_entrega: 1,
+    liberado_en: new Date(),
+    pedido: { id: 8, estado: 'entregado' },
+  });
+  const siguiente = paradaParaAviso({ id: 21, orden_entrega: 2 });
+  const result = await liberarSiguienteParada({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    fecha: '2026-11-17',
+    avisarSiguiente: true,
+    models: {
+      Ruta: { findAll: async () => [{ pedidos: [hecha, siguiente] }] },
+    },
+    sendWhatsAppInteractive: async (...args) => {
+      sends.push(args);
+      return { success: true };
+    },
+  });
+  expect(result.pedido_id).toBe(9);
+  expect(siguiente.liberado_en).toBeInstanceOf(Date);
+  expect(siguiente.aviso_siguiente_en).toBeInstanceOf(Date);
+  expect(sends).toHaveLength(1);
+  expect(sends[0][2].body.text).toMatch(/en camino/);
 });
