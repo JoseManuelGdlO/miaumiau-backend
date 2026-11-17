@@ -478,6 +478,28 @@ test('noEntregar busca la llamada del pedido sin tope de 200', async () => {
   expect(String(pedido.notas || '')).not.toContain('Volvió a la cola');
 });
 
+test('noEntregar por demanda no espera a Call Center', async () => {
+  const pedido = { id: 5, estado: 'en_camino', update: async (data) => Object.assign(pedido, data) };
+  const rutaPedido = { pedido, update: async (data) => Object.assign(rutaPedido, data) };
+  await noEntregar({
+    jornada: { estado: 'validada' },
+    pedidoId: 5,
+    repartidorId: 1,
+    motivo: 'demanda',
+    fecha_sugerida: '2026-11-18',
+    rutaPedido,
+    models: {
+      Notificacion: {
+        findAll: async () => [],
+        findOne: async () => null,
+        create: async (row) => ({ id: 9, datos: row.datos, update: async () => {} }),
+      },
+    },
+  });
+  expect(pedido.estado).toBe('no_entregado');
+  expect(rutaPedido.estado_entrega).toBe('fallido');
+});
+
 test('noEntregar no cierra la parada si Call Center no liberó el intento', async () => {
   const pedido = { id: 5, estado: 'en_camino', update: async () => { throw new Error('no'); } };
   await expect(noEntregar({
@@ -996,4 +1018,58 @@ test('resumenVelocidad expone lat/lng de la lectura', async () => {
   expect(data[0].lat).toBe(24.02);
   expect(data[0].lng).toBe(-104.66);
   expect(data[0].lecturas).toBe(1);
+});
+
+test('entregar mixto actualiza el cobro existente', async () => {
+  const cobro = {
+    comprobante_path: 'comprobantes/viejo.jpg',
+    update: async (data) => Object.assign(cobro, data),
+  };
+  const pedido = {
+    id: 5,
+    estado: 'en_camino',
+    total: 100,
+    numero_pedido: 'P-5',
+    metodo_pago: 'efectivo',
+    productos: [],
+    update: async (data) => Object.assign(pedido, data),
+  };
+  const rutaPedido = {
+    codigo_validado_en: new Date(),
+    pedido,
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  const created = [];
+  await entregar({
+    jornada: { estado: 'validada', update: async () => {} },
+    fecha: '2026-11-17',
+    repartidorId: 1,
+    metodo: 'mixto',
+    monto_efectivo: 40,
+    monto_transferencia: 60,
+    file: { filename: 'nuevo.jpg' },
+    rutaPedido,
+    models: {
+      sequelize: { transaction: async (fn) => fn({}) },
+      CobroEntrega: {
+        findOne: async () => cobro,
+        create: async (row) => { created.push(row); return row; },
+        findAll: async () => [],
+      },
+      Pedido: { findByPk: async () => pedido, findAll: async () => [] },
+      Repartidor: { findByPk: async () => null },
+      RepartidorLogro: { findOrCreate: async () => [{}, false] },
+      RepartidorPuntosMovimiento: {
+        findOne: async () => null,
+        create: async () => {},
+      },
+      Ruta: { findAll: async () => [] },
+    },
+  });
+  expect(created).toEqual([]);
+  expect(cobro.metodo).toBe('mixto');
+  expect(cobro.monto_efectivo).toBe(40);
+  expect(cobro.monto_transferencia).toBe(60);
+  expect(pedido.metodo_pago).toBe('mixto');
+  expect(pedido.estado).toBe('entregado');
 });

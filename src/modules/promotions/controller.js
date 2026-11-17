@@ -1,8 +1,9 @@
-const { Promotion, City, PromotionCity, Inventario, PromotionUsage } = require('../../models');
+const { Promotion, City, PromotionCity, Inventario, PromotionUsage, Cliente } = require('../../models');
 const { Op } = require('sequelize');
 const { query } = require('../../config/postgres');
 const { mapCityNameToId } = require('../../utils/cityMapper');
 const { aplicarLogicaDescuento, calcularTotalCarrito, productoCoincideConKeywords } = require('../descuentos/aplicarDescuentos');
+const { logicaDesdePromo, aplicaACliente } = require('./descuento');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('Promotions');
@@ -135,8 +136,9 @@ class PromotionController {
         limite_uso = 0,
         compra_minima,
         descuento_maximo,
-        cities = []
+        aplica_a = 'todos',
       } = req.body;
+      const cities = req.body.cities || req.body.ciudades || [];
 
       // Verificar si el código ya existe
       const existingPromotion = await Promotion.findByCode(codigo);
@@ -159,7 +161,8 @@ class PromotionController {
         fecha_fin,
         limite_uso,
         compra_minima,
-        descuento_maximo
+        descuento_maximo,
+        aplica_a: aplica_a === 'distribuidor' || aplica_a === 'retail' ? aplica_a : 'todos',
       });
 
       // Asignar ciudades si se proporcionan
@@ -630,6 +633,17 @@ class PromotionController {
         }
       }
 
+      const cliente = await Cliente.findOne({ where: { telefono } });
+      if (!aplicaACliente(promotion, Boolean(cliente?.es_distribuidor))) {
+        return res.status(400).json({
+          success: true,
+          valid: false,
+          message: cliente?.es_distribuidor
+            ? 'Esta promoción no aplica a distribuidores'
+            : 'Esta promoción es solo para distribuidores',
+        });
+      }
+
       // 6. Validar límite de uso por usuario
       let vecesUsado = 0;
       if (promotion.limite_uso > 0) {
@@ -679,10 +693,57 @@ class PromotionController {
     }
   }
 
+  // n8n: GET /promotions/para-cliente?telefono= y luego POST /promotions/aplicarCodigo { telefono, codigo }
+  async paraCliente(req, res, next) {
+    try {
+      const telefono = req.query.telefono || req.body.telefono;
+      if (!telefono) {
+        return res.status(400).json({ success: false, message: 'El teléfono es requerido' });
+      }
+      const cliente = await Cliente.findOne({ where: { telefono } });
+      if (!cliente) {
+        return res.status(404).json({ success: false, message: 'Cliente no encontrado' });
+      }
+      const now = new Date();
+      const promotions = await Promotion.findAll({
+        where: {
+          baja_logica: false,
+          fecha_inicio: { [Op.lte]: now },
+          fecha_fin: { [Op.gte]: now },
+        },
+        include: [{
+          model: City,
+          as: 'ciudades',
+          through: { attributes: [] },
+          required: false,
+        }],
+      });
+      const ciudadId = Number(cliente.fkid_ciudad);
+      const matches = promotions.filter((promo) => {
+        if (!aplicaACliente(promo, Boolean(cliente.es_distribuidor))) return false;
+        const ciudades = promo.ciudades || [];
+        if (!ciudades.length) return true;
+        return ciudades.some((city) => Number(city.id) === ciudadId);
+      });
+      const hit = matches.find((promo) => promo.aplica_a === 'distribuidor') || matches[0] || null;
+      res.json({
+        success: true,
+        data: {
+          promotion: hit,
+          logica_aplicar: logicaDesdePromo(hit),
+          es_distribuidor: Boolean(cliente.es_distribuidor),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Aplicar código de promoción a productos en sesión
   async aplicarCodigo(req, res, next) {
     try {
-      const { telefono, logica_aplicar } = req.body;
+      const { telefono, codigo } = req.body;
+      let { logica_aplicar } = req.body;
 
       // Validar parámetros requeridos
       if (!telefono) {
@@ -690,6 +751,11 @@ class PromotionController {
           success: false,
           message: 'El teléfono es requerido'
         });
+      }
+
+      if (!logica_aplicar && codigo) {
+        const promo = await Promotion.findByCode(codigo);
+        logica_aplicar = logicaDesdePromo(promo);
       }
 
       if (!logica_aplicar) {

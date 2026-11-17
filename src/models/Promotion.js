@@ -89,6 +89,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
       allowNull: false
+    },
+    aplica_a: {
+      type: DataTypes.ENUM('todos', 'retail', 'distribuidor'),
+      allowNull: false,
+      defaultValue: 'todos'
     }
   }, {
     tableName: 'promotions',

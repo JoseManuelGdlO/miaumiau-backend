@@ -174,10 +174,12 @@ async function atenderMensaje(message, phoneNumberId) {
 const AVISO_REAGENDAR = 'No pudimos completar la entrega. Puede haber retraso porque el pedido se vuelve a salir. Elige el día. Call Center confirma la fecha.';
 const AVISO_AVERIA = 'Hoy no podemos entregar tu pedido por una avería del vehículo. Puede haber retraso porque se vuelve a salir. Elige el día. Call Center confirma la fecha.';
 const AVISO_CLIMA = 'Hoy no podemos entregar tu pedido por el clima. Puede haber retraso porque se vuelve a salir. Elige el día. Call Center confirma la fecha.';
+const AVISO_DEMANDA = 'Desafortunadamente no se pudo entregar por demanda de pedidos. Elige el día. Call Center confirma la fecha.';
 
-async function avisarElegirFecha({ telefono, linea, motivo, send } = {}) {
+async function avisarElegirFecha({ telefono, linea, motivo, fecha_sugerida, send } = {}) {
   if (!telefono || !linea) return false;
-  const texto = motivo === 'averia' ? AVISO_AVERIA : motivo === 'clima' ? AVISO_CLIMA : AVISO_REAGENDAR;
+  let texto = motivo === 'averia' ? AVISO_AVERIA : motivo === 'clima' ? AVISO_CLIMA : motivo === 'demanda' ? AVISO_DEMANDA : AVISO_REAGENDAR;
+  if (fecha_sugerida) texto = `${texto} Sugerimos ${fecha_sugerida}.`;
   const enviar = send || sendWhatsAppInteractive;
   const result = await enviar(telefono, linea, listaDeFechas(proximosDias(), texto));
   return Boolean(result?.success);

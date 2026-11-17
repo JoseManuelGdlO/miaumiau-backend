@@ -286,7 +286,8 @@ class ClienteController {
         fkid_ciudad: ciudadAsignada,
         canal_contacto,
         direccion_entrega,
-        notas_especiales
+        notas_especiales,
+        es_distribuidor: Boolean(req.body.es_distribuidor),
       });
 
       // Obtener el cliente creado con sus relaciones
@@ -367,6 +368,10 @@ class ClienteController {
             message: 'La ciudad especificada no existe'
           });
         }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updateData, 'es_distribuidor')) {
+        updateData.es_distribuidor = Boolean(updateData.es_distribuidor);
       }
 
       const prevPuntos = cliente.puntos_lealtad;

@@ -125,7 +125,7 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     metodo_pago: {
-      type: DataTypes.ENUM('efectivo', 'tarjeta', 'transferencia', 'pago_movil'),
+      type: DataTypes.ENUM('efectivo', 'tarjeta', 'transferencia', 'pago_movil', 'mixto'),
       allowNull: true
     },
     notas: {

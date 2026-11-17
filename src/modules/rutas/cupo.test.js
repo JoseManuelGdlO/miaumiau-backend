@@ -1,4 +1,4 @@
-const { exigirCupo, idsPedidosDePrueba, MAX_PARADAS_DIA } = require('./cupo');
+const { exigirCupo, idsPedidosDePrueba, MAX_PARADAS_DIA, cuantosRepartidores } = require('./cupo');
 
 test('no se agrega la parada 31', async () => {
   const db = {
@@ -15,6 +15,13 @@ test('no se agrega la parada 31', async () => {
     Ruta: { findAll: async () => [{ id: 1 }] },
     RutaPedido: { count: async () => 29 },
   }, { repartidorId: 8, fecha: '2026-10-19' })).resolves.toBe(29);
+});
+
+test('3 pedidos salen en una sola ruta', () => {
+  expect(cuantosRepartidores(3)).toBe(1);
+  expect(cuantosRepartidores(8)).toBe(1);
+  expect(cuantosRepartidores(9)).toBe(2);
+  expect(cuantosRepartidores(12, true)).toBe(1);
 });
 
 test('un repartidor es_prueba no entra en el conteo de disponibilidad', async () => {

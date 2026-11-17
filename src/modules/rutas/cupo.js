@@ -1,7 +1,13 @@
 const { Op } = require('sequelize');
 
 const MAX_PARADAS_DIA = 30;
+const UN_SOLO_HASTA = 8;
 const CUPO_LLENO = `Ese repartidor ya tiene ${MAX_PARADAS_DIA} pedidos hoy`;
+
+function cuantosRepartidores(nPedidos, driverElegido = false) {
+  if (Number(nPedidos) <= UN_SOLO_HASTA || driverElegido) return 1;
+  return 2;
+}
 
 function fail(status, message) {
   throw Object.assign(new Error(message), { status });
@@ -98,7 +104,9 @@ async function idsPedidosDePrueba(db) {
 
 module.exports = {
   MAX_PARADAS_DIA,
+  UN_SOLO_HASTA,
   CUPO_LLENO,
+  cuantosRepartidores,
   diaDe,
   contarParadasDelDia,
   exigirCupo,
