@@ -69,6 +69,21 @@ const validateInventario = [
   body('precio_venta')
     .isFloat({ min: 0 })
     .withMessage('El precio de venta debe ser un número positivo'),
+
+  body('precio_distribuidor')
+    .optional({ values: 'null' })
+    .isFloat({ min: 0 })
+    .withMessage('El precio de distribuidor debe ser un número positivo'),
+
+  body('umbral_mayoreo')
+    .optional({ values: 'null' })
+    .isInt({ min: 1 })
+    .withMessage('El umbral de mayoreo debe ser un entero positivo'),
+
+  body('descuento_proveedor_pct')
+    .optional({ values: 'null' })
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('El descuento de proveedor debe estar entre 0 y 100'),
   
   body('fkid_proveedor')
     .isInt({ min: 1 })
@@ -138,6 +153,11 @@ const validateQuery = [
     .optional()
     .isLength({ min: 2, max: 100 })
     .withMessage('La búsqueda debe tener entre 2 y 100 caracteres'),
+
+  query('departamento')
+    .optional()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('El estado debe tener entre 1 y 100 caracteres'),
   
   query('min_price')
     .optional()

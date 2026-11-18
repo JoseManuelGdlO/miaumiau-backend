@@ -725,6 +725,7 @@ class PromotionController {
           promotion: hit,
           logica_aplicar: logicaDesdePromo(hit),
           es_distribuidor: Boolean(cliente.es_distribuidor),
+          tipo_cuenta: cliente.tipo_cuenta || (cliente.es_distribuidor ? 'distribuidor' : 'general'),
         },
       });
     } catch (error) {

@@ -7,6 +7,7 @@ const multer = require('multer');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { Logger } = require('../../utils/logger');
+const { cuentaDe } = require('./tipo-cuenta');
 
 const log = new Logger('Clientes');
 
@@ -279,6 +280,7 @@ class ClienteController {
       const ciudadAsignada = ciudadData.id;
       const ciudad = ciudadData.city;
 
+      const cuenta = cuentaDe(req.body);
       const cliente = await Cliente.create({
         nombre_completo,
         telefono,
@@ -287,7 +289,8 @@ class ClienteController {
         canal_contacto,
         direccion_entrega,
         notas_especiales,
-        es_distribuidor: Boolean(req.body.es_distribuidor),
+        tipo_cuenta: cuenta.tipo_cuenta,
+        es_distribuidor: cuenta.es_distribuidor,
       });
 
       // Obtener el cliente creado con sus relaciones
@@ -370,8 +373,13 @@ class ClienteController {
         }
       }
 
-      if (Object.prototype.hasOwnProperty.call(updateData, 'es_distribuidor')) {
-        updateData.es_distribuidor = Boolean(updateData.es_distribuidor);
+      if (
+        Object.prototype.hasOwnProperty.call(updateData, 'tipo_cuenta')
+        || Object.prototype.hasOwnProperty.call(updateData, 'es_distribuidor')
+      ) {
+        const cuenta = cuentaDe(updateData, cliente);
+        updateData.tipo_cuenta = cuenta.tipo_cuenta;
+        updateData.es_distribuidor = cuenta.es_distribuidor;
       }
 
       const prevPuntos = cliente.puntos_lealtad;

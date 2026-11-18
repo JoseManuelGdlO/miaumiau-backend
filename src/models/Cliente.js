@@ -100,6 +100,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: false
     },
+    tipo_cuenta: {
+      type: DataTypes.ENUM('general', 'veterinaria', 'distribuidor'),
+      allowNull: false,
+      defaultValue: 'general'
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
