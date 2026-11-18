@@ -199,7 +199,9 @@ module.exports = (sequelize, DataTypes) => {
         }
       },
       precioVentaMayorQueCosto() {
-        if (this.precio_venta < this.costo_unitario) {
+        const venta = Number(this.precio_venta);
+        const costo = Number(this.costo_unitario);
+        if (venta < costo) {
           throw new Error('El precio de venta debe ser mayor o igual al costo unitario');
         }
       }

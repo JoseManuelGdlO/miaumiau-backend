@@ -43,7 +43,7 @@ const validateInventario = [
     .withMessage('El ID de la ciudad debe ser un número entero positivo o el nombre de una ciudad'),
 
   body('descripcion')
-    .optional()
+    .optional({ values: 'null' })
     .isLength({ max: 1000 })
     .withMessage('La descripción no puede exceder 1000 caracteres'),
   
