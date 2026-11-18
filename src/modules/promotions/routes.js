@@ -205,13 +205,18 @@ const validateAplicarCodigo = [
     .isLength({ min: 7, max: 20 })
     .withMessage('El teléfono debe tener entre 7 y 20 caracteres'),
   
+  body('codigo')
+    .optional()
+    .isString()
+    .withMessage('El código debe ser una cadena de texto'),
+
   body('logica_aplicar')
-    .notEmpty()
-    .withMessage('La lógica de aplicación es requerida')
+    .optional()
     .isObject()
     .withMessage('La lógica de aplicación debe ser un objeto'),
   
   body('logica_aplicar.tipo_accion')
+    .optional()
     .notEmpty()
     .withMessage('El tipo de acción es requerido')
     .isIn(['descuento_global', 'descuento_producto', 'segunda_unidad', 'producto_regalo'])
@@ -288,6 +293,8 @@ router.get('/city/:city_id', validateCityId, promotionController.getPromotionsBy
 
 // Rutas protegidas (requieren autenticación)
 router.use(authenticateToken);
+
+router.get('/para-cliente', promotionController.paraCliente);
 
 // Ruta para validar promoción con datos de PostgreSQL
 router.post('/validar', validateValidarPromocion, promotionController.validarPromocion);

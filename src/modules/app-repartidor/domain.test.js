@@ -61,6 +61,13 @@ describe('domain app-repartidor', () => {
     expect(canListOrders('borrador')).toBe(false);
   });
 
+  test('el cobro guarda el método en el pedido', () => {
+    const { metodoPedidoDe } = require('./domain');
+    expect(metodoPedidoDe('mixto')).toBe('mixto');
+    expect(metodoPedidoDe('terminal')).toBe('transferencia');
+    expect(metodoPedidoDe('efectivo')).toBe('efectivo');
+  });
+
   test('el pago mixto y la foto', () => {
     expect(validatePayment({ metodo: 'efectivo', total: 100, efectivo: 100, transferencia: 0, hasPhoto: false }).ok).toBe(true);
     expect(validatePayment({ metodo: 'transferencia', total: 100, efectivo: 0, transferencia: 100, hasPhoto: false }).ok).toBe(false);
@@ -128,6 +135,7 @@ describe('domain app-repartidor', () => {
   test('solo nadie y reagendar avisan por WhatsApp', () => {
     expect(avisaReagendo('nadie')).toBe(true);
     expect(avisaReagendo('reagendar')).toBe(true);
+    expect(avisaReagendo('demanda')).toBe(true);
     expect(avisaReagendo('otro')).toBe(false);
     expect(avisaReagendo(undefined)).toBe(false);
   });

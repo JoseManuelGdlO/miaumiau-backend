@@ -95,6 +95,11 @@ module.exports = (sequelize, DataTypes) => {
         len: [0, 1000]
       }
     },
+    es_distribuidor: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,

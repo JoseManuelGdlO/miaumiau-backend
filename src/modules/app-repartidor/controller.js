@@ -235,7 +235,13 @@ async function solicitarLlamada(req, res) {
 async function noEntregar(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
-    return service.noEntregar(depsFrom(req, { fecha, timezone, motivo: req.body?.motivo, nota: req.body?.nota }));
+    return service.noEntregar(depsFrom(req, {
+      fecha,
+      timezone,
+      motivo: req.body?.motivo,
+      nota: req.body?.nota,
+      fecha_sugerida: req.body?.fecha_sugerida,
+    }));
   }, 'noEntregar');
 }
 

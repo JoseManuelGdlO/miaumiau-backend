@@ -46,6 +46,12 @@ function moneyCents(value) {
   return Math.round(Number(value) * 100) || 0;
 }
 
+function metodoPedidoDe(elegido) {
+  if (elegido === 'terminal') return 'transferencia';
+  if (elegido === 'efectivo' || elegido === 'transferencia' || elegido === 'mixto') return elegido;
+  return null;
+}
+
 function validatePayment({ metodo, total, efectivo, transferencia, hasPhoto }) {
   const cash = moneyCents(efectivo);
   const wire = moneyCents(transferencia);
@@ -232,7 +238,7 @@ function ayudaCodigoVencida(esperaDesde, now) {
 }
 
 function avisaReagendo(motivo) {
-  return motivo === 'nadie' || motivo === 'reagendar';
+  return motivo === 'nadie' || motivo === 'reagendar' || motivo === 'demanda';
 }
 
 function urlFoto(valor) {
@@ -260,6 +266,7 @@ module.exports = {
   applyLoadChange,
   checkInOpens,
   canListOrders,
+  metodoPedidoDe,
   validatePayment,
   validateStock,
   nextPoints,

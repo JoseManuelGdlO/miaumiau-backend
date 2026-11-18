@@ -42,24 +42,24 @@ async function minutosEntre(origen, destino, apiKey, httpGet) {
   return Math.max(1, Math.round(seconds / 60));
 }
 
-function componentes(nombre, minutos) {
+// shortcut: plantilla Meta sigue pidiendo {{2}}; "unos" evita un ETA que se vuelva reclamo
+const ETA_PLANTILLA = 'unos';
+
+function componentes(nombre, minutos = ETA_PLANTILLA) {
   return [{
     type: 'body',
     parameters: [
       { type: 'text', text: String(nombre).slice(0, 60) },
-      { type: 'text', text: String(minutos) },
+      { type: 'text', text: String(minutos || ETA_PLANTILLA) },
     ],
   }];
 }
 
-function menuDeSiguiente(nombre, minutos) {
+function menuDeSiguiente(nombre) {
   const quien = String(nombre || 'cliente').slice(0, 40);
-  const texto = minutos
-    ? `${quien}, tu pedido llega en ${minutos} min. ¿Puedes recibirlo?`
-    : `${quien}, tu pedido va en camino. ¿Puedes recibirlo?`;
   return {
     type: 'button',
-    body: { text: texto },
+    body: { text: `${quien}, tu pedido va en camino. ¿Puedes recibirlo? Ten a la mano el código de entrega.` },
     action: {
       buttons: [
         { type: 'reply', reply: { id: 'ok_listo', title: 'Ok, listo' } },
@@ -115,13 +115,13 @@ async function avisarSiguiente(deps, origen) {
   const nombre = pedido.cliente?.nombre_completo || 'cliente';
   const linea = deps.lineaWhatsApp || (await deps.lineaDelCliente?.(deps, pedido));
   const sendMenu = deps.sendWhatsAppInteractive || sendWhatsAppInteractive;
-  const menu = await sendMenu(telefono, linea, menuDeSiguiente(nombre, minutos));
+  const menu = await sendMenu(telefono, linea, menuDeSiguiente(nombre));
   let enviado = Boolean(menu?.success);
-  if (!enviado && minutos != null) {
+  if (!enviado) {
     const send = deps.sendWhatsAppTemplate || sendWhatsAppTemplate;
     const plantilla = await send(telefono, linea, TEMPLATE, {
       languageCode: WHATSAPP_TEMPLATE_LANGUAGE,
-      components: componentes(nombre, minutos),
+      components: componentes(nombre, ETA_PLANTILLA),
     });
     enviado = Boolean(plantilla?.success);
   }
@@ -154,6 +154,7 @@ function proximosDias(ahora = new Date()) {
 
 module.exports = {
   TEMPLATE,
+  ETA_PLANTILLA,
   abierto,
   minutosEntre,
   avisarSiguiente,

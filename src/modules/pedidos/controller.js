@@ -8,6 +8,7 @@ const { parseFechaEntregaEstimada } = require('../../utils/date');
 const { horarioDeEntrega } = require('./horario');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { calcularYValidarStock, lineaPaquete } = require('./stock');
+const { montoDescuento, aplicaACliente } = require('../promotions/descuento');
 const { Logger } = require('../../utils/logger');
 
 const stockDb = { Inventario, Paquete, ProductoPaquete };
@@ -885,8 +886,20 @@ class PedidoController {
       }
 
       // Actualizar subtotal del pedido
-      // Los descuentos ya fueron aplicados a los productos antes de crear el pedido
       await pedido.actualizarSubtotal(subtotal);
+      if (codigoPromocionNormalizado) {
+        try {
+          const promotion = await Promotion.findByCode(codigoPromocionNormalizado);
+          if (promotion && promotion.isActive && promotion.isActive()) {
+            if (aplicaACliente(promotion, Boolean(cliente?.es_distribuidor))) {
+              const monto = montoDescuento(promotion, subtotal);
+              if (monto > 0) await pedido.aplicarDescuento(monto);
+            }
+          }
+        } catch (descuentoError) {
+          log.error('Error al aplicar descuento de promoción:', descuentoError);
+        }
+      }
 
       // Actualizar conversaciones relacionadas con el pedido creado
       // Buscar conversaciones que tengan el teléfono del cliente y actualizarlas con el id_pedido

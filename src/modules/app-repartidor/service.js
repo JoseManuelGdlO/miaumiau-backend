@@ -7,6 +7,7 @@ const {
   ayudaCodigoVencida,
   codesMatch,
   packageCodeComponents,
+  metodoPedidoDe,
   validatePayment,
   validateStock,
   nextPoints,
@@ -91,9 +92,14 @@ function toPedidoDto(pedido, rutaPedido) {
     if (minutos > 0) rest.minutos_transporte = minutos;
   }
   const cobro = raw.cobro_entrega || raw.cobroEntrega;
-  if (cobro?.comprobante_path) {
-    rest.pagado = true;
-    rest.comprobante_url = comprobantePublicPath(cobro.comprobante_path);
+  if (cobro) {
+    rest.monto_efectivo = Number(cobro.monto_efectivo) || 0;
+    rest.monto_transferencia = Number(cobro.monto_transferencia) || 0;
+    rest.metodo_cobro = cobro.metodo || null;
+    if (cobro.comprobante_path) {
+      rest.pagado = true;
+      rest.comprobante_url = comprobantePublicPath(cobro.comprobante_path);
+    }
   }
   rest.desglose = desglosePedido(raw);
   return rest;
@@ -438,7 +444,11 @@ async function solicitarValidacion(deps = {}) {
       });
     }
   }
-  publishNotificacion(notificacion);
+  try {
+    publishNotificacion(notificacion);
+  } catch (err) {
+    log.warn('la validación se guardó pero no se avisó en vivo', { message: err.message });
+  }
   const dinero = dineroConExtras(calculo.dinero_esperado, extras);
   await jornada.update({
     estado: 'esperando_call_center',
@@ -600,6 +610,7 @@ async function obtenerJornada(deps = {}) {
       cargas: agruparCargasLeidas([...calculo.lineas, ...extras]),
       pedidos,
       polyline_encoded,
+      cobros: [],
     };
     if (!jornada) return base;
     const raw = plain(jornada);
@@ -614,6 +625,7 @@ async function obtenerJornada(deps = {}) {
       valor_carga: moneyOf(raw.valor_carga),
       comprobante_deposito_path: raw.comprobante_deposito_path,
       cerrada_en: raw.cerrada_en,
+      cobros: await cobrosDtoDelDia(deps),
     };
   }
   const raw = plain(jornada);
@@ -633,6 +645,7 @@ async function obtenerJornada(deps = {}) {
     cargas: agruparCargasLeidas((raw.cargas || []).map(cargaDto)),
     pedidos,
     polyline_encoded,
+    cobros: await cobrosDtoDelDia(deps),
   };
 }
 
@@ -1380,14 +1393,23 @@ async function entregar(deps = {}) {
 
   try {
     await sequelize.transaction(async (t) => {
-      await db.CobroEntrega.create({
+      const existente = await db.CobroEntrega.findOne({
+        where: { fkid_pedido: pedido.id },
+        transaction: t,
+      });
+      const cobroPayload = {
         fkid_pedido: pedido.id,
         fkid_repartidor: deps.repartidorId,
         metodo,
         monto_efectivo: efectivo,
         monto_transferencia: transferencia,
-        comprobante_path: comprobantePath(deps.file),
-      }, { transaction: t });
+        comprobante_path: comprobantePath(deps.file) || existente?.comprobante_path || null,
+      };
+      if (existente && typeof existente.update === 'function') {
+        await existente.update(cobroPayload, { transaction: t });
+      } else {
+        await db.CobroEntrega.create(cobroPayload, { transaction: t });
+      }
 
       await rutaPedido.update({
         estado_entrega: 'entregado',
@@ -1397,7 +1419,12 @@ async function entregar(deps = {}) {
         ...(evidencia ? { evidencia_path: evidencia } : {}),
         ...(notaTercero ? { notas_entrega: notaTercero } : {}),
       }, { transaction: t });
-      await pedido.update({ estado: 'entregado', fecha_entrega_real: now }, { transaction: t });
+      const metodoPedido = metodoPedidoDe(elegido) || metodo;
+      await pedido.update({
+        estado: 'entregado',
+        fecha_entrega_real: now,
+        ...(metodoPedido ? { metodo_pago: metodoPedido } : {}),
+      }, { transaction: t });
 
       if (db.InventarioVehiculo) {
         const jornada = await loadJornada(deps, { findOrCreate: false });
@@ -1630,13 +1657,15 @@ async function findLlamadaCliente(deps) {
 
 async function noEntregar(deps = {}) {
   await requireJornadaAbierta(deps);
+  const motivo = String(deps.motivo || '');
   const avisos = await avisosDelRepartidor(deps);
   const llamada = avisos.find((n) => esLlamadaCliente(n, deps.pedidoId));
   const ayuda = avisos.find((n) => esAyudaCodigo(n, deps.pedidoId));
   const ahora = deps.now ? new Date(deps.now) : new Date();
   const porLlamada = Boolean(llamada?.datos?.intento_liberado);
   const porAyuda = Boolean(ayuda) && ayudaCodigoVencida(ayuda.datos?.espera_desde, ahora);
-  if (!porLlamada && !porAyuda) {
+  const porDemanda = motivo === 'demanda';
+  if (!porLlamada && !porAyuda && !porDemanda) {
     if (!llamada && !ayuda) fail(403, 'Falta avisar a Call Center');
     fail(403, 'Call Center tiene que liberar el intento');
   }
@@ -1646,7 +1675,6 @@ async function noEntregar(deps = {}) {
   if (['entregado', 'no_entregado'].includes(pedido.estado) || rutaPedido.estado_entrega === 'fallido') {
     fail(409, 'El pedido ya fue cerrado');
   }
-  const motivo = String(deps.motivo || '');
   const notaOtro = String(deps.nota || '').trim().slice(0, 200);
   if (motivo === 'otro' && notaOtro.length < 3) fail(422, 'Escribe qué pasó');
   const now = new Date();
@@ -1673,9 +1701,22 @@ async function noEntregar(deps = {}) {
       await avisarElegirFecha({
         telefono: formatPhoneForWhatsApp(phoneOf(pedido)),
         linea: await lineaWhatsAppDelCliente(deps, pedido),
+        motivo,
+        fecha_sugerida: deps.fecha_sugerida,
       });
     } catch (error) {
       log.warn('No se pudo avisar el reagendo por WhatsApp', { message: error.message });
+    }
+  }
+  if (motivo === 'demanda') {
+    try {
+      await crearSoporte({
+        ...deps,
+        motivo: 'demanda',
+        nota: deps.fecha_sugerida ? `Reagendar ${deps.fecha_sugerida}` : 'Demanda de pedidos',
+      });
+    } catch (error) {
+      log.warn('No se avisó a Call Center el reagendo por demanda', { message: error.message });
     }
   }
   await soltarSiguiente(deps);
@@ -1718,6 +1759,39 @@ async function refrescarCorte(deps = {}) {
     virtual_cobrado: Math.round(virtual * 100) / 100,
     valor_carga: moneyOf(jornada.valor_carga) || moneyOf(jornada.dinero_esperado),
   });
+}
+
+async function cobrosDtoDelDia(deps = {}) {
+  const db = getModels(deps);
+  if (typeof db.CobroEntrega?.findAll !== 'function' || !deps.fecha) return [];
+  const cobros = await db.CobroEntrega.findAll({
+    where: { fkid_repartidor: deps.repartidorId },
+    include: [{
+      model: db.Pedido,
+      as: 'pedido',
+      required: true,
+      attributes: ['id', 'numero_pedido'],
+      include: [{
+        model: db.RutaPedido,
+        as: 'rutas',
+        required: true,
+        include: [{
+          model: db.Ruta,
+          as: 'ruta',
+          required: true,
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+        }],
+      }],
+    }],
+  });
+  return cobros.map((c) => ({
+    pedido_id: c.fkid_pedido,
+    numero_pedido: c.pedido?.numero_pedido || null,
+    metodo: c.metodo,
+    monto_efectivo: Number(c.monto_efectivo) || 0,
+    monto_transferencia: Number(c.monto_transferencia) || 0,
+    comprobante_url: c.comprobante_path ? comprobantePublicPath(c.comprobante_path) : null,
+  }));
 }
 
 async function paradasAbiertas(deps) {
@@ -1823,25 +1897,29 @@ async function registrarCaja(deps = {}) {
     fs.unlink(archivo, () => {});
   }
   const repartidorNombre = await nombreDelRepartidor(deps);
-  const aviso = await defaultCrearNotificacion(deps, {
-    nombre: 'Cierre de día',
-    descripcion: repartidorNombre ? `Viene de ${repartidorNombre}` : 'Viene de la cola de Call Center',
-    prioridad: 'alta',
-    datos: {
-      tipo: 'cierre_dia',
-      estado_solicitud: 'abierta',
-      repartidor_id: deps.repartidorId,
-      jornada_id: jornada.id,
-      ...(repartidorNombre ? { repartidor_nombre: repartidorNombre } : {}),
-    },
-  });
-  const datosCierre = {
-    ...(aviso.datos || {}),
-    actionUrl: `/dashboard/call-center?tab=operacion&aviso=${aviso.id}`,
-  };
-  if (typeof aviso.update === 'function') await aviso.update({ datos: datosCierre });
-  else aviso.datos = datosCierre;
-  publishNotificacion(aviso);
+  try {
+    const aviso = await defaultCrearNotificacion(deps, {
+      nombre: 'Cierre de día',
+      descripcion: repartidorNombre ? `Viene de ${repartidorNombre}` : 'Viene de la cola de Call Center',
+      prioridad: 'alta',
+      datos: {
+        tipo: 'cierre_dia',
+        estado_solicitud: 'abierta',
+        repartidor_id: deps.repartidorId,
+        jornada_id: jornada.id,
+        ...(repartidorNombre ? { repartidor_nombre: repartidorNombre } : {}),
+      },
+    });
+    const datosCierre = {
+      ...(aviso.datos || {}),
+      actionUrl: `/dashboard/call-center?tab=operacion&aviso=${aviso.id}`,
+    };
+    if (typeof aviso.update === 'function') await aviso.update({ datos: datosCierre });
+    else aviso.datos = datosCierre;
+    publishNotificacion(aviso);
+  } catch (err) {
+    log.warn('el cierre se guardó pero no se avisó a Call Center', { message: err.message });
+  }
   return obtenerJornada({ ...deps, jornada });
 }
 
