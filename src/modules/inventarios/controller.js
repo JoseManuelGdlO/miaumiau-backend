@@ -21,6 +21,7 @@ class InventarioController {
         search,
         min_price,
         max_price,
+        departamento,
         page = 1,
         limit = 10
       } = req.query;
@@ -136,7 +137,8 @@ class InventarioController {
           {
             model: City,
             as: 'ciudad',
-            attributes: ['id', 'nombre', 'departamento']
+            attributes: ['id', 'nombre', 'departamento'],
+            ...(departamento ? { where: { departamento: String(departamento).trim() }, required: true } : {}),
           },
           {
             model: Proveedor,
@@ -243,6 +245,9 @@ class InventarioController {
         stock_maximo = 1000,
         costo_unitario,
         precio_venta,
+        precio_distribuidor,
+        umbral_mayoreo,
+        descuento_proveedor_pct,
         fkid_proveedor,
         compra_minima
       } = req.body;
@@ -307,10 +312,13 @@ class InventarioController {
         stock_maximo,
         costo_unitario,
         precio_venta,
+        precio_distribuidor: precio_distribuidor === undefined || precio_distribuidor === '' ? null : precio_distribuidor,
+        umbral_mayoreo: umbral_mayoreo === undefined || umbral_mayoreo === '' ? null : umbral_mayoreo,
+        descuento_proveedor_pct: descuento_proveedor_pct === undefined || descuento_proveedor_pct === '' ? null : descuento_proveedor_pct,
         fkid_proveedor
       };
 
-      if (compra_minima !== undefined && compra_minima !== null) {
+      if (compra_minima !== undefined && compra_minima !== null && compra_minima !== '') {
         createData.compra_minima = parseInt(compra_minima, 10);
       } else {
         createData.compra_minima = null;
@@ -434,6 +442,12 @@ class InventarioController {
           });
         }
       }
+
+      ['precio_distribuidor', 'umbral_mayoreo', 'descuento_proveedor_pct', 'compra_minima'].forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(updateData, key) && updateData[key] === '') {
+          updateData[key] = null;
+        }
+      });
 
       await inventario.update(updateData);
 

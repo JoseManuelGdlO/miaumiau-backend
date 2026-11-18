@@ -9,6 +9,7 @@ const { horarioDeEntrega } = require('./horario');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { calcularYValidarStock, lineaPaquete } = require('./stock');
 const { montoDescuento, aplicaACliente } = require('../promotions/descuento');
+const { precioLista } = require('../inventarios/precio');
 const { Logger } = require('../../utils/logger');
 
 const stockDb = { Inventario, Paquete, ProductoPaquete };
@@ -715,10 +716,9 @@ class PedidoController {
         for (const producto of productosAProcesar) {
           const { fkid_producto, cantidad, precio_unidad, descuento_producto = 0, notas_producto, es_regalo } = producto;
           
-          // Para productos regalo, permitir fkid_producto null
-          // Para productos normales, verificar que el producto existe
+          let productoInventario = null;
           if (!es_regalo && fkid_producto) {
-            const productoInventario = await Inventario.findByPk(fkid_producto);
+            productoInventario = await Inventario.findByPk(fkid_producto);
             if (!productoInventario) {
               return res.status(400).json({
                 success: false,
@@ -727,8 +727,12 @@ class PedidoController {
             }
           }
 
-          // Los precios ya vienen aplicados desde aplicarCodigo, no calcular descuentos aquí
-          const precioUnidad = parseFloat(precio_unidad) || 0;
+          const precioUnidad = productoInventario
+            ? precioLista(productoInventario, {
+              es_distribuidor: Boolean(cliente?.es_distribuidor),
+              cantidad,
+            })
+            : parseFloat(precio_unidad) || 0;
           const precioTotal = precioUnidad * parseInt(cantidad);
           
           // El descuento_producto debe ser 0 ya que los descuentos se aplicaron en aplicarCodigo

@@ -125,6 +125,28 @@ module.exports = (sequelize, DataTypes) => {
         min: 1
       },
       comment: 'Cantidad mínima de compra del producto (null = sin restricción)'
+    },
+    precio_distribuidor: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+      validate: {
+        min: 0
+      }
+    },
+    umbral_mayoreo: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: {
+        min: 1
+      }
+    },
+    descuento_proveedor_pct: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: true,
+      validate: {
+        min: 0,
+        max: 100
+      }
     }
   }, {
     tableName: 'inventarios',
@@ -177,7 +199,9 @@ module.exports = (sequelize, DataTypes) => {
         }
       },
       precioVentaMayorQueCosto() {
-        if (this.precio_venta < this.costo_unitario) {
+        const venta = Number(this.precio_venta);
+        const costo = Number(this.costo_unitario);
+        if (venta < costo) {
           throw new Error('El precio de venta debe ser mayor o igual al costo unitario');
         }
       }
