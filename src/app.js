@@ -10,7 +10,7 @@ require('dotenv').config();
 
 const BACKEND_VERSION = process.env.BACKEND_VERSION || '1.0.0';
 
-const { ensureUploadsDirs } = require('./utils/uploadImages');
+const { ensureUploadsDirs, UPLOADS_BASE } = require('./utils/uploadImages');
 
 const { sequelize } = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
@@ -263,7 +263,7 @@ app.use('/uploads', (req, res, next) => {
   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 });
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(UPLOADS_BASE));
 
 // Catálogo público por ciudad (CSV para Meta) - sin /api, sin auth
 app.use('/catalogo', catalogoRoutes);
