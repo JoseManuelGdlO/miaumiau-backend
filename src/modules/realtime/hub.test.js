@@ -52,7 +52,23 @@ test('broadcastGps llega a Call Center y no a la sala del repartidor', () => {
   const driver = fakeSocket();
   hub.addCallCenter(cc);
   hub.add(4, driver);
-  expect(hub.broadcastGps(4, { lat: 24.1, lng: -104.6 })).toBe(1);
-  expect(JSON.parse(cc.payloads[0])).toEqual({ type: 'gps', repartidorId: 4, lat: 24.1, lng: -104.6 });
+  expect(hub.broadcastGps(4, {
+    lat: 24.1,
+    lng: -104.6,
+    velocidadActualKmh: 38,
+    velocidadPromedioKmh: 31,
+    estadoMovimiento: 'en_movimiento',
+    alertaGps: false,
+  })).toBe(1);
+  expect(JSON.parse(cc.payloads[0])).toEqual({
+    type: 'gps',
+    repartidorId: 4,
+    lat: 24.1,
+    lng: -104.6,
+    velocidadActualKmh: 38,
+    velocidadPromedioKmh: 31,
+    estadoMovimiento: 'en_movimiento',
+    alertaGps: false,
+  });
   expect(driver.payloads).toEqual([]);
 });

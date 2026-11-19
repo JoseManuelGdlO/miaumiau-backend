@@ -1,4 +1,5 @@
 const { WebSocket, WebSocketServer } = require('ws');
+const { crearFiltro } = require('./telemetria');
 
 const DEFAULT_PATH = '/api/app-repartidor/ws';
 const CALL_CENTER_PATH = '/api/call-center/ws';
@@ -29,6 +30,7 @@ function attachRealtime(httpServer, options) {
   const authTimeoutMs = options.authTimeoutMs ?? 5000;
   const gpsThrottleMs = options.gpsThrottleMs ?? 20000;
   const lastGps = new Map();
+  const filtro = options.filtro || crearFiltro();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 8192 });
 
   function onUpgrade(req, socket, head) {
@@ -107,14 +109,24 @@ function attachRealtime(httpServer, options) {
         const lat = Number(message.lat);
         const lng = Number(message.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-        const punto = { lat, lng };
-        hub.broadcastGps(repartidorId, punto);
+        const accuracy = Number(message.accuracy);
+        if (Number.isFinite(accuracy) && accuracy > 40) return;
+        const telemetria = filtro.procesar({
+          repartidorId,
+          lat,
+          lng,
+          velocidadGpsMs: message.speed,
+          timestamp: Number.isFinite(Number(message.timestamp)) ? Number(message.timestamp) : Date.now(),
+        });
+        if (!telemetria) return;
+        hub.broadcastGps(repartidorId, telemetria);
+        if (!telemetria.aceptado) return;
         const now = Date.now();
         if (now - (lastGps.get(repartidorId) || 0) < gpsThrottleMs) return;
         lastGps.set(repartidorId, now);
         if (typeof onGps === 'function') {
           try {
-            await onGps(repartidorId, punto);
+            await onGps(repartidorId, { lat: telemetria.lat, lng: telemetria.lng });
           } catch {
             // El pin ya salió por WS; la DB puede esperar al siguiente tick.
           }

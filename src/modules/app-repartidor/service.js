@@ -2146,19 +2146,23 @@ async function registrarUbicacion(deps = {}) {
 
 async function registrarVelocidad(deps = {}) {
   const kmh = Number(deps.velocidad_kmh ?? deps.velocidad);
-  if (!Number.isFinite(kmh) || kmh < 0 || kmh > 180) fail(422, 'La velocidad no es válida');
-  const db = getModels(deps);
-  if (Number.isFinite(Number(deps.lat)) && Number.isFinite(Number(deps.lng))) {
+  if (!Number.isFinite(kmh) || kmh < 0 || kmh > 130) fail(422, 'La velocidad no es válida');
+  const lat = Number(deps.lat);
+  const lng = Number(deps.lng);
+  const tienePunto = Number.isFinite(lat) && Number.isFinite(lng);
+  if (tienePunto) {
     try { await registrarUbicacion(deps); } catch { /* velocidad se guarda igual */ }
   }
+  if (kmh < 3.5) return resumenVelocidad(deps);
+  const db = getModels(deps);
   if (typeof db.LecturaVelocidad?.create !== 'function') return { promedio: null, lecturas: 0 };
   const jornada = await loadJornada(deps, { findOrCreate: false });
   await db.LecturaVelocidad.create({
     fkid_repartidor: deps.repartidorId,
     fkid_jornada: jornada?.id ?? null,
     velocidad_kmh: Math.round(kmh * 10) / 10,
-    lat: Number.isFinite(Number(deps.lat)) ? Number(deps.lat) : null,
-    lng: Number.isFinite(Number(deps.lng)) ? Number(deps.lng) : null,
+    lat: tienePunto ? lat : null,
+    lng: tienePunto ? lng : null,
     fecha: deps.fecha,
   });
   return resumenVelocidad(deps);
@@ -2187,6 +2191,7 @@ async function resumenVelocidad(deps = {}) {
     where,
     include: db.Repartidor ? [{ model: db.Repartidor, as: 'repartidor', attributes: ['id', 'nombre_completo', 'lat_actual', 'lng_actual', 'ubicacion_at'], required: false }] : [],
   });
+  const { promedioDeLecturas } = require('../realtime/telemetria');
   const grupos = new Map();
   for (const row of rows) {
     const id = row.fkid_repartidor;
@@ -2194,14 +2199,12 @@ async function resumenVelocidad(deps = {}) {
     const grupo = grupos.get(id) || {
       repartidor_id: id,
       nombre: row.repartidor?.nombre_completo || null,
-      suma: 0,
-      lecturas: 0,
+      lecturas: [],
       lat: gps.lat,
       lng: gps.lng,
       ubicacion_at: gps.ubicacion_at,
     };
-    grupo.suma += Number(row.velocidad_kmh) || 0;
-    grupo.lecturas += 1;
+    grupo.lecturas.push(row);
     if (gps.lat != null) {
       grupo.lat = gps.lat;
       grupo.lng = gps.lng;
@@ -2209,15 +2212,18 @@ async function resumenVelocidad(deps = {}) {
     }
     grupos.set(id, grupo);
   }
-  const lista = [...grupos.values()].map((grupo) => ({
-    repartidor_id: grupo.repartidor_id,
-    nombre: grupo.nombre,
-    promedio: Math.round((grupo.suma / grupo.lecturas) * 10) / 10,
-    lecturas: grupo.lecturas,
-    lat: grupo.lat,
-    lng: grupo.lng,
-    ubicacion_at: grupo.ubicacion_at,
-  }));
+  const lista = [...grupos.values()].map((grupo) => {
+    const resumen = promedioDeLecturas(grupo.lecturas);
+    return {
+      repartidor_id: grupo.repartidor_id,
+      nombre: grupo.nombre,
+      promedio: resumen.promedio,
+      lecturas: resumen.lecturas,
+      lat: grupo.lat,
+      lng: grupo.lng,
+      ubicacion_at: grupo.ubicacion_at,
+    };
+  });
   if (deps.repartidorId != null) return lista[0] || { promedio: null, lecturas: 0, lat: null, lng: null, ubicacion_at: null };
   return lista;
 }

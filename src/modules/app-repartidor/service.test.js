@@ -977,6 +977,26 @@ test('registrarUbicacion persiste lat_actual del repartidor', async () => {
   expect(updates[0].opts.where).toEqual({ id: 3 });
 });
 
+test('registrarVelocidad no guarda una lectura detenida', async () => {
+  const created = [];
+  await registrarVelocidad({
+    repartidorId: 3,
+    fecha: '2026-11-05',
+    velocidad_kmh: 2,
+    lat: 24.1,
+    lng: -104.6,
+    models: {
+      Repartidor: { update: async () => {} },
+      LecturaVelocidad: {
+        create: async (row) => created.push(row),
+        findAll: async () => [],
+      },
+      JornadaRepartidor: { findOne: async () => ({ id: 9 }) },
+    },
+  });
+  expect(created).toEqual([]);
+});
+
 test('registrarVelocidad guarda GPS y lectura', async () => {
   const created = [];
   const updates = [];
@@ -997,6 +1017,25 @@ test('registrarVelocidad guarda GPS y lectura', async () => {
   });
   expect(updates[0].lat_actual).toBe(24.1);
   expect(created[0].lat).toBe(24.1);
+});
+
+test('resumenVelocidad usa distancia y tiempo en movimiento', async () => {
+  const norte = 24.0277 + 200 / 111320;
+  const data = await resumenVelocidad({
+    fecha: '2026-11-05',
+    models: {
+      LecturaVelocidad: {
+        findAll: async () => [
+          { fkid_repartidor: 3, lat: 24.0277, lng: -104.6532, created_at: '2026-11-05T18:00:00.000Z', velocidad_kmh: 0, repartidor: { nombre_completo: 'Ana' } },
+          { fkid_repartidor: 3, lat: 24.0277 + 3 / 111320, lng: -104.6532, created_at: '2026-11-05T18:00:08.000Z', velocidad_kmh: 4, repartidor: { nombre_completo: 'Ana' } },
+          { fkid_repartidor: 3, lat: norte, lng: -104.6532, created_at: '2026-11-05T18:00:26.000Z', velocidad_kmh: 40, repartidor: { nombre_completo: 'Ana' } },
+        ],
+      },
+    },
+  });
+  expect(data[0].lecturas).toBe(3);
+  expect(data[0].promedio).toBeGreaterThan(20);
+  expect(data[0].promedio).toBeLessThan(60);
 });
 
 test('resumenVelocidad expone lat/lng de la lectura', async () => {

@@ -58,6 +58,10 @@ function createHub() {
       repartidorId: Number(repartidorId),
       lat: Number(punto.lat),
       lng: Number(punto.lng),
+      velocidadActualKmh: Number.isFinite(Number(punto.velocidadActualKmh)) ? Number(punto.velocidadActualKmh) : 0,
+      velocidadPromedioKmh: Number.isFinite(Number(punto.velocidadPromedioKmh)) ? Number(punto.velocidadPromedioKmh) : 0,
+      estadoMovimiento: punto.estadoMovimiento === 'en_movimiento' ? 'en_movimiento' : 'detenido',
+      alertaGps: Boolean(punto.alertaGps),
     });
     let sent = 0;
     for (const socket of callCenter) {

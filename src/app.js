@@ -19,7 +19,7 @@ const requestLogger = require('./middleware/requestLogger');
 const { Logger } = require('./utils/logger');
 const { attachRealtime } = require('./modules/realtime/attach');
 const { verifyRepartidorToken, verifyCallCenterToken } = require('./modules/realtime/auth');
-const { getHub } = require('./modules/realtime');
+const { getHub, getFiltroGps } = require('./modules/realtime');
 
 const log = new Logger('App');
 const autoEntregarPedidos = require('./jobs/autoEntregarPedidos');
@@ -358,6 +358,7 @@ const startServer = async () => {
     const lastGpsWrite = new Map();
     attachRealtime(server, {
       hub: getHub(),
+      filtro: getFiltroGps(),
       verifyToken: (token) => verifyRepartidorToken(token),
       verifyCallCenter: (token) => verifyCallCenterToken(token),
       onGps: async (repartidorId, punto) => {
