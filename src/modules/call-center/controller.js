@@ -164,7 +164,8 @@ function cambiarDireccion(req, res) {
 function comprobantes(req, res) {
   return handle(res, () => service.listarComprobantes({
     fecha: req.query.fecha || null,
-    historico: req.query.historico || null,
+    desde: req.query.desde || null,
+    hasta: req.query.hasta || null,
   }), 'comprobantes');
 }
 

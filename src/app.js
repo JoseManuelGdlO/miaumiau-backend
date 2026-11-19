@@ -10,7 +10,7 @@ require('dotenv').config();
 
 const BACKEND_VERSION = process.env.BACKEND_VERSION || '1.0.0';
 
-const { ensureUploadsDirs } = require('./utils/uploadImages');
+const { ensureUploadsDirs, UPLOADS_BASE } = require('./utils/uploadImages');
 
 const { sequelize } = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
@@ -19,7 +19,7 @@ const requestLogger = require('./middleware/requestLogger');
 const { Logger } = require('./utils/logger');
 const { attachRealtime } = require('./modules/realtime/attach');
 const { verifyRepartidorToken, verifyCallCenterToken } = require('./modules/realtime/auth');
-const { getHub } = require('./modules/realtime');
+const { getHub, getFiltroGps } = require('./modules/realtime');
 
 const log = new Logger('App');
 const autoEntregarPedidos = require('./jobs/autoEntregarPedidos');
@@ -263,7 +263,7 @@ app.use('/uploads', (req, res, next) => {
   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 });
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(UPLOADS_BASE));
 
 // Catálogo público por ciudad (CSV para Meta) - sin /api, sin auth
 app.use('/catalogo', catalogoRoutes);
@@ -358,6 +358,7 @@ const startServer = async () => {
     const lastGpsWrite = new Map();
     attachRealtime(server, {
       hub: getHub(),
+      filtro: getFiltroGps(),
       verifyToken: (token) => verifyRepartidorToken(token),
       verifyCallCenter: (token) => verifyCallCenterToken(token),
       onGps: async (repartidorId, punto) => {

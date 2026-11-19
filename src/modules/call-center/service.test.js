@@ -1264,6 +1264,75 @@ test('listar comprobantes incluye la foto y permite subirla si falta', async () 
   ]);
 });
 
+test('listar comprobantes del día trae evidencia y depósito', async () => {
+  const rows = await listarComprobantes({
+    fecha: '2026-10-19',
+    models: {
+      RutaPedido: {
+        findAll: async () => [{
+          evidencia_path: 'comprobantes/quien.jpg',
+          receptor_nombre: 'Luis Pérez',
+          dejar_lugar: null,
+          notas_entrega: 'Entregado a Luis Pérez. Foto: comprobantes/quien.jpg',
+          pedido: {
+            id: 4,
+            numero_pedido: 'P-4',
+            metodo_pago: 'transferencia',
+            baja_logica: false,
+            cobro_entrega: { metodo: 'transferencia', comprobante_path: 'comprobantes/a.jpg' },
+          },
+          ruta: { fecha_ruta: '2026-10-19', fkid_repartidor: 8, repartidor: { id: 8, nombre_completo: 'Ana' } },
+        }],
+      },
+      JornadaRepartidor: {
+        findAll: async () => [{
+          fkid_repartidor: 8,
+          fecha: '2026-10-19',
+          comprobante_deposito_path: 'comprobantes/dep.jpg',
+          efectivo_a_depositar: 320,
+        }],
+      },
+    },
+  });
+  expect(rows[0]).toEqual(expect.objectContaining({
+    evidencia_url: '/uploads/comprobantes/quien.jpg',
+    receptor_nombre: 'Luis Pérez',
+    deposito_url: '/uploads/comprobantes/dep.jpg',
+    efectivo_a_depositar: 320,
+  }));
+});
+
+test('listar comprobantes acepta un rango de fechas', async () => {
+  let whereFecha;
+  await listarComprobantes({
+    desde: '2026-10-01',
+    hasta: '2026-10-19',
+    models: {
+      RutaPedido: {
+        findAll: async (opts) => {
+          whereFecha = opts.include[1].where.fecha_ruta;
+          return [];
+        },
+      },
+      JornadaRepartidor: { findAll: async () => [] },
+    },
+  });
+  expect(whereFecha[require('sequelize').Op.between]).toEqual(['2026-10-01', '2026-10-19']);
+});
+
+test('el corte de un día viejo pasa aunque el repartidor esté de baja', async () => {
+  const corte = await corteDeRepartidor({
+    fecha: '2025-12-10',
+    repartidorId: 8,
+    repartidor: { id: 8, nombre_completo: 'Gerardo Haro', es_prueba: false, baja_logica: true },
+    models: {
+      RutaPedido: { findAll: async () => [] },
+    },
+  });
+  expect(corte.fecha).toBe('2025-12-10');
+  expect(corte.repartidor.nombre_completo).toBe('Gerardo Haro');
+});
+
 test('el corte agrupa las paradas del repartidor en esa fecha', async () => {
   const corte = await corteDeRepartidor({
     fecha: '2026-10-19',

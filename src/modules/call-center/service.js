@@ -1139,10 +1139,18 @@ async function cambiarDireccion(deps = {}) {
   return { direccion_entrega: direccion.slice(0, 500) };
 }
 
+function diaValido(value) {
+  const dia = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : null;
+}
+
 async function listarComprobantes(deps = {}) {
   const db = getModels(deps);
-  const historico = deps.historico === '1' || deps.historico === true;
-  const fecha = historico ? null : (deps.fecha || await fechaDeHoy(deps));
+  const hoy = await fechaDeHoy(deps);
+  let desde = diaValido(deps.desde) || diaValido(deps.fecha) || hoy;
+  let hasta = diaValido(deps.hasta) || diaValido(deps.fecha) || desde;
+  if (desde > hasta) [desde, hasta] = [hasta, desde];
+  const fechaRuta = desde === hasta ? desde : { [Op.between]: [desde, hasta] };
   const rows = await db.RutaPedido.findAll({
     include: [
       {
@@ -1157,22 +1165,40 @@ async function listarComprobantes(deps = {}) {
       {
         association: 'ruta',
         required: true,
-        where: fecha ? { fecha_ruta: fecha, baja_logica: false } : { baja_logica: false },
+        where: { fecha_ruta: fechaRuta, baja_logica: false },
         include: [{ association: 'repartidor' }],
       },
     ],
   });
+  const jornadas = typeof db.JornadaRepartidor?.findAll === 'function'
+    ? await db.JornadaRepartidor.findAll({
+      where: { fecha: desde === hasta ? desde : { [Op.between]: [desde, hasta] } },
+    })
+    : [];
+  const depositoPorDia = new Map();
+  for (const jornada of jornadas) {
+    const id = Number(jornada.fkid_repartidor);
+    const dia = String(jornada.fecha || '').slice(0, 10);
+    if (!id || !dia || !jornada.comprobante_deposito_path) continue;
+    depositoPorDia.set(`${id}|${dia}`, {
+      deposito_url: comprobantePublicPath(jornada.comprobante_deposito_path),
+      efectivo_a_depositar: Number(jornada.efectivo_a_depositar) || 0,
+    });
+  }
   return rows.flatMap((row) => {
     const pedido = row.pedido;
     const cobro = pedido.cobro_entrega || pedido.cobroEntrega;
     const metodo = cobro?.metodo || pedido.metodo_pago;
     const admiteFoto = metodo === 'transferencia' || metodo === 'mixto';
+    const repartidorId = row.ruta?.repartidor?.id || row.ruta?.fkid_repartidor || null;
+    const dia = String(row.ruta?.fecha_ruta || desde).slice(0, 10);
+    const deposito = depositoPorDia.get(`${Number(repartidorId)}|${dia}`) || {};
     return [{
       pedido_id: pedido.id,
       numero_pedido: pedido.numero_pedido,
       repartidor: row.ruta?.repartidor?.nombre_completo || null,
-      repartidor_id: row.ruta?.repartidor?.id || row.ruta?.fkid_repartidor || null,
-      ciudad: pedido.ciudad?.nombre || null,
+      repartidor_id: repartidorId,
+      ciudad: pedido.ciudad?.nombre || row.ruta?.ciudad?.nombre || null,
       metodo,
       metodo_pedido: pedido.metodo_pago || null,
       monto: Number(pedido.total) || 0,
@@ -1181,8 +1207,13 @@ async function listarComprobantes(deps = {}) {
       tiene_comprobante: Boolean(cobro?.comprobante_path),
       estado_cobro: estadoCobro({ cobro, metodo_pago: pedido.metodo_pago }),
       nota: row.notas_entrega || null,
-      fecha: row.ruta?.fecha_ruta || null,
+      fecha: row.ruta?.fecha_ruta || dia,
       comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
+      evidencia_url: comprobantePublicPath(row.evidencia_path),
+      receptor_nombre: row.receptor_nombre || null,
+      dejar_lugar: row.dejar_lugar || null,
+      deposito_url: deposito.deposito_url || null,
+      efectivo_a_depositar: deposito.efectivo_a_depositar || 0,
       puede_subir: admiteFoto && !cobro?.comprobante_path,
     }];
   });
@@ -1415,7 +1446,7 @@ async function corteDeRepartidor(deps = {}) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) fail(422, 'La fecha no es válida');
   const db = getModels(deps);
   const driver = deps.repartidor || await db.Repartidor.findByPk(repartidorId);
-  if (!driver || driver.baja_logica) fail(404, 'Repartidor no encontrado');
+  if (!driver) fail(404, 'Repartidor no encontrado');
   const paradas = await listarPedidos({ ...deps, fecha, repartidorId });
   const rutas = typeof db.Ruta?.findAll === 'function'
     ? await db.Ruta.findAll({

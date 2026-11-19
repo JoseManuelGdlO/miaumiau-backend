@@ -151,8 +151,17 @@ test('gps del repartidor llega a Call Center y persiste throttled', async () => 
   await driverReady;
   await ccReady;
   const gps = onceMessage(cc);
-  driver.send(JSON.stringify({ type: 'gps', lat: 24.02, lng: -104.66 }));
-  await expect(gps).resolves.toEqual({ type: 'gps', repartidorId: 4, lat: 24.02, lng: -104.66 });
+  driver.send(JSON.stringify({ type: 'gps', lat: 24.02, lng: -104.66, timestamp: 1_000_000 }));
+  await expect(gps).resolves.toEqual({
+    type: 'gps',
+    repartidorId: 4,
+    lat: 24.02,
+    lng: -104.66,
+    velocidadActualKmh: 0,
+    velocidadPromedioKmh: 0,
+    estadoMovimiento: 'detenido',
+    alertaGps: false,
+  });
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(onGps).toHaveBeenCalledTimes(1);
   driver.send(JSON.stringify({ type: 'gps', lat: 24.03, lng: -104.67 }));
