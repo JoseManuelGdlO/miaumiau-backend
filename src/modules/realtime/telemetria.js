@@ -22,8 +22,11 @@ function lecturaAceptable(previo, lat, lng, timestamp, velocidadGpsMs) {
   let realKmh = calculadaKmh;
   const speed = Number(velocidadGpsMs);
   if (Number.isFinite(speed) && speed >= 0) {
-    realKmh = speed * 3.6 * 0.7 + calculadaKmh * 0.3;
+    const gpsKmh = speed * 3.6;
+    if (gpsKmh > TOPE_KMH) return { ok: false, alertaGps: true };
+    realKmh = gpsKmh * 0.7 + calculadaKmh * 0.3;
   }
+  if (realKmh > TOPE_KMH) return { ok: false, alertaGps: true };
   const detenido = distancia < DEADBAND_M || realKmh < DEADBAND_KMH;
   return { ok: true, alertaGps: false, distancia, deltaTiempoSeg, realKmh, detenido };
 }

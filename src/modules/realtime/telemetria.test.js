@@ -50,6 +50,26 @@ test('un tramo real acumula distancia y promedio', () => {
   expect(estado.velocidadPromedioKmh).toBeLessThan(60);
 });
 
+test('chip GPS sobre 130 km/h no mueve el pin', () => {
+  const filtro = crearFiltro();
+  const primero = tick(filtro);
+  const lat = 24.0277 + 200 / 111320;
+  const estado = tick(filtro, { lat, timestamp: 1_018_000, velocidadGpsMs: 40 });
+  expect(estado.alertaGps).toBe(true);
+  expect(estado.aceptado).toBe(false);
+  expect(estado.lat).toBe(primero.lat);
+});
+
+test('chip GPS válido en un tramo real se acepta', () => {
+  const filtro = crearFiltro();
+  tick(filtro);
+  const lat = 24.0277 + 200 / 111320;
+  const estado = tick(filtro, { lat, timestamp: 1_018_000, velocidadGpsMs: 11 });
+  expect(estado.aceptado).toBe(true);
+  expect(estado.alertaGps).toBe(false);
+  expect(estado.lat).toBe(lat);
+});
+
 test('promedioDeLecturas ignora semáforo y salto', () => {
   const t0 = '2026-11-05T18:00:00.000Z';
   const t1 = '2026-11-05T18:00:08.000Z';
@@ -66,4 +86,15 @@ test('promedioDeLecturas ignora semáforo y salto', () => {
   expect(promedio).toBeGreaterThan(20);
   expect(promedio).toBeLessThan(60);
   expect(distanciaMetros(24.0277, -104.6532, norte, -104.6532)).toBeGreaterThan(190);
+});
+
+test('promedioDeLecturas sin movimiento no promedia', () => {
+  const t0 = '2026-11-05T18:00:00.000Z';
+  const t1 = '2026-11-05T18:00:08.000Z';
+  expect(promedioDeLecturas([]).promedio).toBeNull();
+  expect(promedioDeLecturas([{ lat: 24.0277, lng: -104.6532, created_at: t0 }]).promedio).toBeNull();
+  expect(promedioDeLecturas([
+    { lat: 24.0277, lng: -104.6532, created_at: t0 },
+    { lat: 24.0277 + 3 / 111320, lng: -104.6532, created_at: t1 },
+  ]).promedio).toBeNull();
 });
