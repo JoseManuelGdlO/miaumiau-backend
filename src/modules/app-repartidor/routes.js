@@ -22,6 +22,8 @@ router.get('/velocidad', controller.velocidad);
 router.post('/velocidad', controller.velocidad);
 router.patch('/ubicacion', controller.ubicacionGps);
 router.get('/avisos', controller.avisos);
+router.post('/push-token', controller.pushToken);
+router.delete('/push-token', controller.borrarPushToken);
 router.get('/pedidos', controller.pedidos);
 router.get('/pedidos/:id/ubicacion', controller.ubicacion);
 router.get('/pedidos/:id', controller.pedido);

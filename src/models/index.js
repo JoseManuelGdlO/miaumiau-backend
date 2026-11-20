@@ -38,6 +38,7 @@ const CityWhatsappProfile = require('./CityWhatsappProfile');
 const SiteSetting = require('./SiteSetting');
 const ClientePuntosMovimiento = require('./ClientePuntosMovimiento');
 const PushSubscription = require('./PushSubscription');
+const RepartidorPushToken = require('./RepartidorPushToken');
 const JornadaRepartidor = require('./JornadaRepartidor');
 const JornadaCarga = require('./JornadaCarga');
 const CobroEntrega = require('./CobroEntrega');
@@ -89,6 +90,7 @@ const models = {
   SiteSetting: SiteSetting(sequelize, DataTypes),
   ClientePuntosMovimiento: ClientePuntosMovimiento(sequelize, DataTypes),
   PushSubscription: PushSubscription(sequelize, DataTypes),
+  RepartidorPushToken: RepartidorPushToken(sequelize, DataTypes),
   JornadaRepartidor: JornadaRepartidor(sequelize, DataTypes),
   JornadaCarga: JornadaCarga(sequelize, DataTypes),
   CobroEntrega: CobroEntrega(sequelize, DataTypes),
@@ -596,6 +598,8 @@ models.JornadaRepartidor.hasMany(models.LecturaKilometraje, { foreignKey: 'fkid_
 models.LecturaKilometraje.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
 models.Repartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_repartidor', as: 'lecturas_velocidad' });
 models.LecturaVelocidad.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
+models.Repartidor.hasMany(models.RepartidorPushToken, { foreignKey: 'fkid_repartidor', as: 'push_tokens' });
+models.RepartidorPushToken.belongsTo(models.Repartidor, { foreignKey: 'fkid_repartidor', as: 'repartidor' });
 models.JornadaRepartidor.hasMany(models.LecturaVelocidad, { foreignKey: 'fkid_jornada', as: 'lecturas_velocidad' });
 models.LecturaVelocidad.belongsTo(models.JornadaRepartidor, { foreignKey: 'fkid_jornada', as: 'jornada' });
 models.HistorialCambio.belongsTo(models.User, { foreignKey: 'fkid_usuario', as: 'usuario' });
