@@ -172,3 +172,29 @@ test('gps del repartidor llega a Call Center y persiste throttled', async () => 
   await close();
   server.close();
 });
+
+test('gps de celular (80 m) se retransmite y una lectura inútil no', async () => {
+  const hub = createHub();
+  const broadcast = jest.spyOn(hub, 'broadcastGps');
+  const server = http.createServer();
+  const close = attachRealtime(server, {
+    hub,
+    authTimeoutMs: 500,
+    gpsThrottleMs: 0,
+    verifyToken: async () => ({ repartidorId: 4 }),
+  });
+  const port = await listen(server);
+  const driver = await openSocket(port, '/api/app-repartidor/ws');
+  const ready = onceMessage(driver);
+  driver.send(JSON.stringify({ type: 'auth', token: 'ok' }));
+  await ready;
+  driver.send(JSON.stringify({ type: 'gps', lat: 24.02, lng: -104.66, accuracy: 80, timestamp: 1_000_000 }));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(broadcast).toHaveBeenCalledTimes(1);
+  driver.send(JSON.stringify({ type: 'gps', lat: 25, lng: -105, accuracy: 900, timestamp: 1_010_000 }));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(broadcast).toHaveBeenCalledTimes(1);
+  driver.close();
+  await close();
+  server.close();
+});

@@ -6,6 +6,7 @@ yarn-error.log*
 
 # Environment variables
 .env
+firebase-service-account.json
 .env.local
 .env.development.local
 .env.test.local
@@ -76,3 +77,4 @@ temp/
 
 # Linked worktrees
 .worktrees/
+miaumiau-39226-d267a1d559ff.json

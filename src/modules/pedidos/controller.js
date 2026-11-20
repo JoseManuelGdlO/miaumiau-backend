@@ -5,6 +5,7 @@ const { Op } = require('sequelize');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { mapCityNameToId, validateAndGetCity } = require('../../utils/cityMapper');
 const { parseFechaEntregaEstimada } = require('../../utils/date');
+const { dayKey } = require('../app-repartidor/domain');
 const { horarioDeEntrega } = require('./horario');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { calcularYValidarStock, lineaPaquete } = require('./stock');
@@ -1514,6 +1515,22 @@ class PedidoController {
       }
 
       await pedido.noEntregar();
+
+      const hoy = dayKey(new Date(), 'America/Mexico_City');
+      const paradas = await RutaPedido.findAll({
+        where: { fkid_pedido: id },
+        include: [{
+          model: Ruta,
+          as: 'ruta',
+          required: true,
+          where: { fecha_ruta: hoy, baja_logica: false },
+        }],
+      });
+      const ahora = new Date();
+      for (const parada of paradas) {
+        if (parada.estado_entrega === 'entregado' || parada.estado_entrega === 'fallido') continue;
+        await parada.update({ estado_entrega: 'fallido', fecha_entrega_real: ahora });
+      }
 
       res.json({
         success: true,

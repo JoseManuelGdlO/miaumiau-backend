@@ -500,6 +500,23 @@ test('noEntregar por demanda no espera a Call Center', async () => {
   expect(rutaPedido.estado_entrega).toBe('fallido');
 });
 
+test('noEntregar cierra la parada si el pedido ya está no_entregado', async () => {
+  const pedido = { id: 5, estado: 'no_entregado', update: async () => { throw new Error('no'); } };
+  const rutaPedido = { pedido, estado_entrega: 'en_camino', update: async (data) => Object.assign(rutaPedido, data) };
+  await noEntregar({
+    jornada: { estado: 'validada' },
+    pedidoId: 5,
+    repartidorId: 1,
+    motivo: 'demanda',
+    rutaPedido,
+    models: {
+      Notificacion: { findAll: async () => [], findOne: async () => null },
+      Ruta: { findAll: async () => [] },
+    },
+  });
+  expect(rutaPedido.estado_entrega).toBe('fallido');
+});
+
 test('noEntregar no cierra la parada si Call Center no liberó el intento', async () => {
   const pedido = { id: 5, estado: 'en_camino', update: async () => { throw new Error('no'); } };
   await expect(noEntregar({
@@ -1149,12 +1166,54 @@ test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', 
   expect(dto.id).toBe(5);
 });
 
-test('entregar no_entregado sigue en 409', async () => {
+test('entregar no_entregado sin código sigue en 422', async () => {
   await expect(entregar({
     jornada: { estado: 'validada' },
     repartidorId: 1,
-    rutaPedido: { pedido: { estado: 'no_entregado' } },
-  })).rejects.toMatchObject({ status: 409, message: 'Este pedido se marcó como no entregado' });
+    rutaPedido: { pedido: { estado: 'no_entregado', total: 100 } },
+  })).rejects.toMatchObject({ status: 422, message: 'Valida el código antes de entregar' });
+});
+
+test('entregar no_entregado con código cobra y cierra', async () => {
+  const pedido = {
+    id: 5,
+    estado: 'no_entregado',
+    total: 1260,
+    numero_pedido: 'P-5',
+    productos: [],
+    update: async (data) => Object.assign(pedido, data),
+  };
+  const rutaPedido = {
+    codigo_validado_en: new Date(),
+    pedido,
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  await entregar({
+    jornada: { estado: 'validada', update: async () => {} },
+    fecha: '2026-11-20',
+    repartidorId: 1,
+    metodo: 'efectivo',
+    monto_efectivo: 1260,
+    rutaPedido,
+    models: {
+      sequelize: { transaction: async (fn) => fn({}) },
+      CobroEntrega: {
+        findOne: async () => null,
+        create: async (row) => row,
+        findAll: async () => [],
+      },
+      Pedido: { findByPk: async () => pedido, findAll: async () => [] },
+      Repartidor: { findByPk: async () => null },
+      RepartidorLogro: { findOrCreate: async () => [{}, false] },
+      RepartidorPuntosMovimiento: {
+        findOne: async () => null,
+        create: async () => {},
+      },
+      Ruta: { findAll: async () => [] },
+    },
+  });
+  expect(pedido.estado).toBe('entregado');
+  expect(rutaPedido.estado_entrega).toBe('entregado');
 });
 
 function paradaParaAviso(overrides = {}) {

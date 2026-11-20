@@ -1,6 +1,7 @@
 const { City } = require('../../models');
 const { dayKey } = require('./domain');
 const service = require('./service');
+const { guardarToken, borrarToken } = require('../push-nativo');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('AppRepartidor');
@@ -337,6 +338,14 @@ async function avisos(req, res) {
   return handle(req, res, () => service.listarAvisos(depsFrom(req)), 'avisos');
 }
 
+async function pushToken(req, res) {
+  return handle(req, res, () => guardarToken({ repartidorId: req.repartidorId, token: req.body?.token }), 'pushToken');
+}
+
+async function borrarPushToken(req, res) {
+  return handle(req, res, () => borrarToken({ repartidorId: req.repartidorId, token: req.body?.token || req.query?.token }), 'borrarPushToken');
+}
+
 async function logros(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -373,6 +382,8 @@ module.exports = {
   caja,
   soporte,
   avisos,
+  pushToken,
+  borrarPushToken,
   estadisticas,
   logros,
 };
