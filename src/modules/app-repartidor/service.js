@@ -1347,15 +1347,35 @@ async function entregar(deps = {}) {
   await requireJornadaAbierta(deps);
   const rutaPedido = await assertRutaDelRepartidor(deps);
   const pedido = rutaPedido.pedido;
-  if (['entregado', 'no_entregado'].includes(pedido.estado)) {
-    fail(409, 'El pedido ya fue cerrado');
+  if (pedido.estado === 'no_entregado') {
+    fail(409, 'Este pedido se marcó como no entregado');
   }
-  if (!rutaPedido.codigo_validado_en) fail(422, 'Valida el código antes de entregar');
-
   const elegido = String(deps.metodo || '');
   const metodo = elegido === 'terminal' ? 'transferencia' : elegido;
   const efectivo = Number(deps.monto_efectivo ?? deps.efectivo) || 0;
   const transferencia = Number(deps.monto_transferencia ?? deps.transferencia) || 0;
+  const db = getModels(deps);
+  if (pedido.estado === 'entregado') {
+    if (deps.file || efectivo || transferencia || elegido) {
+      const existente = await db.CobroEntrega.findOne({ where: { fkid_pedido: pedido.id } });
+      const cobroPayload = {
+        fkid_pedido: pedido.id,
+        fkid_repartidor: deps.repartidorId,
+        metodo,
+        monto_efectivo: efectivo,
+        monto_transferencia: transferencia,
+        comprobante_path: comprobantePath(deps.file) || existente?.comprobante_path || null,
+      };
+      if (existente && typeof existente.update === 'function') {
+        await existente.update(cobroPayload);
+      } else {
+        await db.CobroEntrega.create(cobroPayload);
+      }
+    }
+    return loadPedidoDto(db, pedido, rutaPedido);
+  }
+  if (!rutaPedido.codigo_validado_en) fail(422, 'Valida el código antes de entregar');
+
   const hasPhoto = Boolean(deps.file || deps.hasPhoto);
   const payment = validatePayment({
     metodo: elegido,
@@ -1385,7 +1405,6 @@ async function entregar(deps = {}) {
     notaTercero = `Dejado en ${lugar}. Foto: ${evidencia}`;
   }
 
-  const db = getModels(deps);
   const sequelize = db.sequelize;
   const now = new Date();
   let alreadyRecorded = false;

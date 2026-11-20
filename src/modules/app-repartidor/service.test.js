@@ -1113,6 +1113,50 @@ test('entregar mixto actualiza el cobro existente', async () => {
   expect(pedido.estado).toBe('entregado');
 });
 
+test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', async () => {
+  const cobro = {
+    comprobante_path: 'comprobantes/viejo.jpg',
+    update: async (data) => Object.assign(cobro, data),
+  };
+  const pedido = {
+    id: 5,
+    estado: 'entregado',
+    total: 180,
+    numero_pedido: 'P-5',
+    update: async () => { throw new Error('pedido.update'); },
+  };
+  const puntos = [];
+  const dto = await entregar({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    metodo: 'transferencia',
+    monto_efectivo: 0,
+    monto_transferencia: 180,
+    file: { filename: 'comprobante.jpg' },
+    rutaPedido: { codigo_validado_en: new Date(), pedido },
+    models: {
+      CobroEntrega: { findOne: async () => cobro, create: async () => { throw new Error('cobro.create'); } },
+      Pedido: { findByPk: async () => pedido },
+      RepartidorPuntosMovimiento: { create: async (row) => { puntos.push(row); } },
+      InventarioVehiculo: {},
+    },
+  });
+  expect(cobro.comprobante_path).toBe('comprobantes/comprobante.jpg');
+  expect(cobro.metodo).toBe('transferencia');
+  expect(cobro.monto_transferencia).toBe(180);
+  expect(pedido.estado).toBe('entregado');
+  expect(puntos).toEqual([]);
+  expect(dto.id).toBe(5);
+});
+
+test('entregar no_entregado sigue en 409', async () => {
+  await expect(entregar({
+    jornada: { estado: 'validada' },
+    repartidorId: 1,
+    rutaPedido: { pedido: { estado: 'no_entregado' } },
+  })).rejects.toMatchObject({ status: 409, message: 'Este pedido se marcó como no entregado' });
+});
+
 function paradaParaAviso(overrides = {}) {
   const parada = {
     id: 21,
