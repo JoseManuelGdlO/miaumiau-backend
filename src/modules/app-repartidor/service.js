@@ -1347,9 +1347,6 @@ async function entregar(deps = {}) {
   await requireJornadaAbierta(deps);
   const rutaPedido = await assertRutaDelRepartidor(deps);
   const pedido = rutaPedido.pedido;
-  if (pedido.estado === 'no_entregado') {
-    fail(409, 'Este pedido se marcó como no entregado');
-  }
   const elegido = String(deps.metodo || '');
   const metodo = elegido === 'terminal' ? 'transferencia' : elegido;
   const efectivo = Number(deps.monto_efectivo ?? deps.efectivo) || 0;
@@ -1691,8 +1688,16 @@ async function noEntregar(deps = {}) {
 
   const rutaPedido = await assertRutaDelRepartidor(deps, { withPhone: true });
   const pedido = rutaPedido.pedido;
-  if (['entregado', 'no_entregado'].includes(pedido.estado) || rutaPedido.estado_entrega === 'fallido') {
+  if (pedido.estado === 'entregado' || rutaPedido.estado_entrega === 'fallido') {
     fail(409, 'El pedido ya fue cerrado');
+  }
+  if (pedido.estado === 'no_entregado') {
+    await rutaPedido.update({
+      estado_entrega: 'fallido',
+      fecha_entrega_real: new Date(),
+    });
+    await soltarSiguiente(deps);
+    return toPedidoDto(pedido, rutaPedido);
   }
   const notaOtro = String(deps.nota || '').trim().slice(0, 200);
   if (motivo === 'otro' && notaOtro.length < 3) fail(422, 'Escribe qué pasó');

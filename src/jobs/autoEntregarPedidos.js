@@ -27,9 +27,16 @@ function getDateComponentsInTimezone(date, timezone) {
   };
 }
 
-function compararFechaEntregaSoloDia(fechaEntregaUTC, timezone) {
-  const ahoraUTC = new Date();
-  const fechaEntregaLocal = getDateComponentsInTimezone(fechaEntregaUTC, timezone);
+function esMedianocheUtc(date) {
+  const d = new Date(date);
+  return d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
+}
+
+function compararFechaEntregaSoloDia(fechaEntregaUTC, timezone, ahoraUTC = new Date()) {
+  const fecha = new Date(fechaEntregaUTC);
+  const fechaEntregaLocal = esMedianocheUtc(fecha)
+    ? { year: fecha.getUTCFullYear(), month: fecha.getUTCMonth() + 1, day: fecha.getUTCDate() }
+    : getDateComponentsInTimezone(fecha, timezone);
   const ahoraLocal = getDateComponentsInTimezone(ahoraUTC, timezone);
 
   const pad = (n) => String(n).padStart(2, '0');
@@ -43,6 +50,10 @@ function compararFechaEntregaSoloDia(fechaEntregaUTC, timezone) {
 
 function realmenteEntregado(paradas) {
   return (paradas || []).some((parada) => parada.estado_entrega === 'entregado' || parada.codigo_validado_en);
+}
+
+function paradaEnCurso(paradas) {
+  return (paradas || []).some((parada) => parada.llego_en || parada.codigo_validado_en);
 }
 
 async function marcarParadasFallidas(paradas) {
@@ -100,6 +111,7 @@ async function autoEntregarPedidos(deps = {}) {
 
         if (resultadoFecha === 'past') {
           if (pedido.estado === 'entregado' && realmenteEntregado(pedido.rutas)) continue;
+          if (paradaEnCurso(pedido.rutas)) continue;
           await marcarNoEntregado(pedido);
           pedidosActualizados.push({
             id: pedido.id,
