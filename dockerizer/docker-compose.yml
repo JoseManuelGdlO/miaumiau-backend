@@ -35,3 +35,10 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       IMAGE_BASE_URL: ${IMAGE_BASE_URL:-}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+    volumes:
+      - evidencias:/app/src/uploads/evidencias
+
+volumes:
+  evidencias:

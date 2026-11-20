@@ -263,7 +263,7 @@ function toSolicitudResumen(notificacion, repartidor, numeroPedido) {
   };
 }
 
-function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado, deposito }) {
+function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPedido, dineroEsperado, deposito, evidencias }) {
   const base = toSolicitudResumen(notificacion, repartidor, numeroPedido || pedido?.numero_pedido);
   const datos = notificacion.datos || {};
   if (datos.tipo === 'check_in') {
@@ -271,6 +271,7 @@ function toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, numeroPe
       ...base,
       dinero_esperado: dineroEsperado == null || dineroEsperado === '' ? 0 : Number(dineroEsperado),
       espera_reenvio: Boolean(datos.espera_reenvio),
+      evidencias: evidencias || null,
       cargas: agruparCargasLeidas((cargas || []).map((c) => ({
         id: c.id ?? null,
         fkid_producto: c.fkid_producto ?? null,
