@@ -657,7 +657,7 @@ async function obtenerJornada(deps = {}) {
 }
 
 async function historialPrevio(deps, jornada, tipo) {
-  const filas = [{ fecha: jornada.fecha, evidencias: jornada.evidencias, excluirTipo: tipo }];
+  const filas = [{ fecha: jornada.fecha, evidencias: jornada.evidencias, excluirTipo: tipo, mismaJornada: true }];
   const db = getModels(deps);
   if (!deps.repartidorId || typeof db.JornadaRepartidor?.findAll !== 'function' || !jornada.id) return filas;
   try {
@@ -676,6 +676,12 @@ async function historialPrevio(deps, jornada, tipo) {
   return filas;
 }
 
+function admiteEvidencia(estado, tipo) {
+  if (!estado) return true;
+  if (tipo === 'combustible') return estado !== 'cerrada';
+  return estado === 'borrador' || estado === 'esperando_call_center';
+}
+
 async function guardarEvidencia(deps = {}) {
   let tipo;
   try {
@@ -686,7 +692,7 @@ async function guardarEvidencia(deps = {}) {
   if (!deps.file) fail(422, 'Falta la foto');
   const jornada = await loadJornada(deps, { findOrCreate: true });
   if (!jornada) fail(404, 'Jornada no encontrada');
-  if (jornada.estado && jornada.estado !== 'borrador' && jornada.estado !== 'esperando_call_center') {
+  if (!admiteEvidencia(jornada.estado, tipo)) {
     fail(409, 'La jornada ya no admite fotos');
   }
   const marcas = marcasDeTiempo({ fechaCaptura: deps.fechaCaptura });
@@ -735,7 +741,7 @@ async function quitarEvidencia(deps = {}) {
   }
   const jornada = await loadJornada(deps, { findOrCreate: false });
   if (!jornada) return resumenEvidencias(null)[tipo];
-  if (jornada.estado && jornada.estado !== 'borrador' && jornada.estado !== 'esperando_call_center') {
+  if (!admiteEvidencia(jornada.estado, tipo)) {
     fail(409, 'La jornada ya no admite fotos');
   }
   const previas = jornada.evidencias && typeof jornada.evidencias === 'object' ? { ...jornada.evidencias } : {};

@@ -179,3 +179,50 @@ test('sin fechaCaptura la recepción se usa como captura y queda marcado', () =>
   expect(marcas.fechaRecepcion).toBe(marcas.fechaCaptura);
   expect(marcas.fechaCapturaOrigen).toBe('recepcion');
 });
+
+test('combustible a partir de las 6:00 p.m. CDMX genera alerta AFTER_CUTOFF_TIME y antes no', () => {
+  const antes = decidirLectura('combustible', lectura({
+    kilometraje: 1000,
+    odometro_tablero: 1000,
+    costo_mxn: 800,
+    fecha_hora_ticket: '2026-11-24T17:55:00',
+  }), { fechaCaptura: '2026-11-24T17:56:00-06:00', fechaRecepcion: '2026-11-24T17:56:00-06:00', fechaCapturaOrigen: 'cliente' });
+  expect(antes.alertas.map((a) => a.codigo)).not.toContain('AFTER_CUTOFF_TIME');
+
+  const tarde = decidirLectura('combustible', lectura({
+    kilometraje: 1000,
+    odometro_tablero: 1000,
+    costo_mxn: 800,
+    fecha_hora_ticket: '2026-11-24T18:05:00',
+  }), { fechaCaptura: '2026-11-24T18:06:00-06:00', fechaRecepcion: '2026-11-24T18:06:00-06:00', fechaCapturaOrigen: 'cliente' });
+  expect(tarde.estado).toBe('validada');
+  expect(tarde.alertas.map((a) => a.codigo)).toContain('AFTER_CUTOFF_TIME');
+});
+
+test('combustible con km igual al odómetro de inicio del mismo día no dispara repetido, pero menor sí dispara retroceso', () => {
+  const historial = historialDesde([{
+    fecha: '2026-11-24',
+    mismaJornada: true,
+    excluirTipo: 'combustible',
+    evidencias: {
+      odometro: { kilometraje: 1500, fechaRecepcion: '2026-11-24T14:00:00.000Z' },
+    },
+  }]);
+
+  const igual = decidirLectura('combustible', lectura({
+    kilometraje: 1500,
+    odometro_tablero: 1500,
+    costo_mxn: 800,
+    fecha_hora_ticket: '2026-11-24T10:00:00-06:00',
+  }), null, { historial });
+  expect(igual.alertas.map((a) => a.codigo)).not.toContain('REPEATED_ODOMETER');
+  expect(igual.alertas.map((a) => a.codigo)).not.toContain('ODOMETER_REGRESSION');
+
+  const menor = decidirLectura('combustible', lectura({
+    kilometraje: 1490,
+    odometro_tablero: 1490,
+    costo_mxn: 800,
+    fecha_hora_ticket: '2026-11-24T10:00:00-06:00',
+  }), null, { historial });
+  expect(menor.alertas.map((a) => a.codigo)).toContain('ODOMETER_REGRESSION');
+});

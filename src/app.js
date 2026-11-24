@@ -297,6 +297,8 @@ const appRepartidorRoutes = require('./modules/app-repartidor/routes');
 app.use('/api/app-repartidor', appRepartidorRoutes);
 const callCenterRoutes = require('./modules/call-center/routes');
 app.use('/api/call-center', callCenterRoutes);
+const flotillaRoutes = require('./modules/flotilla/routes');
+app.use('/api/flotilla', flotillaRoutes);
 app.use('/api/rutas', rutaRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
 app.use('/api/paquetes', paqueteRoutes);

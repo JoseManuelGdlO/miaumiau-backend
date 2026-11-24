@@ -70,7 +70,8 @@ class RoleController {
           model: Permission,
           as: 'permissions',
           through: { attributes: [] },
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false
         });
       }
       
@@ -178,6 +179,24 @@ class RoleController {
         });
       }
 
+      if (role.nombre === 'super_admin' && nombre && nombre !== 'super_admin') {
+        return res.status(400).json({
+          success: false,
+          message: 'El nombre del rol super_admin no se puede modificar'
+        });
+      }
+
+      if (permissions !== undefined) {
+        const userPerms = req.userPermissions || [];
+        const isSuperAdmin = req.user?.rol?.nombre === 'super_admin' || req.user?.role === 'super_admin' || userPerms.includes('*');
+        if (!isSuperAdmin && !userPerms.includes('asignar_permisos_roles')) {
+          return res.status(403).json({
+            success: false,
+            message: 'No tienes permiso para asignar permisos a un rol'
+          });
+        }
+      }
+
       // Verificar si el nuevo nombre ya existe (si se está cambiando)
       if (nombre && nombre !== role.nombre) {
         const existingRole = await Role.findOne({
@@ -205,16 +224,17 @@ class RoleController {
       // Actualizar permisos si se proporcionan
       if (permissions !== undefined) {
         if (Array.isArray(permissions)) {
+          const uniquePermissions = [...new Set(permissions.map(Number))];
           // Verificar que todos los permisos existan
-          if (permissions.length > 0) {
+          if (uniquePermissions.length > 0) {
             const existingPermissions = await Permission.findAll({
               where: {
-                id: { [Op.in]: permissions },
+                id: { [Op.in]: uniquePermissions },
                 baja_logica: false
               }
             });
 
-            if (existingPermissions.length !== permissions.length) {
+            if (existingPermissions.length !== uniquePermissions.length) {
               log.warn('updateRole rechazado', { status: 400, reason: "Algunos permisos no existen o están inactivos" });
               return res.status(400).json({
                 success: false,
@@ -224,7 +244,7 @@ class RoleController {
           }
 
           // Sincronizar permisos
-          await RolePermission.syncRolePermissions(role.id, permissions);
+          await RolePermission.syncRolePermissions(role.id, uniquePermissions);
         }
       }
 
@@ -233,7 +253,9 @@ class RoleController {
         include: [{
           model: Permission,
           as: 'permissions',
-          through: { attributes: [] }
+          through: { attributes: [] },
+          where: { baja_logica: false },
+          required: false
         }]
       });
 

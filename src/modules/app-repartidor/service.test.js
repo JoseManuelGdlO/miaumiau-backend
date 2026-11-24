@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido, iniciarRuta, liberarSiguienteParada } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido, iniciarRuta, liberarSiguienteParada, quitarEvidencia } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -1182,4 +1182,16 @@ test('liberarSiguienteParada avisa al siguiente cliente', async () => {
   expect(siguiente.aviso_siguiente_en).toBeInstanceOf(Date);
   expect(sends).toHaveLength(1);
   expect(sends[0][2].body.text).toMatch(/en camino/);
+});
+
+test('combustible se admite en jornada validada (checkout), odometro no, y cerrada bloquea ambas', async () => {
+  const validada = { estado: 'validada', evidencias: { combustible: { estado: 'validada' }, odometro: { estado: 'validada' } } };
+  const res = await quitarEvidencia({ jornada: validada, tipo: 'combustible' });
+  expect(res).toEqual({ tipo: 'combustible', estado: null });
+  expect(validada.evidencias.combustible).toBeUndefined();
+
+  await expect(quitarEvidencia({ jornada: validada, tipo: 'odometro' })).rejects.toMatchObject({ status: 409 });
+
+  const cerrada = { estado: 'cerrada', evidencias: { combustible: { estado: 'validada' } } };
+  await expect(quitarEvidencia({ jornada: cerrada, tipo: 'combustible' })).rejects.toMatchObject({ status: 409 });
 });

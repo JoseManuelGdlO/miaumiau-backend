@@ -8,6 +8,7 @@ const POLITICA_BASE = {
   toleranciaOdometroKm: 1,
   toleranciaTiempoMs: 10 * 60 * 1000,
   toleranciaMathMxn: 1.5,
+  horaLimiteCdmx: 18,
 };
 
 const confianza = z.enum(['alta', 'media', 'baja']).nullable();
@@ -110,8 +111,23 @@ function textoONull(valor) {
 function horaTicket(valor) {
   const texto = textoONull(valor);
   if (!texto) return null;
-  const parsed = new Date(texto);
+  // Si el modelo devuelve hora local sin zona, asumir CDMX (-06:00) para no desplazarla en servidores UTC.
+  const sinZona = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/.test(texto);
+  const parsed = new Date(sinZona ? `${texto.replace(' ', 'T')}-06:00` : texto);
   return Number.isNaN(parsed.getTime()) ? texto : parsed.toISOString();
+}
+
+function despuesDeLimiteCdmx(valor, horaLimite) {
+  if (!valor) return false;
+  const d = new Date(valor);
+  if (Number.isNaN(d.getTime())) return false;
+  const horaStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Mexico_City',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(d);
+  const hora = Number(horaStr) % 24;
+  return Number.isFinite(hora) && hora >= horaLimite;
 }
 
 function marcasDeTiempo({ fechaCaptura, ahora = new Date() } = {}) {
@@ -222,6 +238,16 @@ function alertasDe(tipo, datos, marcas, opciones = {}) {
       });
     }
   }
+  if (tipo === 'combustible') {
+    const ticketTarde = despuesDeLimiteCdmx(datos.fecha_hora_ticket, politica.horaLimiteCdmx);
+    const recepcionTarde = despuesDeLimiteCdmx(marcas?.fechaRecepcion, politica.horaLimiteCdmx);
+    if (ticketTarde || recepcionTarde) {
+      alertas.push({
+        codigo: 'AFTER_CUTOFF_TIME',
+        mensaje: `La carga o el envío se registró a partir de las ${politica.horaLimiteCdmx}:00 h (hora CDMX).`,
+      });
+    }
+  }
   const km = datos.kilometraje;
   const previos = Array.isArray(historial.kilometrajes) ? historial.kilometrajes.map(Number) : [];
   if (km != null && previos.some((previo) => previo === km)) {
@@ -256,7 +282,11 @@ function historialDesde(filas) {
       if (fila.excluirTipo === tipo) continue;
       const row = evidencias[tipo];
       if (!row || typeof row !== 'object') continue;
-      eventos.push({ ...row, _cuando: row.fechaRecepcion || String(fila.fecha || '') });
+      eventos.push({
+        ...row,
+        _cuando: row.fechaRecepcion || String(fila.fecha || ''),
+        _esInicioMismoDia: Boolean(fila.mismaJornada && tipo === 'odometro'),
+      });
     }
   }
   eventos.sort((a, b) => String(b._cuando).localeCompare(String(a._cuando)));
@@ -267,7 +297,7 @@ function historialDesde(filas) {
   for (const ev of eventos) {
     if (ev.kilometraje != null && Number.isFinite(Number(ev.kilometraje))) {
       const km = Number(ev.kilometraje);
-      kilometrajes.push(km);
+      if (!ev._esInicioMismoDia) kilometrajes.push(km);
       if (ultimoKilometraje == null) ultimoKilometraje = km;
     }
     if (ev.imagenHash) hashes.push(String(ev.imagenHash));
@@ -383,7 +413,7 @@ async function analizarFoto({
   const imagenHash = crypto.createHash('sha256').update(bytes).digest('hex');
   const dataUrl = `data:${mime || 'image/jpeg'};base64,${bytes.toString('base64')}`;
   const pide = normalizado === 'combustible'
-    ? 'La foto puede ser el ticket de la bomba o solo el voucher. Obligatorios: fecha_hora_ticket (ISO 8601), costo_mxn y kilometraje (el del tablero, o el del ticket si el tablero no está; odometro_tablero y odometro_ticket van por separado si constan). litros y precio_litro son opcionales: null si el voucher no los trae. Extrae también estacion y folio si se leen.'
+    ? 'La foto puede ser el ticket de la bomba o solo el voucher. Obligatorios: fecha_hora_ticket (ISO 8601 con zona -06:00 de México), costo_mxn y kilometraje (el del tablero, o el del ticket si el tablero no está; odometro_tablero y odometro_ticket van por separado si constan). litros y precio_litro son opcionales: null si el voucher no los trae. Extrae también estacion y folio si se leen.'
     : 'La foto es el odómetro al inicio de la jornada. kilometraje y odometro_tablero son el mismo número. odometro_ticket, costo_mxn, litros, fecha_hora_ticket, precio_litro, estacion y folio van null.';
   const response = await fetchImpl('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
