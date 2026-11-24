@@ -14,6 +14,7 @@ const {
   agruparCarga,
   agruparCargasLeidas,
   desglosePedido,
+  totalSiDescuentoPendiente,
   ayudaCodigoVencida,
   avisaReagendo,
   urlFoto,
@@ -178,6 +179,30 @@ describe('domain app-repartidor', () => {
       { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 6, precio_unitario: 10, es_extra: false },
       { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 1, precio_unitario: 10, es_extra: true },
     ]);
+  });
+
+  test('desglosePedido cobra el porcentaje guardado en el producto', () => {
+    expect(desglosePedido({
+      productos: [
+        { fkid_producto: 4, cantidad: 2, precio_unidad: 10, descuento_producto: 10, producto: { id: 4, nombre: 'Costal de 20 kg' } },
+      ],
+      paquetes: [],
+    }).sueltos).toEqual([
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 2, precio_unidad: 9 },
+    ]);
+  });
+
+  test('un total viejo sin el porcentaje se cobra con el descuento', () => {
+    expect(totalSiDescuentoPendiente({
+      total: 200,
+      descuento: 0,
+      productos: [{ cantidad: 2, precio_unidad: 100, descuento_producto: 10 }],
+      paquetes: [],
+    })).toBe(180);
+    expect(totalSiDescuentoPendiente({
+      total: 180,
+      productos: [{ cantidad: 2, precio_unidad: 100, descuento_producto: 10 }],
+    })).toBeNull();
   });
 
   test('desglosePedido junta sueltos y marca las piezas del paquete', () => {

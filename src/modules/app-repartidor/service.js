@@ -18,6 +18,8 @@ const {
   agruparCarga,
   agruparCargasLeidas,
   desglosePedido,
+  precioCobrado,
+  totalSiDescuentoPendiente,
   avisaReagendo,
   urlFoto,
   META_DIARIA,
@@ -102,6 +104,8 @@ function toPedidoDto(pedido, rutaPedido) {
     }
   }
   rest.desglose = desglosePedido(raw);
+  const cobrado = totalSiDescuentoPendiente(raw);
+  if (cobrado != null) rest.total = cobrado;
   return rest;
 }
 
@@ -188,9 +192,7 @@ function resumirRutas(rutas) {
           fkid_producto: fkid,
           nombre,
           cantidad: Number(prod.cantidad) || 0,
-          precio_unitario: prod.precio_unidad != null
-            ? Number(prod.precio_unidad)
-            : Number(prod.producto?.precio_venta) || 0,
+          precio_unitario: precioCobrado(prod),
         });
       }
       const paradaExtra = String(pedido.numero_pedido || '').startsWith('EXTRA-');
@@ -1206,11 +1208,15 @@ async function ajustarProductos(deps = {}) {
     const existing = lineasPedido.find(
       (row) => Number(row.fkid_producto) === Number(item.fkid_producto)
     );
-    const precio_total = item.cantidad * item.precio_unidad;
+    const off = Number(existing?.descuento_producto) || 0;
+    const lista = existing ? Number(existing.precio_unidad) || item.precio_unidad : item.precio_unidad;
+    const unit = Math.round(lista * (1 - Math.min(Math.max(off, 0), 100) / 100) * 100) / 100;
+    const precio_total = item.cantidad * unit;
     if (existing) {
       await existing.update({
         cantidad: item.cantidad,
-        precio_unidad: item.precio_unidad,
+        precio_unidad: lista,
+        descuento_producto: off,
         precio_total,
         baja_logica: false,
       });

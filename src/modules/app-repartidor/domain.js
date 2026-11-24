@@ -172,6 +172,30 @@ function agruparCargasLeidas(lineas) {
   ];
 }
 
+function precioCobrado(prod) {
+  const lista = prod?.precio_unidad != null && prod.precio_unidad !== ''
+    ? Number(prod.precio_unidad)
+    : Number(prod?.producto?.precio_venta) || 0;
+  const off = Number(prod?.descuento_producto) || 0;
+  if (!Number.isFinite(lista)) return 0;
+  const pct = Number.isFinite(off) ? Math.min(Math.max(off, 0), 100) : 0;
+  return Math.round(lista * (1 - pct / 100) * 100) / 100;
+}
+
+function totalSiDescuentoPendiente(pedido) {
+  const productos = (pedido?.productos || []).filter((p) => p && !p.baja_logica);
+  const paquetes = pedido?.paquetes || [];
+  const hayDescuento = productos.some((p) => Number(p.descuento_producto) > 0)
+    || paquetes.some((p) => Number(p.descuento_paquete) > 0);
+  if (!hayDescuento) return null;
+  const lineas = productos.reduce((sum, p) => sum + precioCobrado(p) * (Number(p.cantidad) || 0), 0);
+  const combos = paquetes.reduce((sum, p) => sum + (Number(p.precio_total) || 0), 0);
+  const cobrado = Math.round((lineas + combos + (Number(pedido.impuestos) || 0) - (Number(pedido.descuento) || 0)) * 100) / 100;
+  const guardado = Number(pedido.total);
+  if (!Number.isFinite(guardado) || cobrado < guardado - 0.009) return cobrado;
+  return null;
+}
+
 function lineasDeProductos(rows) {
   const raw = [];
   for (const prod of rows || []) {
@@ -183,9 +207,7 @@ function lineasDeProductos(rows) {
       fkid_producto: fkid,
       nombre,
       cantidad: Number(prod.cantidad) || 0,
-      precio_unitario: prod.precio_unidad != null
-        ? Number(prod.precio_unidad)
-        : Number(prod.producto?.precio_venta) || 0,
+      precio_unitario: precioCobrado(prod),
     });
   }
   return agruparCarga(raw).map((row) => ({
@@ -277,6 +299,8 @@ module.exports = {
   agruparCarga,
   agruparCargasLeidas,
   desglosePedido,
+  precioCobrado,
+  totalSiDescuentoPendiente,
   ayudaCodigoVencida,
   avisaReagendo,
   urlFoto,
