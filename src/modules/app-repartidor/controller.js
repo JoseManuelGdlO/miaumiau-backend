@@ -27,6 +27,11 @@ async function fechaDeHoy(req) {
   return { fecha: dayKey(new Date(), timezone), timezone };
 }
 
+function mensajeAlRepartidor(status, message) {
+  if (status >= 500) return 'No se pudo completar. Intenta de nuevo.';
+  return message || 'No se pudo completar la solicitud';
+}
+
 function depsFrom(req, extra = {}) {
   return {
     repartidorId: req.repartidorId,
@@ -45,7 +50,7 @@ async function handle(req, res, run, action) {
       else log.warn(`${action} rechazado`, { status, reason: data.message || 'rechazado' });
       return res.status(status).json({
         success: false,
-        message: data.message || 'No se pudo completar la solicitud',
+        message: mensajeAlRepartidor(status, data.message),
       });
     }
     if (MUTATIONS.has(action)) log.info(action, { id: req.params && req.params.id });
@@ -54,7 +59,7 @@ async function handle(req, res, run, action) {
     const status = err.status || 500;
     if (status >= 500) log.error(`${action} falló`, { message: err.message });
     else log.warn(`${action} rechazado`, { status, reason: err.message });
-    return res.status(status).json({ success: false, message: err.message });
+    return res.status(status).json({ success: false, message: mensajeAlRepartidor(status, err.message) });
   }
 }
 

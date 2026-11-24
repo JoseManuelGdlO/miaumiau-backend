@@ -780,7 +780,7 @@ async function assertRutaDelRepartidor(deps = {}, { withCode = false, withPhone 
       },
       pedidoInclude(db, { withCode, withPhone }),
     ],
-    order: [[{ model: db.Ruta, as: 'ruta' }, 'id', 'DESC']],
+    order: [['id', 'DESC']],
   });
   if (!rutaPedido) fail(403, 'Pedido no encontrado en tu ruta');
   return rutaPedido;
