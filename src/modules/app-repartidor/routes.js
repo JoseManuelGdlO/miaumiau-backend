@@ -22,6 +22,8 @@ router.get('/velocidad', controller.velocidad);
 router.post('/velocidad', controller.velocidad);
 router.patch('/ubicacion', controller.ubicacionGps);
 router.get('/avisos', controller.avisos);
+router.post('/push-token', controller.pushToken);
+router.delete('/push-token', controller.borrarPushToken);
 router.get('/pedidos', controller.pedidos);
 router.get('/pedidos/:id/ubicacion', controller.ubicacion);
 router.get('/pedidos/:id', controller.pedido);
@@ -31,9 +33,10 @@ router.post('/pedidos/:id/no-entregado', controller.noEntregar);
 router.post('/pedidos/:id/codigo', controller.codigo);
 router.put('/pedidos/:id/productos', controller.productos);
 router.post('/pedidos/:id/calificar', controller.calificar);
+// shortcut: 4 fotos caben en el varchar de 255; más pide otra columna
 router.post('/pedidos/:id/entregar', uploadComprobantes.fields([
-  { name: 'comprobante', maxCount: 1 },
-  { name: 'receptor', maxCount: 1 },
+  { name: 'comprobante', maxCount: 4 },
+  { name: 'receptor', maxCount: 4 },
 ]), controller.entregar);
 router.post('/caja', uploadComprobantes.single('comprobante'), controller.caja);
 router.post('/soporte', controller.soporte);

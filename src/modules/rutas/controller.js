@@ -5,9 +5,10 @@ const { validationResult } = require('express-validator');
 const { applyCityFilter } = require('../../utils/cityFilter');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { dayKey } = require('../app-repartidor/domain');
-const { franjaDeHorario, idsExcedentesManana } = require('../pedidos/horario');
+const { franjaDeHorario } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
-const { getHub } = require('../realtime');
+const { avisar } = require('../push-nativo');
+const { avisoDeEvento } = require('../app-repartidor/avisos');
 const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarParadasSiAplica } = require('../app-repartidor/service');
 const { geocodePedido, refrescarPolylineRuta, puntoDe } = require('../maps/google');
 const { Logger } = require('../../utils/logger');
@@ -742,9 +743,10 @@ class RutaController {
       if (updateData.fkid_repartidor && Number(updateData.fkid_repartidor) !== Number(repartidorAnterior)) {
         const pedidoId = Number(rutaActualizada?.pedidos?.[0]?.fkid_pedido);
         try {
-          getHub().notify(updateData.fkid_repartidor, Number.isFinite(pedidoId)
+          const event = Number.isFinite(pedidoId)
             ? { type: 'ruta.actualizada', pedidoId }
-            : { type: 'jornada.actualizada' });
+            : { type: 'jornada.actualizada' };
+          avisar(updateData.fkid_repartidor, event, avisoDeEvento(event));
         } catch (notifyError) {
           log.warn('[RUTAS] No se pudo avisar al repartidor de la ruta asignada', {
             message: notifyError.message,
@@ -922,19 +924,6 @@ class RutaController {
       }
       
       log.debug(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
-      try {
-        const deLaRuta = await RutaPedido.findAll({ where: { fkid_ruta: parseInt(id, 10) } });
-        const sobran = idsExcedentesManana(deLaRuta.map((parada) => ({
-          id: parada.id,
-          franja: parada.franja,
-          lat: parada.lat,
-          lng: parada.lng,
-          orden: parada.orden_entrega,
-        })));
-        if (sobran.length) await RutaPedido.update({ franja: 'tarde' }, { where: { id: sobran } });
-      } catch (error) {
-        log.warn('[RUTAS] No se reasignó el excedente de la mañana', { message: error.message });
-      }
 
       if (rutaPedidos.length > 0 && ruta.fkid_repartidor) {
         const fecha = String(ruta.fecha_ruta || '').slice(0, 10);
@@ -947,10 +936,11 @@ class RutaController {
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
           const pedidoNuevo = Number(rutaPedidos[0].fkid_pedido);
-          getHub().notify(ruta.fkid_repartidor, {
+          const event = {
             type: 'ruta.actualizada',
             pedidoId: Number.isFinite(pedidoNuevo) ? pedidoNuevo : rutaPedidos[0].fkid_pedido,
-          });
+          };
+          avisar(ruta.fkid_repartidor, event, avisoDeEvento(event));
         } catch (notifyError) {
           log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
             message: notifyError.message,
@@ -1265,7 +1255,7 @@ class RutaController {
       if (ruta.fkid_repartidor) {
         await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
         try {
-          getHub().notify(ruta.fkid_repartidor, { type: 'jornada.actualizada' });
+          avisar(ruta.fkid_repartidor, { type: 'jornada.actualizada' }, avisoDeEvento({ type: 'jornada.actualizada' }));
         } catch (notifyError) {
           log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
             message: notifyError.message,

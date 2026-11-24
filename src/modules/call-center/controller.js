@@ -1,5 +1,6 @@
 const service = require('./service');
-const { getHub } = require('../realtime');
+const { avisar } = require('../push-nativo');
+const { avisoDeEvento } = require('../app-repartidor/avisos');
 const { Logger } = require('../../utils/logger');
 
 const log = new Logger('CallCenter');
@@ -8,7 +9,7 @@ const MUTATIONS = new Set(['aprobar', 'extras', 'atender', 'estado', 'reasignar'
 function live(extra) {
   return {
     ...extra,
-    notify: (repartidorId, event) => getHub().notify(repartidorId, event),
+    notify: (repartidorId, event) => avisar(repartidorId, event, avisoDeEvento(event)),
   };
 }
 

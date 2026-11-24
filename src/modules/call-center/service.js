@@ -33,6 +33,7 @@ const {
   normalizarLineas,
   lineasDeFila,
   comprobantePublicPath,
+  comprobantesPublicos,
   ACTIVE,
 } = require('./domain');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
@@ -1209,7 +1210,9 @@ async function listarComprobantes(deps = {}) {
       nota: row.notas_entrega || null,
       fecha: row.ruta?.fecha_ruta || dia,
       comprobante_url: comprobantePublicPath(cobro?.comprobante_path),
+      comprobante_urls: comprobantesPublicos(cobro?.comprobante_path),
       evidencia_url: comprobantePublicPath(row.evidencia_path),
+      evidencia_urls: comprobantesPublicos(row.evidencia_path),
       receptor_nombre: row.receptor_nombre || null,
       dejar_lugar: row.dejar_lugar || null,
       deposito_url: deposito.deposito_url || null,

@@ -110,7 +110,8 @@ function attachRealtime(httpServer, options) {
         const lng = Number(message.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
         const accuracy = Number(message.accuracy);
-        if (Number.isFinite(accuracy) && accuracy > 40) return;
+        // shortcut: >200 m no es un pin usable; el celular en calle suele dar 30–120 m
+        if (Number.isFinite(accuracy) && accuracy > 200) return;
         const telemetria = filtro.procesar({
           repartidorId,
           lat,

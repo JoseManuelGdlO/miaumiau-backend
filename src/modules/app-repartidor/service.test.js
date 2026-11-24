@@ -100,6 +100,52 @@ test('solicitarValidacion persiste la carga calculada', async () => {
   expect(updates[0].datos.actionUrl).toBe('/dashboard/call-center?tab=validacion&solicitud=9');
 });
 
+test('solicitarValidacion ignora la ruta dada de baja', async () => {
+  const created = [];
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 1,
+    estado: 'borrador',
+    cargas: [],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await solicitarValidacion({
+    jornada,
+    repartidorId: 1,
+    fecha: '2026-11-24',
+    repartidor: { nombre_completo: 'Ana Ruiz' },
+    models: {
+      Ruta: {
+        findAll: async () => [
+          ...rutaConArena(),
+          {
+            baja_logica: true,
+            estado: 'planificada',
+            pedidos: [{
+              pedido: {
+                estado: 'confirmado',
+                total: 500,
+                productos: [
+                  { fkid_producto: 4, cantidad: 40, precio_unidad: 10, baja_logica: false, producto: { id: 4, nombre: 'Arena' } },
+                ],
+              },
+            }],
+          },
+        ],
+      },
+      JornadaCarga: {
+        destroy: async () => {},
+        bulkCreate: async (rows) => { created.push(...rows); },
+      },
+    },
+    crearNotificacion: async () => ({ id: 9, update: async () => {} }),
+  });
+  expect(created).toEqual([
+    expect.objectContaining({ nombre: 'Arena', cantidad: 5 }),
+  ]);
+  expect(Number(jornada.dinero_esperado)).toBe(80);
+});
+
 test('solicitarValidacion reutiliza la solicitud abierta del check-in', async () => {
   const updates = [];
   const notificacion = {
@@ -497,6 +543,23 @@ test('noEntregar por demanda no espera a Call Center', async () => {
     },
   });
   expect(pedido.estado).toBe('no_entregado');
+  expect(rutaPedido.estado_entrega).toBe('fallido');
+});
+
+test('noEntregar cierra la parada si el pedido ya está no_entregado', async () => {
+  const pedido = { id: 5, estado: 'no_entregado', update: async () => { throw new Error('no'); } };
+  const rutaPedido = { pedido, estado_entrega: 'en_camino', update: async (data) => Object.assign(rutaPedido, data) };
+  await noEntregar({
+    jornada: { estado: 'validada' },
+    pedidoId: 5,
+    repartidorId: 1,
+    motivo: 'demanda',
+    rutaPedido,
+    models: {
+      Notificacion: { findAll: async () => [], findOne: async () => null },
+      Ruta: { findAll: async () => [] },
+    },
+  });
   expect(rutaPedido.estado_entrega).toBe('fallido');
 });
 
@@ -1016,6 +1079,7 @@ test('registrarVelocidad guarda GPS y lectura', async () => {
     },
   });
   expect(updates[0].lat_actual).toBe(24.1);
+  expect(Math.abs(Date.now() - updates[0].ubicacion_at.getTime())).toBeLessThan(5000);
   expect(created[0].lat).toBe(24.1);
 });
 
@@ -1109,6 +1173,7 @@ test('entregar mixto actualiza el cobro existente', async () => {
   expect(cobro.metodo).toBe('mixto');
   expect(cobro.monto_efectivo).toBe(40);
   expect(cobro.monto_transferencia).toBe(60);
+  expect(cobro.comprobante_path).toBe('comprobantes/nuevo.jpg');
   expect(pedido.metodo_pago).toBe('mixto');
   expect(pedido.estado).toBe('entregado');
 });
@@ -1133,6 +1198,7 @@ test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', 
     monto_efectivo: 0,
     monto_transferencia: 180,
     file: { filename: 'comprobante.jpg' },
+    files: [{ filename: 'comprobante.jpg' }, { filename: 'extra.jpg' }],
     rutaPedido: { codigo_validado_en: new Date(), pedido },
     models: {
       CobroEntrega: { findOne: async () => cobro, create: async () => { throw new Error('cobro.create'); } },
@@ -1141,7 +1207,7 @@ test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', 
       InventarioVehiculo: {},
     },
   });
-  expect(cobro.comprobante_path).toBe('comprobantes/comprobante.jpg');
+  expect(cobro.comprobante_path).toBe('comprobantes/comprobante.jpg,comprobantes/extra.jpg');
   expect(cobro.metodo).toBe('transferencia');
   expect(cobro.monto_transferencia).toBe(180);
   expect(pedido.estado).toBe('entregado');
@@ -1149,12 +1215,54 @@ test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', 
   expect(dto.id).toBe(5);
 });
 
-test('entregar no_entregado sigue en 409', async () => {
+test('entregar no_entregado sin código sigue en 422', async () => {
   await expect(entregar({
     jornada: { estado: 'validada' },
     repartidorId: 1,
-    rutaPedido: { pedido: { estado: 'no_entregado' } },
-  })).rejects.toMatchObject({ status: 409, message: 'Este pedido se marcó como no entregado' });
+    rutaPedido: { pedido: { estado: 'no_entregado', total: 100 } },
+  })).rejects.toMatchObject({ status: 422, message: 'Valida el código antes de entregar' });
+});
+
+test('entregar no_entregado con código cobra y cierra', async () => {
+  const pedido = {
+    id: 5,
+    estado: 'no_entregado',
+    total: 1260,
+    numero_pedido: 'P-5',
+    productos: [],
+    update: async (data) => Object.assign(pedido, data),
+  };
+  const rutaPedido = {
+    codigo_validado_en: new Date(),
+    pedido,
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  await entregar({
+    jornada: { estado: 'validada', update: async () => {} },
+    fecha: '2026-11-20',
+    repartidorId: 1,
+    metodo: 'efectivo',
+    monto_efectivo: 1260,
+    rutaPedido,
+    models: {
+      sequelize: { transaction: async (fn) => fn({}) },
+      CobroEntrega: {
+        findOne: async () => null,
+        create: async (row) => row,
+        findAll: async () => [],
+      },
+      Pedido: { findByPk: async () => pedido, findAll: async () => [] },
+      Repartidor: { findByPk: async () => null },
+      RepartidorLogro: { findOrCreate: async () => [{}, false] },
+      RepartidorPuntosMovimiento: {
+        findOne: async () => null,
+        create: async () => {},
+      },
+      Ruta: { findAll: async () => [] },
+    },
+  });
+  expect(pedido.estado).toBe('entregado');
+  expect(rutaPedido.estado_entrega).toBe('entregado');
 });
 
 function paradaParaAviso(overrides = {}) {
