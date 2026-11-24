@@ -1178,6 +1178,24 @@ test('entregar mixto actualiza el cobro existente', async () => {
   expect(pedido.estado).toBe('entregado');
 });
 
+test('entregar ya entregado cierra la parada que seguía pendiente', async () => {
+  const rutaPedido = {
+    estado_entrega: 'pendiente',
+    pedido: { id: 5, estado: 'entregado', fecha_entrega_real: new Date('2026-11-24T17:46:16Z') },
+    update: async (data) => Object.assign(rutaPedido, data),
+  };
+  await entregar({
+    jornada: { estado: 'validada' },
+    repartidorId: 20,
+    rutaPedido,
+    models: {
+      CobroEntrega: { findOne: async () => null },
+      Pedido: { findByPk: async () => rutaPedido.pedido },
+    },
+  });
+  expect(rutaPedido.estado_entrega).toBe('entregado');
+});
+
 test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', async () => {
   const cobro = {
     comprobante_path: 'comprobantes/viejo.jpg',

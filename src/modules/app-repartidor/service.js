@@ -772,10 +772,15 @@ async function assertRutaDelRepartidor(deps = {}, { withCode = false, withPhone 
         model: db.Ruta,
         as: 'ruta',
         required: true,
-        where: { fkid_repartidor: deps.repartidorId },
+        where: {
+          fkid_repartidor: deps.repartidorId,
+          baja_logica: false,
+          estado: { [Op.ne]: 'cancelada' },
+        },
       },
       pedidoInclude(db, { withCode, withPhone }),
     ],
+    order: [[{ model: db.Ruta, as: 'ruta' }, 'id', 'DESC']],
   });
   if (!rutaPedido) fail(403, 'Pedido no encontrado en tu ruta');
   return rutaPedido;
@@ -963,7 +968,10 @@ async function listarPedidos(deps = {}) {
       if (!rp.pedido) continue;
       const stopFranja = franjaDe(rp.franja || ruta.franja);
       if (franja && stopFranja !== franja) continue;
-      pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
+      const dto = toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja });
+      if (rp.pedido.estado === 'entregado' && dto.estado_entrega !== 'entregado') dto.estado_entrega = 'entregado';
+      if (rp.pedido.estado === 'cancelado') dto.estado_entrega = 'cancelado';
+      pedidos.push(dto);
     }
   }
   return { pedidos, esperando_liberacion: false };
@@ -1359,6 +1367,12 @@ async function entregar(deps = {}) {
   const transferencia = Number(deps.monto_transferencia ?? deps.transferencia) || 0;
   const db = getModels(deps);
   if (pedido.estado === 'entregado') {
+    if (rutaPedido.estado_entrega !== 'entregado' && typeof rutaPedido.update === 'function') {
+      await rutaPedido.update({
+        estado_entrega: 'entregado',
+        fecha_entrega_real: pedido.fecha_entrega_real || new Date(),
+      });
+    }
     if (deps.file || efectivo || transferencia || elegido) {
       const existente = await db.CobroEntrega.findOne({ where: { fkid_pedido: pedido.id } });
       const cobroPayload = {
