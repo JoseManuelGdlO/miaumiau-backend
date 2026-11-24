@@ -1,4 +1,4 @@
-const { calcularYValidarStock, lineaPaquete } = require('./stock');
+const { calcularYValidarStock, lineaPaquete, lineaConDescuento } = require('./stock');
 
 const sku = { id: 7, nombre: 'Arena', sku: 'A1', stock_inicial: 100, compra_minima: 10 };
 
@@ -26,6 +26,10 @@ test('el mismo SKU suelto sí exige compra mínima', async () => {
   });
   expect(isValid).toBe(false);
   expect(erroresStock[0]).toMatch(/Compra mínima/);
+});
+
+test('el descuento manual resta el porcentaje del total de la línea', () => {
+  expect(lineaConDescuento(200, 2, 10)).toEqual({ precio_unidad: 200, precio_total: 360 });
 });
 
 test('el precio del combo es precio_final, no la suma de piezas', () => {

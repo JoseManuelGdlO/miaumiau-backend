@@ -139,6 +139,17 @@ class PromotionController {
         aplica_a = 'todos',
       } = req.body;
       const cities = req.body.cities || req.body.ciudades || [];
+      if (cities.length > 0) {
+        const existingCities = await City.findAll({
+          where: { id: { [Op.in]: cities }, baja_logica: false },
+        });
+        if (existingCities.length !== cities.length) {
+          return res.status(400).json({
+            success: false,
+            message: 'Algunas ciudades no existen o están inactivas',
+          });
+        }
+      }
 
       // Verificar si el código ya existe
       const existingPromotion = await Promotion.findByCode(codigo);
@@ -165,26 +176,7 @@ class PromotionController {
         aplica_a: aplica_a === 'distribuidor' || aplica_a === 'retail' ? aplica_a : 'todos',
       });
 
-      // Asignar ciudades si se proporcionan
-      if (cities && cities.length > 0) {
-        // Verificar que todas las ciudades existan
-        const existingCities = await City.findAll({
-          where: {
-            id: { [Op.in]: cities },
-            baja_logica: false
-          }
-        });
-
-        if (existingCities.length !== cities.length) {
-          return res.status(400).json({
-            success: false,
-            message: 'Algunas ciudades no existen o están inactivas'
-          });
-        }
-
-        // Asignar ciudades a la promoción
-        await PromotionCity.syncPromotionCities(promotion.id, cities);
-      }
+      if (cities.length > 0) await PromotionCity.syncPromotionCities(promotion.id, cities);
 
       // Obtener la promoción con sus ciudades
       const promotionWithCities = await Promotion.findByPk(promotion.id, {

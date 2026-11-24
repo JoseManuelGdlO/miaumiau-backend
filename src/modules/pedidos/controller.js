@@ -8,7 +8,7 @@ const { parseFechaEntregaEstimada } = require('../../utils/date');
 const { dayKey } = require('../app-repartidor/domain');
 const { horarioDeEntrega } = require('./horario');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
-const { calcularYValidarStock, lineaPaquete } = require('./stock');
+const { calcularYValidarStock, lineaPaquete, lineaConDescuento } = require('./stock');
 const { montoDescuento, aplicaACliente } = require('../promotions/descuento');
 const { precioLista } = require('../inventarios/precio');
 const { Logger } = require('../../utils/logger');
@@ -734,18 +734,15 @@ class PedidoController {
               cantidad,
             })
             : parseFloat(precio_unidad) || 0;
-          const precioTotal = precioUnidad * parseInt(cantidad);
-          
-          // El descuento_producto debe ser 0 ya que los descuentos se aplicaron en aplicarCodigo
-          // Solo usar descuento_producto si viene explícitamente en el request (para compatibilidad)
           const descuentoProducto = parseFloat(descuento_producto) || 0;
+          const { precio_total: precioTotal } = lineaConDescuento(precioUnidad, cantidad, descuentoProducto);
 
           await ProductoPedido.create({
             fkid_pedido: pedido.id,
             fkid_producto: fkid_producto || null,
             cantidad,
             precio_unidad: precioUnidad,
-            precio_total: precioTotal, // Precio ya viene con descuentos aplicados
+            precio_total: precioTotal,
             descuento_producto: descuentoProducto,
             notas_producto
           });
@@ -1120,15 +1117,13 @@ class PedidoController {
             continue; // Saltar productos inválidos
           }
 
-          const precioTotal = parseFloat(precio_unidad) * parseInt(cantidad);
-          const descuento = (precioTotal * parseFloat(descuento_producto)) / 100;
-          const precioFinal = precioTotal - descuento;
+          const { precio_unidad: precioUnidad, precio_total: precioFinal } = lineaConDescuento(precio_unidad, cantidad, descuento_producto);
 
           await ProductoPedido.create({
             fkid_pedido: id,
             fkid_producto,
             cantidad,
-            precio_unidad,
+            precio_unidad: precioUnidad,
             precio_total: precioFinal,
             descuento_producto,
             notas_producto

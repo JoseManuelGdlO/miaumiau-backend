@@ -1,9 +1,13 @@
-function lineaPaquete(paqueteData, cantidad, descuento = 0) {
-  const unidad = parseFloat(paqueteData?.precio_final) || 0;
+function lineaConDescuento(precioUnidad, cantidad, descuento = 0) {
+  const unidad = parseFloat(precioUnidad) || 0;
   const n = parseInt(cantidad, 10) || 0;
   const bruto = unidad * n;
   const off = (bruto * (parseFloat(descuento) || 0)) / 100;
   return { precio_unidad: unidad, precio_total: bruto - off };
+}
+
+function lineaPaquete(paqueteData, cantidad, descuento = 0) {
+  return lineaConDescuento(paqueteData?.precio_final, cantidad, descuento);
 }
 
 async function productosDePaquetes(db, paquetesArray, erroresStock = []) {
@@ -138,4 +142,4 @@ async function calcularYValidarStock(db, { productos = [], paquetes = [] } = {})
   };
 }
 
-module.exports = { lineaPaquete, calcularYValidarStock };
+module.exports = { lineaPaquete, lineaConDescuento, calcularYValidarStock };
