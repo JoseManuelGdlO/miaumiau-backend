@@ -284,9 +284,11 @@ async function entregar(req, res) {
       efectivo: req.body.efectivo,
       transferencia: req.body.transferencia,
       file: req.file || req.files?.comprobante?.[0],
+      files: req.files?.comprobante || [],
       receptorNombre: req.body.receptor_nombre,
       lugar: req.body.lugar,
       receptorFile: req.files?.receptor?.[0],
+      receptorFiles: req.files?.receptor || [],
     }));
   }, 'entregar');
 }

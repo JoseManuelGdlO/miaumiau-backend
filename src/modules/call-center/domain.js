@@ -323,8 +323,12 @@ function fueModificado(pedido) {
   return cobrado !== original;
 }
 
+function comprobantesPublicos(pathValue) {
+  return String(pathValue || '').split(',').map((parte) => comprobantePublicPath(parte)).filter(Boolean);
+}
+
 function comprobantePublicPath(pathValue) {
-  const raw = String(pathValue || '').trim();
+  const raw = String(pathValue || '').split(',')[0].trim();
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
   const relative = raw.replace(/^\/+/, '');
@@ -528,6 +532,7 @@ module.exports = {
   toPedidoDia,
   fueModificado,
   comprobantePublicPath,
+  comprobantesPublicos,
   estadoCobro,
   toRepartidorOpcion,
   nombreRol,

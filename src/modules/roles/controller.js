@@ -70,7 +70,8 @@ class RoleController {
           model: Permission,
           as: 'permissions',
           through: { attributes: [] },
-          where: { baja_logica: false }
+          where: { baja_logica: false },
+          required: false,
         });
       }
       
@@ -398,7 +399,7 @@ class RoleController {
         success: true,
         data: {
           role: role.toJSON(),
-          permissions: rolePermissions.map(rp => rp.permission)
+          permissions: rolePermissions.map((rp) => rp.permission).filter(Boolean)
         }
       });
     } catch (error) {

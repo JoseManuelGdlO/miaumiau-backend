@@ -1306,6 +1306,11 @@ function comprobantePath(file) {
   return `comprobantes/${file.filename}`;
 }
 
+function pathsDe(file, files) {
+  const lista = (Array.isArray(files) && files.length ? files : (file ? [file] : [])).slice(0, 4);
+  return lista.map(comprobantePath).filter(Boolean).join(',') || null;
+}
+
 function nombreYApellido(value) {
   const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return '';
@@ -1356,7 +1361,7 @@ async function entregar(deps = {}) {
         metodo,
         monto_efectivo: efectivo,
         monto_transferencia: transferencia,
-        comprobante_path: comprobantePath(deps.file) || existente?.comprobante_path || null,
+        comprobante_path: pathsDe(deps.file, deps.files) || existente?.comprobante_path || null,
       };
       if (existente && typeof existente.update === 'function') {
         await existente.update(cobroPayload);
@@ -1385,15 +1390,15 @@ async function entregar(deps = {}) {
   if (rutaPedido.entrega_tercero_en) {
     receptor = nombreYApellido(deps.receptorNombre);
     if (!receptor) fail(422, 'Escribe nombre y apellido de quien recibe');
-    if (!deps.receptorFile) fail(422, 'Toma la foto de quien recibe');
-    evidencia = comprobantePath(deps.receptorFile);
+    if (!deps.receptorFile && !(deps.receptorFiles || []).length) fail(422, 'Toma la foto de quien recibe');
+    evidencia = pathsDe(deps.receptorFile, deps.receptorFiles);
     notaTercero = `Entregado a ${receptor}. Foto: ${evidencia}`;
   }
   if (rutaPedido.entrega_dejar_en) {
     lugar = String(deps.lugar || '').trim().slice(0, 200);
     if (lugar.length < 3) fail(422, 'Escribe dónde se deja el paquete');
-    if (!deps.receptorFile) fail(422, 'Toma la foto del lugar');
-    evidencia = comprobantePath(deps.receptorFile);
+    if (!deps.receptorFile && !(deps.receptorFiles || []).length) fail(422, 'Toma la foto del lugar');
+    evidencia = pathsDe(deps.receptorFile, deps.receptorFiles);
     notaTercero = `Dejado en ${lugar}. Foto: ${evidencia}`;
   }
 
@@ -1414,7 +1419,7 @@ async function entregar(deps = {}) {
         metodo,
         monto_efectivo: efectivo,
         monto_transferencia: transferencia,
-        comprobante_path: comprobantePath(deps.file) || existente?.comprobante_path || null,
+        comprobante_path: pathsDe(deps.file, deps.files) || existente?.comprobante_path || null,
       };
       if (existente && typeof existente.update === 'function') {
         await existente.update(cobroPayload, { transaction: t });

@@ -1173,6 +1173,7 @@ test('entregar mixto actualiza el cobro existente', async () => {
   expect(cobro.metodo).toBe('mixto');
   expect(cobro.monto_efectivo).toBe(40);
   expect(cobro.monto_transferencia).toBe(60);
+  expect(cobro.comprobante_path).toBe('comprobantes/nuevo.jpg');
   expect(pedido.metodo_pago).toBe('mixto');
   expect(pedido.estado).toBe('entregado');
 });
@@ -1197,6 +1198,7 @@ test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', 
     monto_efectivo: 0,
     monto_transferencia: 180,
     file: { filename: 'comprobante.jpg' },
+    files: [{ filename: 'comprobante.jpg' }, { filename: 'extra.jpg' }],
     rutaPedido: { codigo_validado_en: new Date(), pedido },
     models: {
       CobroEntrega: { findOne: async () => cobro, create: async () => { throw new Error('cobro.create'); } },
@@ -1205,7 +1207,7 @@ test('entregar ya entregado actualiza el comprobante y no reescribe el pedido', 
       InventarioVehiculo: {},
     },
   });
-  expect(cobro.comprobante_path).toBe('comprobantes/comprobante.jpg');
+  expect(cobro.comprobante_path).toBe('comprobantes/comprobante.jpg,comprobantes/extra.jpg');
   expect(cobro.metodo).toBe('transferencia');
   expect(cobro.monto_transferencia).toBe(180);
   expect(pedido.estado).toBe('entregado');
