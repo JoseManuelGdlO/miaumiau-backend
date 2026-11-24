@@ -1394,9 +1394,11 @@ async function entregar(deps = {}) {
   if (!rutaPedido.codigo_validado_en) fail(422, 'Valida el código antes de entregar');
 
   const hasPhoto = Boolean(deps.file || deps.hasPhoto);
+  const cobrado = totalSiDescuentoPendiente(pedido);
+  const totalCobro = cobrado != null ? cobrado : Number(pedido.total) || 0;
   const payment = validatePayment({
     metodo: elegido,
-    total: pedido.total,
+    total: totalCobro,
     efectivo,
     transferencia,
     hasPhoto,
@@ -1456,9 +1458,15 @@ async function entregar(deps = {}) {
         ...(notaTercero ? { notas_entrega: notaTercero } : {}),
       }, { transaction: t });
       const metodoPedido = metodoPedidoDe(elegido) || metodo;
+      const impuestos = Number(pedido.impuestos) || 0;
+      const promo = Number(pedido.descuento) || 0;
       await pedido.update({
         estado: 'entregado',
         fecha_entrega_real: now,
+        ...(cobrado != null ? {
+          total: totalCobro,
+          subtotal: Math.round((totalCobro - impuestos + promo) * 100) / 100,
+        } : {}),
         ...(metodoPedido ? { metodo_pago: metodoPedido } : {}),
       }, { transaction: t });
 
