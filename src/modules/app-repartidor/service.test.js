@@ -100,6 +100,52 @@ test('solicitarValidacion persiste la carga calculada', async () => {
   expect(updates[0].datos.actionUrl).toBe('/dashboard/call-center?tab=validacion&solicitud=9');
 });
 
+test('solicitarValidacion ignora la ruta dada de baja', async () => {
+  const created = [];
+  const jornada = {
+    id: 3,
+    fkid_repartidor: 1,
+    estado: 'borrador',
+    cargas: [],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await solicitarValidacion({
+    jornada,
+    repartidorId: 1,
+    fecha: '2026-11-24',
+    repartidor: { nombre_completo: 'Ana Ruiz' },
+    models: {
+      Ruta: {
+        findAll: async () => [
+          ...rutaConArena(),
+          {
+            baja_logica: true,
+            estado: 'planificada',
+            pedidos: [{
+              pedido: {
+                estado: 'confirmado',
+                total: 500,
+                productos: [
+                  { fkid_producto: 4, cantidad: 40, precio_unidad: 10, baja_logica: false, producto: { id: 4, nombre: 'Arena' } },
+                ],
+              },
+            }],
+          },
+        ],
+      },
+      JornadaCarga: {
+        destroy: async () => {},
+        bulkCreate: async (rows) => { created.push(...rows); },
+      },
+    },
+    crearNotificacion: async () => ({ id: 9, update: async () => {} }),
+  });
+  expect(created).toEqual([
+    expect.objectContaining({ nombre: 'Arena', cantidad: 5 }),
+  ]);
+  expect(Number(jornada.dinero_esperado)).toBe(80);
+});
+
 test('solicitarValidacion reutiliza la solicitud abierta del check-in', async () => {
   const updates = [];
   const notificacion = {
@@ -1033,6 +1079,7 @@ test('registrarVelocidad guarda GPS y lectura', async () => {
     },
   });
   expect(updates[0].lat_actual).toBe(24.1);
+  expect(Math.abs(Date.now() - updates[0].ubicacion_at.getTime())).toBeLessThan(5000);
   expect(created[0].lat).toBe(24.1);
 });
 

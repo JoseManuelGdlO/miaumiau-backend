@@ -174,7 +174,7 @@ function resumirRutas(rutas) {
   const raw = [];
   let cents = 0;
   for (const ruta of rutas || []) {
-    if (ruta.estado === 'cancelada') continue;
+    if (ruta.baja_logica || ruta.estado === 'cancelada') continue;
     for (const rp of ruta.pedidos || []) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
@@ -219,6 +219,7 @@ async function calcularCargaDelDia(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include: [
@@ -316,7 +317,7 @@ async function asegurarCoordsRuta(rutas, deps = {}) {
 function resumenDesdeRutas(rutas) {
   const pedidos = [];
   for (const ruta of rutas || []) {
-    if (ruta.estado === 'cancelada') continue;
+    if (ruta.baja_logica || ruta.estado === 'cancelada') continue;
     for (const rp of ruta.pedidos || []) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
@@ -353,6 +354,7 @@ async function resumenPedidosDelDia(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include: [{
@@ -848,6 +850,7 @@ async function ordenarParadasSiAplica(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include,
@@ -938,6 +941,7 @@ async function listarPedidos(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include: [
@@ -952,24 +956,15 @@ async function listarPedidos(deps = {}) {
   await anotarMinutos(deps, rutas);
   const franja = deps.franja === 'tarde' || deps.franja === 'manana' ? deps.franja : null;
   const pedidos = [];
-  let esperandoLiberacion = false;
-  let dejoVerSinLiberar = false;
   for (const ruta of rutas) {
     for (const rp of ruta.pedidos || []) {
       if (!rp.pedido) continue;
       const stopFranja = franjaDe(rp.franja || ruta.franja);
       if (franja && stopFranja !== franja) continue;
-      if (abierto(rp) && !rp.liberado_en) {
-        if (dejoVerSinLiberar) {
-          esperandoLiberacion = true;
-          continue;
-        }
-        dejoVerSinLiberar = true;
-      }
       pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
     }
   }
-  return { pedidos, esperando_liberacion: esperandoLiberacion };
+  return { pedidos, esperando_liberacion: false };
 }
 
 async function detallePedido(deps = {}) {
@@ -1064,7 +1059,7 @@ async function validarCodigo(deps = {}) {
 async function cantidadesEntregadasHoy(deps, excludePedidoId) {
   const db = getModels(deps);
   const rutas = await db.Ruta.findAll({
-    where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+    where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
     attributes: ['id'],
   });
   const rutaIds = rutas.map((r) => r.id);
@@ -1767,7 +1762,7 @@ async function refrescarCorte(deps = {}) {
           model: db.Ruta,
           as: 'ruta',
           required: true,
-          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
         }],
       }],
     }],
@@ -1803,7 +1798,7 @@ async function cobrosDtoDelDia(deps = {}) {
           model: db.Ruta,
           as: 'ruta',
           required: true,
-          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
         }],
       }],
     }],
@@ -2158,7 +2153,7 @@ async function registrarUbicacion(deps = {}) {
   const punto = puntoDe({ lat: deps.lat, lng: deps.lng });
   if (!punto) fail(422, 'La ubicación no es válida');
   const db = getModels(deps);
-  const at = deps.fecha ? new Date(deps.fecha) : new Date();
+  const at = new Date();
   if (typeof db.Repartidor?.update === 'function') {
     await db.Repartidor.update(
       { lat_actual: punto.lat, lng_actual: punto.lng, ubicacion_at: at },
