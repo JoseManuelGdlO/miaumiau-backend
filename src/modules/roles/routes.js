@@ -15,7 +15,7 @@ const validateRole = [
     .withMessage('El nombre solo puede contener letras minúsculas y guiones bajos'),
   
   body('descripcion')
-    .optional()
+    .optional({ nullable: true })
     .isLength({ max: 500 })
     .withMessage('La descripción no puede exceder 500 caracteres'),
   
@@ -79,14 +79,14 @@ router.get('/:id',
 
 router.post('/', 
   authenticateToken, 
-  requireSuperAdminOrPermission('ver_roles'), 
+  requireSuperAdminOrPermission('crear_roles'), 
   validateRole, 
   roleController.createRole
 );
 
 router.put('/:id', 
   authenticateToken, 
-  requireSuperAdminOrPermission('ver_roles'), 
+  requireSuperAdminOrPermission(['editar_roles', 'asignar_permisos_roles']), 
   validateId, 
   validateRole, 
   roleController.updateRole
@@ -94,14 +94,14 @@ router.put('/:id',
 
 router.delete('/:id', 
   authenticateToken, 
-  requireSuperAdminOrPermission('ver_roles'), 
+  requireSuperAdminOrPermission('eliminar_roles'), 
   validateId, 
   roleController.deleteRole
 );
 
 router.patch('/:id/restore', 
   authenticateToken, 
-  requireSuperAdminOrPermission('ver_roles'), 
+  requireSuperAdminOrPermission('editar_roles'), 
   validateId, 
   roleController.restoreRole
 );
@@ -109,7 +109,7 @@ router.patch('/:id/restore',
 // Rutas para gestión de permisos en roles
 router.post('/:id/permissions', 
   authenticateToken, 
-  requireSuperAdminOrPermission('ver_roles'), 
+  requireSuperAdminOrPermission('asignar_permisos_roles'), 
   validateId, 
   validatePermissionId, 
   roleController.assignPermission
@@ -117,7 +117,7 @@ router.post('/:id/permissions',
 
 router.delete('/:id/permissions/:permission_id', 
   authenticateToken, 
-  requireSuperAdminOrPermission('ver_roles'), 
+  requireSuperAdminOrPermission('asignar_permisos_roles'), 
   validateId, 
   param('permission_id').isInt({ min: 1 }).withMessage('El ID del permiso debe ser un número entero positivo'),
   handleValidationErrors,

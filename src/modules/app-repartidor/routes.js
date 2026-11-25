@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateRepartidor } = require('../../middleware/repartidorAuth');
-const { uploadComprobantes, uploadRepartidores } = require('../../utils/uploadImages');
+const { uploadComprobantes, uploadEvidencias, uploadRepartidores } = require('../../utils/uploadImages');
 const controller = require('./controller');
 
 router.use(authenticateRepartidor);
@@ -10,6 +10,8 @@ router.post('/me/foto', uploadRepartidores.single('foto'), controller.foto);
 router.get('/jornada', controller.jornada);
 router.put('/jornada/carga', controller.replaceCarga);
 router.post('/jornada/iniciar', controller.iniciarRuta);
+router.post('/jornada/evidencias', uploadEvidencias.single('foto'), controller.evidencia);
+router.delete('/jornada/evidencias/:tipo', controller.quitarEvidencia);
 router.post('/jornada/solicitar-validacion', controller.solicitarValidacion);
 router.get('/jornada/bodega', controller.bodega);
 router.post('/jornada/extras', controller.extras);

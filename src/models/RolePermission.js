@@ -89,20 +89,21 @@ module.exports = (sequelize, DataTypes) => {
   };
 
   RolePermission.syncRolePermissions = async function(roleId, permissionIds) {
-    // Eliminar todas las asignaciones actuales del rol
-    await this.destroy({
-      where: { role_id: roleId }
-    });
+    await sequelize.transaction(async (transaction) => {
+      await this.destroy({
+        where: { role_id: roleId },
+        transaction
+      });
 
-    // Crear las nuevas asignaciones
-    if (permissionIds && permissionIds.length > 0) {
-      const rolePermissions = permissionIds.map(permissionId => ({
-        role_id: roleId,
-        permission_id: permissionId
-      }));
-      
-      await this.bulkCreate(rolePermissions);
-    }
+      if (permissionIds && permissionIds.length > 0) {
+        const rolePermissions = permissionIds.map(permissionId => ({
+          role_id: roleId,
+          permission_id: permissionId
+        }));
+
+        await this.bulkCreate(rolePermissions, { transaction });
+      }
+    });
   };
 
   return RolePermission;

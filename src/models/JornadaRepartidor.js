@@ -84,6 +84,10 @@ module.exports = (sequelize, DataTypes) => {
       cerrado_por_nombre: {
         type: DataTypes.STRING(150),
         allowNull: true
+      },
+      evidencias: {
+        type: DataTypes.JSON,
+        allowNull: true
       }
     },
     {

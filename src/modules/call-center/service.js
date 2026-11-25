@@ -785,7 +785,15 @@ async function detalleSolicitud(deps = {}) {
     });
   }
   const detalle = {
-    ...toSolicitudDetalle({ notificacion, repartidor, cargas, pedido, dineroEsperado, deposito }),
+    ...toSolicitudDetalle({
+      notificacion,
+      repartidor,
+      cargas,
+      pedido,
+      dineroEsperado,
+      deposito,
+      evidencias: require('../app-repartidor/evidencia').resumenEvidencias(jornada?.evidencias),
+    }),
     ya_validada: yaValidada,
   };
   if (datos.tipo === 'check_in') detalle.pedidos = await pedidosDeLaCarga(deps, jornada);
