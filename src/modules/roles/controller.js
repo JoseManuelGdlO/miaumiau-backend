@@ -420,7 +420,7 @@ class RoleController {
         success: true,
         data: {
           role: role.toJSON(),
-          permissions: rolePermissions.map(rp => rp.permission)
+          permissions: rolePermissions.map((rp) => rp.permission).filter(Boolean)
         }
       });
     } catch (error) {

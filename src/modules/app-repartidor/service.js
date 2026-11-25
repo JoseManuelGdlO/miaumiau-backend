@@ -18,6 +18,8 @@ const {
   agruparCarga,
   agruparCargasLeidas,
   desglosePedido,
+  precioCobrado,
+  totalSiDescuentoPendiente,
   avisaReagendo,
   urlFoto,
   META_DIARIA,
@@ -30,6 +32,7 @@ const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../util
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
 const { ordenDesdeBodega, distanceMatrix, ordenSinPisarManual } = require('./route-order');
+const { ventanaDeHorario } = require('../pedidos/horario');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { analizarFoto, decidirLectura, historialDesde, marcasDeTiempo, normalizarTipo, resumenEvidencias } = require('./evidencia');
 const { evidenciasOcultas } = require('../configuracion/cache');
@@ -77,6 +80,7 @@ function toPedidoDto(pedido, rutaPedido) {
     ...rest
   } = raw;
   rest.cliente = stripPhone(rest.cliente);
+  rest.ventana = ventanaDeHorario(raw.horario_preferente);
   if (llamada) rest.telefono_llamada = llamada;
   if (rutaPedido) {
     const rp = plain(rutaPedido);
@@ -104,6 +108,8 @@ function toPedidoDto(pedido, rutaPedido) {
     }
   }
   rest.desglose = desglosePedido(raw);
+  const cobrado = totalSiDescuentoPendiente(raw);
+  if (cobrado != null) rest.total = cobrado;
   return rest;
 }
 
@@ -176,7 +182,7 @@ function resumirRutas(rutas) {
   const raw = [];
   let cents = 0;
   for (const ruta of rutas || []) {
-    if (ruta.estado === 'cancelada') continue;
+    if (ruta.baja_logica || ruta.estado === 'cancelada') continue;
     for (const rp of ruta.pedidos || []) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
@@ -190,9 +196,7 @@ function resumirRutas(rutas) {
           fkid_producto: fkid,
           nombre,
           cantidad: Number(prod.cantidad) || 0,
-          precio_unitario: prod.precio_unidad != null
-            ? Number(prod.precio_unidad)
-            : Number(prod.producto?.precio_venta) || 0,
+          precio_unitario: precioCobrado(prod),
         });
       }
       const paradaExtra = String(pedido.numero_pedido || '').startsWith('EXTRA-');
@@ -221,6 +225,7 @@ async function calcularCargaDelDia(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include: [
@@ -318,7 +323,7 @@ async function asegurarCoordsRuta(rutas, deps = {}) {
 function resumenDesdeRutas(rutas) {
   const pedidos = [];
   for (const ruta of rutas || []) {
-    if (ruta.estado === 'cancelada') continue;
+    if (ruta.baja_logica || ruta.estado === 'cancelada') continue;
     for (const rp of ruta.pedidos || []) {
       const pedido = rp.pedido;
       if (!pedido || pedido.estado === 'cancelado' || pedido.baja_logica) continue;
@@ -355,6 +360,7 @@ async function resumenPedidosDelDia(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include: [{
@@ -871,10 +877,15 @@ async function assertRutaDelRepartidor(deps = {}, { withCode = false, withPhone 
         model: db.Ruta,
         as: 'ruta',
         required: true,
-        where: { fkid_repartidor: deps.repartidorId },
+        where: {
+          fkid_repartidor: deps.repartidorId,
+          baja_logica: false,
+          estado: { [Op.ne]: 'cancelada' },
+        },
       },
       pedidoInclude(db, { withCode, withPhone }),
     ],
+    order: [['id', 'DESC']],
   });
   if (!rutaPedido) fail(403, 'Pedido no encontrado en tu ruta');
   return rutaPedido;
@@ -951,49 +962,45 @@ async function ordenarParadasSiAplica(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include,
   });
   for (const ruta of rutas) {
-    const grupos = new Map();
-    for (const row of ruta.pedidos || []) {
-      const franja = franjaDe(row.franja || ruta.franja);
-      const grupo = grupos.get(franja) || [];
-      grupo.push(row);
-      grupos.set(franja, grupo);
-    }
+    const grupo = ruta.pedidos || [];
     let bodega = null;
     try {
       bodega = await coordsBodega(ruta, apiKey, deps);
     } catch {
       bodega = null;
     }
-    for (const grupo of grupos.values()) {
-      const paradas = grupo
-        .map((rp) => ({
-          id: rp.id,
-          lat: rp.lat == null ? null : Number(rp.lat),
-          lng: rp.lng == null ? null : Number(rp.lng),
-        }))
-        .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
-      if (paradas.length < 2 || !bodega) continue;
+    const paradas = grupo
+      .map((rp) => ({
+        id: rp.id,
+        lat: rp.lat == null ? null : Number(rp.lat),
+        lng: rp.lng == null ? null : Number(rp.lng),
+      }))
+      .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
+    if (paradas.length >= 2 && bodega) {
       const { mapsApagada } = require('../maps/apagada');
-      if (await mapsApagada(deps)) continue;
-      const stops = [bodega, ...paradas];
-      let matrix;
-      try {
-        matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
-      } catch {
-        continue;
-      }
-      if (!matrix) continue;
-      const ordered = ordenDesdeBodega(paradas.map((rp) => rp.id), matrix);
-      const asignaciones = ordenSinPisarManual(grupo, ordered);
-      for (const item of asignaciones) {
-        const row = grupo.find((rp) => rp.id === item.id);
-        if (row?.orden_manual) continue;
-        if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
+      if (!(await mapsApagada(deps))) {
+        const stops = [bodega, ...paradas];
+        let matrix;
+        try {
+          matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
+        } catch {
+          matrix = null;
+        }
+        if (matrix) {
+          const ordered = ordenDesdeBodega(paradas.map((rp) => rp.id), matrix);
+          const asignaciones = ordenSinPisarManual(grupo, ordered);
+          for (const item of asignaciones) {
+            const row = grupo.find((rp) => rp.id === item.id);
+            if (row?.orden_manual) continue;
+            if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
+          }
+        }
       }
     }
   }
@@ -1041,6 +1048,7 @@ async function listarPedidos(deps = {}) {
     where: {
       fkid_repartidor: deps.repartidorId,
       fecha_ruta: deps.fecha,
+      baja_logica: false,
       estado: { [Op.ne]: 'cancelada' },
     },
     include: [
@@ -1055,24 +1063,18 @@ async function listarPedidos(deps = {}) {
   await anotarMinutos(deps, rutas);
   const franja = deps.franja === 'tarde' || deps.franja === 'manana' ? deps.franja : null;
   const pedidos = [];
-  let esperandoLiberacion = false;
-  let dejoVerSinLiberar = false;
   for (const ruta of rutas) {
     for (const rp of ruta.pedidos || []) {
       if (!rp.pedido) continue;
       const stopFranja = franjaDe(rp.franja || ruta.franja);
       if (franja && stopFranja !== franja) continue;
-      if (abierto(rp) && !rp.liberado_en) {
-        if (dejoVerSinLiberar) {
-          esperandoLiberacion = true;
-          continue;
-        }
-        dejoVerSinLiberar = true;
-      }
-      pedidos.push(toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja }));
+      const dto = toPedidoDto(rp.pedido, { ...plain(rp), franja: stopFranja });
+      if (rp.pedido.estado === 'entregado' && dto.estado_entrega !== 'entregado') dto.estado_entrega = 'entregado';
+      if (rp.pedido.estado === 'cancelado') dto.estado_entrega = 'cancelado';
+      pedidos.push(dto);
     }
   }
-  return { pedidos, esperando_liberacion: esperandoLiberacion };
+  return { pedidos, esperando_liberacion: false };
 }
 
 async function detallePedido(deps = {}) {
@@ -1167,7 +1169,7 @@ async function validarCodigo(deps = {}) {
 async function cantidadesEntregadasHoy(deps, excludePedidoId) {
   const db = getModels(deps);
   const rutas = await db.Ruta.findAll({
-    where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+    where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
     attributes: ['id'],
   });
   const rutaIds = rutas.map((r) => r.id);
@@ -1314,11 +1316,15 @@ async function ajustarProductos(deps = {}) {
     const existing = lineasPedido.find(
       (row) => Number(row.fkid_producto) === Number(item.fkid_producto)
     );
-    const precio_total = item.cantidad * item.precio_unidad;
+    const off = Number(existing?.descuento_producto) || 0;
+    const lista = existing ? Number(existing.precio_unidad) || item.precio_unidad : item.precio_unidad;
+    const unit = Math.round(lista * (1 - Math.min(Math.max(off, 0), 100) / 100) * 100) / 100;
+    const precio_total = item.cantidad * unit;
     if (existing) {
       await existing.update({
         cantidad: item.cantidad,
-        precio_unidad: item.precio_unidad,
+        precio_unidad: lista,
+        descuento_producto: off,
         precio_total,
         baja_logica: false,
       });
@@ -1414,6 +1420,11 @@ function comprobantePath(file) {
   return `comprobantes/${file.filename}`;
 }
 
+function pathsDe(file, files) {
+  const lista = (Array.isArray(files) && files.length ? files : (file ? [file] : [])).slice(0, 4);
+  return lista.map(comprobantePath).filter(Boolean).join(',') || null;
+}
+
 function nombreYApellido(value) {
   const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return '';
@@ -1456,6 +1467,12 @@ async function entregar(deps = {}) {
   const transferencia = Number(deps.monto_transferencia ?? deps.transferencia) || 0;
   const db = getModels(deps);
   if (pedido.estado === 'entregado') {
+    if (rutaPedido.estado_entrega !== 'entregado' && typeof rutaPedido.update === 'function') {
+      await rutaPedido.update({
+        estado_entrega: 'entregado',
+        fecha_entrega_real: pedido.fecha_entrega_real || new Date(),
+      });
+    }
     if (deps.file || efectivo || transferencia || elegido) {
       const existente = await db.CobroEntrega.findOne({ where: { fkid_pedido: pedido.id } });
       const cobroPayload = {
@@ -1464,7 +1481,7 @@ async function entregar(deps = {}) {
         metodo,
         monto_efectivo: efectivo,
         monto_transferencia: transferencia,
-        comprobante_path: comprobantePath(deps.file) || existente?.comprobante_path || null,
+        comprobante_path: pathsDe(deps.file, deps.files) || existente?.comprobante_path || null,
       };
       if (existente && typeof existente.update === 'function') {
         await existente.update(cobroPayload);
@@ -1477,9 +1494,11 @@ async function entregar(deps = {}) {
   if (!rutaPedido.codigo_validado_en) fail(422, 'Valida el código antes de entregar');
 
   const hasPhoto = Boolean(deps.file || deps.hasPhoto);
+  const cobrado = totalSiDescuentoPendiente(pedido);
+  const totalCobro = cobrado != null ? cobrado : Number(pedido.total) || 0;
   const payment = validatePayment({
     metodo: elegido,
-    total: pedido.total,
+    total: totalCobro,
     efectivo,
     transferencia,
     hasPhoto,
@@ -1493,15 +1512,15 @@ async function entregar(deps = {}) {
   if (rutaPedido.entrega_tercero_en) {
     receptor = nombreYApellido(deps.receptorNombre);
     if (!receptor) fail(422, 'Escribe nombre y apellido de quien recibe');
-    if (!deps.receptorFile) fail(422, 'Toma la foto de quien recibe');
-    evidencia = comprobantePath(deps.receptorFile);
+    if (!deps.receptorFile && !(deps.receptorFiles || []).length) fail(422, 'Toma la foto de quien recibe');
+    evidencia = pathsDe(deps.receptorFile, deps.receptorFiles);
     notaTercero = `Entregado a ${receptor}. Foto: ${evidencia}`;
   }
   if (rutaPedido.entrega_dejar_en) {
     lugar = String(deps.lugar || '').trim().slice(0, 200);
     if (lugar.length < 3) fail(422, 'Escribe dónde se deja el paquete');
-    if (!deps.receptorFile) fail(422, 'Toma la foto del lugar');
-    evidencia = comprobantePath(deps.receptorFile);
+    if (!deps.receptorFile && !(deps.receptorFiles || []).length) fail(422, 'Toma la foto del lugar');
+    evidencia = pathsDe(deps.receptorFile, deps.receptorFiles);
     notaTercero = `Dejado en ${lugar}. Foto: ${evidencia}`;
   }
 
@@ -1522,7 +1541,7 @@ async function entregar(deps = {}) {
         metodo,
         monto_efectivo: efectivo,
         monto_transferencia: transferencia,
-        comprobante_path: comprobantePath(deps.file) || existente?.comprobante_path || null,
+        comprobante_path: pathsDe(deps.file, deps.files) || existente?.comprobante_path || null,
       };
       if (existente && typeof existente.update === 'function') {
         await existente.update(cobroPayload, { transaction: t });
@@ -1539,9 +1558,15 @@ async function entregar(deps = {}) {
         ...(notaTercero ? { notas_entrega: notaTercero } : {}),
       }, { transaction: t });
       const metodoPedido = metodoPedidoDe(elegido) || metodo;
+      const impuestos = Number(pedido.impuestos) || 0;
+      const promo = Number(pedido.descuento) || 0;
       await pedido.update({
         estado: 'entregado',
         fecha_entrega_real: now,
+        ...(cobrado != null ? {
+          total: totalCobro,
+          subtotal: Math.round((totalCobro - impuestos + promo) * 100) / 100,
+        } : {}),
         ...(metodoPedido ? { metodo_pago: metodoPedido } : {}),
       }, { transaction: t });
 
@@ -1870,7 +1895,7 @@ async function refrescarCorte(deps = {}) {
           model: db.Ruta,
           as: 'ruta',
           required: true,
-          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
         }],
       }],
     }],
@@ -1906,7 +1931,7 @@ async function cobrosDtoDelDia(deps = {}) {
           model: db.Ruta,
           as: 'ruta',
           required: true,
-          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha },
+          where: { fkid_repartidor: deps.repartidorId, fecha_ruta: deps.fecha, baja_logica: false, estado: { [Op.ne]: 'cancelada' } },
         }],
       }],
     }],
@@ -2261,7 +2286,7 @@ async function registrarUbicacion(deps = {}) {
   const punto = puntoDe({ lat: deps.lat, lng: deps.lng });
   if (!punto) fail(422, 'La ubicación no es válida');
   const db = getModels(deps);
-  const at = deps.fecha ? new Date(deps.fecha) : new Date();
+  const at = new Date();
   if (typeof db.Repartidor?.update === 'function') {
     await db.Repartidor.update(
       { lat_actual: punto.lat, lng_actual: punto.lng, ubicacion_at: at },

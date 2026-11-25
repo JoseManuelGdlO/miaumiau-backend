@@ -1,4 +1,4 @@
-const { montoDescuento, logicaDesdePromo, aplicaACliente, promoParaCliente } = require('./descuento');
+const { montoDescuento, basePromo, logicaDesdePromo, aplicaACliente, promoParaCliente } = require('./descuento');
 
 test('porcentaje y tope', () => {
   expect(montoDescuento({ tipo_promocion: 'porcentaje', valor_descuento: 10 }, 200)).toBe(20);
@@ -7,6 +7,24 @@ test('porcentaje y tope', () => {
 
 test('monto fijo no pasa del total', () => {
   expect(montoDescuento({ tipo_promocion: 'monto_fijo', valor_descuento: 80 }, 50)).toBe(50);
+});
+
+test('sin productos ni unidades el descuento sigue sobre el total', () => {
+  const promo = { tipo_promocion: 'porcentaje', valor_descuento: 10 };
+  expect(basePromo(promo, [], 200)).toBe(200);
+  expect(montoDescuento(promo, basePromo(promo, [], 200))).toBe(20);
+});
+
+test('solo descuenta los productos marcados y pide las unidades', () => {
+  const promo = { tipo_promocion: 'porcentaje', valor_descuento: 10, productos_ids: [3], unidades_minimas: 2 };
+  const lineas = [
+    { fkid_producto: 3, cantidad: 1, precio_total: 200 },
+    { fkid_producto: 2, cantidad: 4, precio_total: 240 },
+  ];
+  expect(basePromo(promo, lineas, 440)).toBe(0);
+  lineas[0].cantidad = 2;
+  expect(basePromo(promo, lineas, 440)).toBe(200);
+  expect(montoDescuento(promo, basePromo(promo, lineas, 440))).toBe(20);
 });
 
 test('compra minima', () => {

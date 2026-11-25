@@ -66,18 +66,13 @@ function mapN8nToPedido(n8nData, clienteId, ciudadId) {
     metodoPago = metodoPagoMap[formaPago] || formaPago;
   }
 
-  // Formatear fecha de entrega estimada
+  // Fecha de entrega (día) y ventana (mañana / tarde / cualquiera)
   let fechaEntregaEstimada = null;
+  let ventana = 'cualquiera';
   if (n8nData.fecha_entrega && n8nData.fecha_entrega.fecha) {
-    const fecha = n8nData.fecha_entrega.fecha; // "2025-11-07"
-    // Determinar hora basada en manana/tarde
-    let hora = "14:00:00"; // Por defecto tarde
-    if (n8nData.fecha_entrega.manana) {
-      hora = "09:00:00"; // Mañana
-    } else if (n8nData.fecha_entrega.tarde) {
-      hora = "14:00:00"; // Tarde
-    }
-    fechaEntregaEstimada = `${fecha}T${hora}:00.000Z`;
+    fechaEntregaEstimada = n8nData.fecha_entrega.fecha; // "2025-11-07"
+    if (n8nData.fecha_entrega.manana) ventana = 'manana';
+    else if (n8nData.fecha_entrega.tarde) ventana = 'tarde';
   }
 
   // Construir el objeto de pedido
@@ -87,6 +82,7 @@ function mapN8nToPedido(n8nData, clienteId, ciudadId) {
     fkid_ciudad: ciudadId, // Debe venir de otra fuente o de la conversación
     metodo_pago: metodoPago,
     fecha_entrega_estimada: fechaEntregaEstimada,
+    ventana,
     codigo_promocion: codigoPromocion,
     notas: `Creado desde n8n. ${n8nData.fecha_entrega?.mensaje_usuario || ''}`.trim(),
     // productos: [] // Debe venir de otra fuente (carrito de compras)
@@ -127,7 +123,8 @@ return {
   "direccion_entrega": "Avenida del lago 230 fraccionamiento real del country",
   "fkid_ciudad": 1,
   "metodo_pago": "tarjeta",
-  "fecha_entrega_estimada": "2025-11-07T09:00:00.000Z",
+  "fecha_entrega_estimada": "2025-11-07",
+  "ventana": "manana",
   "codigo_promocion": "34160",
   "notas": "Creado desde n8n. Excelente 😺, tu entrega quedó confirmada para el 7 de noviembre por la mañana. ¡Gracias!",
   "productos": [
@@ -171,13 +168,10 @@ function mapN8nToPedido(n8nData, clienteId, ciudadId) {
     metodoPago = mapa[forma] || forma;
   }
 
-  // Formatear fecha de entrega
-  let fechaEntregaEstimada = null;
-  if (n8nData.fecha_entrega?.fecha) {
-    const fecha = n8nData.fecha_entrega.fecha;
-    let hora = n8nData.fecha_entrega.manana ? "09:00:00" : "14:00:00";
-    fechaEntregaEstimada = `${fecha}T${hora}:00.000Z`;
-  }
+  let fechaEntregaEstimada = n8nData.fecha_entrega?.fecha || null;
+  let ventana = 'cualquiera';
+  if (n8nData.fecha_entrega?.manana) ventana = 'manana';
+  else if (n8nData.fecha_entrega?.tarde) ventana = 'tarde';
 
   // Construir objeto
   return {
@@ -186,6 +180,7 @@ function mapN8nToPedido(n8nData, clienteId, ciudadId) {
     fkid_ciudad: ciudadId,
     metodo_pago: metodoPago,
     fecha_entrega_estimada: fechaEntregaEstimada,
+    ventana,
     codigo_promocion: codigoPromocion,
     notas: `Creado desde n8n. ${n8nData.fecha_entrega?.mensaje_usuario || ''}`.trim()
   };
@@ -210,5 +205,5 @@ return {
 2. **ciudad_id**: Debe obtenerse de otra fuente (desde la conversación o del cliente)
 3. **productos**: Debe venir del carrito de compras o de otro nodo
 4. **codigo_promocion**: Se extrae del mensaje, pero puede que necesites el código real del sistema
-5. **fecha_entrega_estimada**: Se construye combinando fecha + hora (mañana/tarde)
+5. **fecha_entrega_estimada**: Solo el día (`YYYY-MM-DD`). La franja va en **ventana**: `manana`, `tarde` o `cualquiera`. El backend guarda 09:30, 12:00 o vacío.
 

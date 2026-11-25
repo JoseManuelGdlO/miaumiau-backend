@@ -62,6 +62,11 @@ const validatePedido = [
       if (!rango.ok) throw new Error(rango.message);
       return true;
     }),
+
+  body('ventana')
+    .optional({ nullable: true, checkFalsy: true })
+    .isIn(['manana', 'tarde', 'cualquiera'])
+    .withMessage('La ventana debe ser manana, tarde o cualquiera'),
   
   body('metodo_pago')
     .optional()

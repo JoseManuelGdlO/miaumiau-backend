@@ -1,5 +1,6 @@
 const { agruparCargasLeidas, dayKey } = require('../app-repartidor/domain');
 const { MAX_PARADAS_DIA } = require('../rutas/cupo');
+const { ventanaDeHorario } = require('../pedidos/horario');
 
 const NOTE_LIMIT = 1000;
 const TIPOS = ['check_in', 'llamada_cliente', 'soporte', 'cierre_dia'];
@@ -324,8 +325,12 @@ function fueModificado(pedido) {
   return cobrado !== original;
 }
 
+function comprobantesPublicos(pathValue) {
+  return String(pathValue || '').split(',').map((parte) => comprobantePublicPath(parte)).filter(Boolean);
+}
+
 function comprobantePublicPath(pathValue) {
-  const raw = String(pathValue || '').trim();
+  const raw = String(pathValue || '').split(',')[0].trim();
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
   const relative = raw.replace(/^\/+/, '');
@@ -378,6 +383,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     direccion: pedido.direccion_entrega || null,
     notas: pedido.notas || null,
     franja: rutaPedido.franja === 'tarde' ? 'tarde' : 'manana',
+    ventana: ventanaDeHorario(pedido.horario_preferente),
     horario_preferente: pedido.horario_preferente ? String(pedido.horario_preferente).slice(0, 5) : null,
     metodo_pago: pedido.metodo_pago || null,
     orden_entrega: rutaPedido.orden_entrega ?? null,
@@ -529,6 +535,7 @@ module.exports = {
   toPedidoDia,
   fueModificado,
   comprobantePublicPath,
+  comprobantesPublicos,
   estadoCobro,
   toRepartidorOpcion,
   nombreRol,

@@ -1,3 +1,27 @@
+function idsPromo(promo) {
+  let raw = promo?.productos_ids;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { raw = []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+function basePromo(promo, lineas, subtotal) {
+  const ids = idsPromo(promo);
+  const min = Number(promo?.unidades_minimas) || 0;
+  const todas = lineas || [];
+  const aplicables = ids.length
+    ? todas.filter((linea) => ids.includes(Number(linea.fkid_producto)))
+    : todas;
+  if (min > 0) {
+    const unidades = aplicables.reduce((sum, linea) => sum + (Number(linea.cantidad) || 0), 0);
+    if (unidades < min) return 0;
+  }
+  if (!ids.length) return Number(subtotal) || 0;
+  return Math.round(aplicables.reduce((sum, linea) => sum + (Number(linea.precio_total) || 0), 0) * 100) / 100;
+}
+
 function montoDescuento(promo, subtotal) {
   const total = Number(subtotal) || 0;
   if (!promo || total <= 0) return 0;
@@ -48,4 +72,4 @@ function promoParaCliente(promos, { es_distribuidor, fkid_ciudad } = {}) {
   return matches.find((promo) => promo.aplica_a === 'distribuidor') || matches[0] || null;
 }
 
-module.exports = { montoDescuento, logicaDesdePromo, aplicaACliente, promoParaCliente };
+module.exports = { montoDescuento, basePromo, logicaDesdePromo, aplicaACliente, promoParaCliente };
