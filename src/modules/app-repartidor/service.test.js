@@ -48,6 +48,7 @@ test('solicitarValidacion persiste la carga calculada', async () => {
     id: 3,
     fkid_repartidor: 1,
     estado: 'borrador',
+    evidencias: { odometro: { estado: 'validada' } },
     cargas: [],
     update: async (data) => Object.assign(jornada, data),
   };
@@ -55,6 +56,7 @@ test('solicitarValidacion persiste la carga calculada', async () => {
   const updates = [];
   const result = await solicitarValidacion({
     jornada,
+    evidenciasOcultas: false,
     repartidorId: 1,
     fecha: '2026-10-09',
     repartidor: { nombre_completo: 'Ana Ruiz' },
@@ -128,6 +130,7 @@ test('solicitarValidacion reutiliza la solicitud abierta del check-in', async ()
   };
   const result = await solicitarValidacion({
     jornada,
+    evidenciasOcultas: true,
     repartidorId: 1,
     fecha: '2026-10-09',
     models: {
@@ -151,6 +154,25 @@ test('solicitarValidacion responde 422 sin productos en la ruta', async () => {
     fecha: '2026-10-09',
     models: { Ruta: { findAll: async () => [] } },
   })).rejects.toMatchObject({ status: 422, message: 'No hay productos en la ruta de hoy' });
+});
+
+test('solicitarValidacion pide la foto del odómetro si la flag está apagada', async () => {
+  const jornada = {
+    id: 3,
+    estado: 'borrador',
+    cargas: [],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await expect(solicitarValidacion({
+    jornada,
+    evidenciasOcultas: false,
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: {
+      Ruta: { findAll: async () => rutaConArena() },
+      JornadaCarga: { destroy: async () => {}, bulkCreate: async () => {} },
+    },
+  })).rejects.toMatchObject({ status: 422, message: 'La foto del odómetro todavía no está validada' });
 });
 
 test('refrescarCargaEnValidacion reescribe la ruta y conserva el extra', async () => {
@@ -382,6 +404,7 @@ test('solicitarValidacion conserva el producto extra al volver a enviar', async 
   };
   await solicitarValidacion({
     jornada,
+    evidenciasOcultas: true,
     repartidorId: 1,
     fecha: '2026-10-09',
     models: {

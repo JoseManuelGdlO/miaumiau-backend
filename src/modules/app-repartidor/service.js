@@ -32,6 +32,7 @@ const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventari
 const { ordenDesdeBodega, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { analizarFoto, decidirLectura, historialDesde, marcasDeTiempo, normalizarTipo, resumenEvidencias } = require('./evidencia');
+const { evidenciasOcultas } = require('../configuracion/cache');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
 const { soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
@@ -393,7 +394,7 @@ async function solicitarValidacion(deps = {}) {
   if (!calculo.lineas.length) fail(422, 'No hay productos en la ruta de hoy');
   const jornada = await loadJornada(deps, { findOrCreate: true });
   if (!jornada) fail(404, 'Jornada no encontrada');
-  if (resumenEvidencias(jornada.evidencias).odometro?.estado !== 'validada') {
+  if (!evidenciasOcultas(deps) && resumenEvidencias(jornada.evidencias).odometro?.estado !== 'validada') {
     fail(422, 'La foto del odómetro todavía no está validada');
   }
   const extras = lineasExtra(jornada);
