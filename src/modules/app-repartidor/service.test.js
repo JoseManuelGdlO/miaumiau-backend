@@ -1,4 +1,4 @@
-const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido, iniciarRuta, liberarSiguienteParada } = require('./service');
+const { replaceCarga, leerSolicitud, solicitarValidacion, refrescarCargaEnValidacion, obtenerJornada, toPedidoDto, noEntregar, detallePedido, llegada, entregar, listarAvisos, avisarCodigoAlCrear, registrarUbicacion, registrarVelocidad, resumenVelocidad, ubicacionPedido, iniciarRuta, liberarSiguienteParada, quitarEvidencia } = require('./service');
 
 function rutaConArena() {
   return [{
@@ -48,6 +48,7 @@ test('solicitarValidacion persiste la carga calculada', async () => {
     id: 3,
     fkid_repartidor: 1,
     estado: 'borrador',
+    evidencias: { odometro: { estado: 'validada' } },
     cargas: [],
     update: async (data) => Object.assign(jornada, data),
   };
@@ -55,6 +56,7 @@ test('solicitarValidacion persiste la carga calculada', async () => {
   const updates = [];
   const result = await solicitarValidacion({
     jornada,
+    evidenciasOcultas: false,
     repartidorId: 1,
     fecha: '2026-10-09',
     repartidor: { nombre_completo: 'Ana Ruiz' },
@@ -174,6 +176,7 @@ test('solicitarValidacion reutiliza la solicitud abierta del check-in', async ()
   };
   const result = await solicitarValidacion({
     jornada,
+    evidenciasOcultas: true,
     repartidorId: 1,
     fecha: '2026-10-09',
     models: {
@@ -197,6 +200,25 @@ test('solicitarValidacion responde 422 sin productos en la ruta', async () => {
     fecha: '2026-10-09',
     models: { Ruta: { findAll: async () => [] } },
   })).rejects.toMatchObject({ status: 422, message: 'No hay productos en la ruta de hoy' });
+});
+
+test('solicitarValidacion pide la foto del odómetro si la flag está apagada', async () => {
+  const jornada = {
+    id: 3,
+    estado: 'borrador',
+    cargas: [],
+    update: async (data) => Object.assign(jornada, data),
+  };
+  await expect(solicitarValidacion({
+    jornada,
+    evidenciasOcultas: false,
+    repartidorId: 1,
+    fecha: '2026-10-09',
+    models: {
+      Ruta: { findAll: async () => rutaConArena() },
+      JornadaCarga: { destroy: async () => {}, bulkCreate: async () => {} },
+    },
+  })).rejects.toMatchObject({ status: 422, message: 'La foto del odómetro todavía no está validada' });
 });
 
 test('refrescarCargaEnValidacion reescribe la ruta y conserva el extra', async () => {
@@ -428,6 +450,7 @@ test('solicitarValidacion conserva el producto extra al volver a enviar', async 
   };
   await solicitarValidacion({
     jornada,
+    evidenciasOcultas: true,
     repartidorId: 1,
     fecha: '2026-10-09',
     models: {
@@ -1391,4 +1414,16 @@ test('liberarSiguienteParada avisa al siguiente cliente', async () => {
   expect(siguiente.aviso_siguiente_en).toBeInstanceOf(Date);
   expect(sends).toHaveLength(1);
   expect(sends[0][2].body.text).toMatch(/en camino/);
+});
+
+test('combustible se admite en jornada validada (checkout), odometro no, y cerrada bloquea ambas', async () => {
+  const validada = { estado: 'validada', evidencias: { combustible: { estado: 'validada' }, odometro: { estado: 'validada' } } };
+  const res = await quitarEvidencia({ jornada: validada, tipo: 'combustible' });
+  expect(res).toEqual({ tipo: 'combustible', estado: null });
+  expect(validada.evidencias.combustible).toBeUndefined();
+
+  await expect(quitarEvidencia({ jornada: validada, tipo: 'odometro' })).rejects.toMatchObject({ status: 409 });
+
+  const cerrada = { estado: 'cerrada', evidencias: { combustible: { estado: 'validada' } } };
+  await expect(quitarEvidencia({ jornada: cerrada, tipo: 'combustible' })).rejects.toMatchObject({ status: 409 });
 });

@@ -80,6 +80,29 @@ async function foto(req, res) {
   }, 'foto');
 }
 
+async function evidencia(req, res) {
+  return handle(req, res, async () => {
+    if (req.fileValidationError) throw Object.assign(new Error(req.fileValidationError), { status: 422 });
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.guardarEvidencia(depsFrom(req, {
+      fecha,
+      timezone,
+      tipo: req.body.tipo,
+      file: req.file,
+      fechaCaptura: req.body.fechaCaptura,
+      vehiculoId: req.body.vehiculoId,
+      origen: req.body.origen,
+    }));
+  }, 'evidencia');
+}
+
+async function quitarEvidencia(req, res) {
+  return handle(req, res, async () => {
+    const { fecha, timezone } = await fechaDeHoy(req);
+    return service.quitarEvidencia(depsFrom(req, { fecha, timezone, tipo: req.params.tipo }));
+  }, 'quitarEvidencia');
+}
+
 async function jornada(req, res) {
   return handle(req, res, async () => {
     const { fecha, timezone } = await fechaDeHoy(req);
@@ -364,6 +387,8 @@ module.exports = {
   me,
   foto,
   jornada,
+  evidencia,
+  quitarEvidencia,
   replaceCarga,
   inventario,
   velocidad,

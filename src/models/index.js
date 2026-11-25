@@ -51,6 +51,7 @@ const LecturaKilometraje = require('./LecturaKilometraje');
 const LecturaVelocidad = require('./LecturaVelocidad');
 const HistorialCambio = require('./HistorialCambio');
 const ContactoSoporte = require('./ContactoSoporte');
+const Configuracion = require('./Configuracion');
 
 // Inicializar modelos
 const models = {
@@ -103,6 +104,7 @@ const models = {
   LecturaVelocidad: LecturaVelocidad(sequelize, DataTypes),
   HistorialCambio: HistorialCambio(sequelize, DataTypes),
   ContactoSoporte: ContactoSoporte(sequelize, DataTypes),
+  Configuracion: Configuracion(sequelize, DataTypes),
 };
 
 // Definir asociaciones

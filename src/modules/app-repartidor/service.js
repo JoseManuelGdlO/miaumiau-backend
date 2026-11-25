@@ -34,6 +34,8 @@ const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventari
 const { ordenDesdeBodega, distanceMatrix, ordenSinPisarManual } = require('./route-order');
 const { ventanaDeHorario } = require('../pedidos/horario');
 const jornadaPaquetes = require('./jornada-paquetes');
+const { analizarFoto, decidirLectura, historialDesde, marcasDeTiempo, normalizarTipo, resumenEvidencias } = require('./evidencia');
+const { evidenciasOcultas } = require('../configuracion/cache');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
 const { soltarParadasAbiertas } = require('../pedidos/reencolar');
 const { Logger } = require('../../utils/logger');
@@ -398,6 +400,9 @@ async function solicitarValidacion(deps = {}) {
   if (!calculo.lineas.length) fail(422, 'No hay productos en la ruta de hoy');
   const jornada = await loadJornada(deps, { findOrCreate: true });
   if (!jornada) fail(404, 'Jornada no encontrada');
+  if (!evidenciasOcultas(deps) && resumenEvidencias(jornada.evidencias).odometro?.estado !== 'validada') {
+    fail(422, 'La foto del odómetro todavía no está validada');
+  }
   const extras = lineasExtra(jornada);
   const db = getModels(deps);
   await db.JornadaCarga.destroy({ where: { fkid_jornada: jornada.id } });
@@ -617,6 +622,7 @@ async function obtenerJornada(deps = {}) {
       pedidos,
       polyline_encoded,
       cobros: [],
+      evidencias: resumenEvidencias(null),
     };
     if (!jornada) return base;
     const raw = plain(jornada);
@@ -632,6 +638,7 @@ async function obtenerJornada(deps = {}) {
       comprobante_deposito_path: raw.comprobante_deposito_path,
       cerrada_en: raw.cerrada_en,
       cobros: await cobrosDtoDelDia(deps),
+      evidencias: resumenEvidencias(raw.evidencias),
     };
   }
   const raw = plain(jornada);
@@ -652,7 +659,103 @@ async function obtenerJornada(deps = {}) {
     pedidos,
     polyline_encoded,
     cobros: await cobrosDtoDelDia(deps),
+    evidencias: resumenEvidencias(raw.evidencias),
   };
+}
+
+async function historialPrevio(deps, jornada, tipo) {
+  const filas = [{ fecha: jornada.fecha, evidencias: jornada.evidencias, excluirTipo: tipo, mismaJornada: true }];
+  const db = getModels(deps);
+  if (!deps.repartidorId || typeof db.JornadaRepartidor?.findAll !== 'function' || !jornada.id) return filas;
+  try {
+    const previas = await db.JornadaRepartidor.findAll({
+      where: { fkid_repartidor: deps.repartidorId, id: { [Op.ne]: jornada.id } },
+      attributes: ['fecha', 'evidencias'],
+      order: [['fecha', 'DESC']],
+    });
+    for (const row of previas) {
+      const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
+      filas.push({ fecha: plain.fecha, evidencias: plain.evidencias, excluirTipo: null });
+    }
+  } catch (err) {
+    log.warn('sin historial de evidencias', { message: err.message });
+  }
+  return filas;
+}
+
+function admiteEvidencia(estado, tipo) {
+  if (!estado) return true;
+  if (tipo === 'combustible') return estado !== 'cerrada';
+  return estado === 'borrador' || estado === 'esperando_call_center';
+}
+
+async function guardarEvidencia(deps = {}) {
+  let tipo;
+  try {
+    tipo = normalizarTipo(deps.tipo);
+  } catch (err) {
+    fail(err.status || 422, err.message);
+  }
+  if (!deps.file) fail(422, 'Falta la foto');
+  const jornada = await loadJornada(deps, { findOrCreate: true });
+  if (!jornada) fail(404, 'Jornada no encontrada');
+  if (!admiteEvidencia(jornada.estado, tipo)) {
+    fail(409, 'La jornada ya no admite fotos');
+  }
+  const marcas = marcasDeTiempo({ fechaCaptura: deps.fechaCaptura });
+  const { lectura, imagenHash } = await analizarFoto({ tipo, filePath: deps.file.path, mime: deps.file.mimetype });
+  const decision = decidirLectura(tipo, lectura, marcas, {
+    politica: deps.politica,
+    historial: historialDesde(await historialPrevio(deps, jornada, tipo)),
+    imagenHash,
+  });
+  const nombre = deps.repartidor?.nombre_completo;
+  const previas = jornada.evidencias && typeof jornada.evidencias === 'object' ? jornada.evidencias : {};
+  const evidencias = {
+    ...previas,
+    [tipo]: {
+      ...decision,
+      path: `evidencias/${deps.file.filename}`,
+      imagenHash,
+      usuario: { id: deps.repartidorId ?? null, nombre: typeof nombre === 'string' ? nombre : null },
+      vehiculoId: deps.vehiculoId ?? null,
+      origen: deps.origen || 'app_repartidor',
+      ...marcas,
+    },
+  };
+  if (typeof jornada.update === 'function') await jornada.update({ evidencias });
+  else jornada.evidencias = evidencias;
+  if (decision.estado === 'rechazada') {
+    try {
+      require('../realtime').getHub().notify(deps.repartidorId, {
+        type: 'evidencia.rechazada',
+        tipo,
+        motivo: decision.motivo,
+      });
+    } catch (err) {
+      log.warn('la foto se rechazó pero no se avisó en vivo', { message: err.message });
+    }
+  }
+  return resumenEvidencias(evidencias)[tipo];
+}
+
+async function quitarEvidencia(deps = {}) {
+  let tipo;
+  try {
+    tipo = normalizarTipo(deps.tipo);
+  } catch (err) {
+    fail(err.status || 422, err.message);
+  }
+  const jornada = await loadJornada(deps, { findOrCreate: false });
+  if (!jornada) return resumenEvidencias(null)[tipo];
+  if (!admiteEvidencia(jornada.estado, tipo)) {
+    fail(409, 'La jornada ya no admite fotos');
+  }
+  const previas = jornada.evidencias && typeof jornada.evidencias === 'object' ? { ...jornada.evidencias } : {};
+  delete previas[tipo];
+  if (typeof jornada.update === 'function') await jornada.update({ evidencias: previas });
+  else jornada.evidencias = previas;
+  return { tipo, estado: null };
 }
 
 async function buscarBodega(deps = {}) {
@@ -2375,6 +2478,8 @@ async function calificarCliente(deps = {}) {
 module.exports = {
   replaceCarga,
   solicitarValidacion,
+  guardarEvidencia,
+  quitarEvidencia,
   refrescarCargaEnValidacion,
   leerSolicitud,
   obtenerJornada,

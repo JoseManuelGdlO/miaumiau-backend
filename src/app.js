@@ -297,6 +297,8 @@ const appRepartidorRoutes = require('./modules/app-repartidor/routes');
 app.use('/api/app-repartidor', appRepartidorRoutes);
 const callCenterRoutes = require('./modules/call-center/routes');
 app.use('/api/call-center', callCenterRoutes);
+const flotillaRoutes = require('./modules/flotilla/routes');
+app.use('/api/flotilla', flotillaRoutes);
 app.use('/api/rutas', rutaRoutes);
 app.use('/api/notificaciones', notificacionRoutes);
 app.use('/api/paquetes', paqueteRoutes);
@@ -308,6 +310,8 @@ app.use('/api/push', pushRoutes);
 app.use('/api/public/meta', metaPublicRoutes);
 app.use('/api/public', publicSiteSettingsRoutes);
 app.use('/api/site-settings', siteSettingsRoutes);
+const configuracionRoutes = require('./modules/configuracion/routes');
+app.use('/api/configuracion', configuracionRoutes);
 
 // Ruta de salud
 app.get('/health', (req, res) => {
@@ -346,6 +350,13 @@ const startServer = async () => {
     // Conectar a la base de datos
     await sequelize.authenticate();
     log.info('Conexión a la base de datos establecida correctamente.');
+    try {
+      const { cargarConfiguracion } = require('./modules/configuracion/cache');
+      const filas = await cargarConfiguracion();
+      log.info('Configuración cargada', { filas: filas.length });
+    } catch (error) {
+      log.error('No se pudo leer la configuración; las evidencias fotográficas quedan ocultas', { message: error.message });
+    }
     
     // Sincronizar modelos (solo en desarrollo)
     if (process.env.NODE_ENV === 'development') {
