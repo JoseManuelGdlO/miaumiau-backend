@@ -32,6 +32,7 @@ const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../util
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
 const { ordenDesdeBodega, distanceMatrix, ordenSinPisarManual } = require('./route-order');
+const { ventanaDeHorario } = require('../pedidos/horario');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { avisarSiguiente, minutosEntre, abierto } = require('./aviso-siguiente');
 const { soltarParadasAbiertas } = require('../pedidos/reencolar');
@@ -77,6 +78,7 @@ function toPedidoDto(pedido, rutaPedido) {
     ...rest
   } = raw;
   rest.cliente = stripPhone(rest.cliente);
+  rest.ventana = ventanaDeHorario(raw.horario_preferente);
   if (llamada) rest.telefono_llamada = llamada;
   if (rutaPedido) {
     const rp = plain(rutaPedido);
@@ -863,44 +865,39 @@ async function ordenarParadasSiAplica(deps = {}) {
     include,
   });
   for (const ruta of rutas) {
-    const grupos = new Map();
-    for (const row of ruta.pedidos || []) {
-      const franja = franjaDe(row.franja || ruta.franja);
-      const grupo = grupos.get(franja) || [];
-      grupo.push(row);
-      grupos.set(franja, grupo);
-    }
+    const grupo = ruta.pedidos || [];
     let bodega = null;
     try {
       bodega = await coordsBodega(ruta, apiKey, deps);
     } catch {
       bodega = null;
     }
-    for (const grupo of grupos.values()) {
-      const paradas = grupo
-        .map((rp) => ({
-          id: rp.id,
-          lat: rp.lat == null ? null : Number(rp.lat),
-          lng: rp.lng == null ? null : Number(rp.lng),
-        }))
-        .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
-      if (paradas.length < 2 || !bodega) continue;
+    const paradas = grupo
+      .map((rp) => ({
+        id: rp.id,
+        lat: rp.lat == null ? null : Number(rp.lat),
+        lng: rp.lng == null ? null : Number(rp.lng),
+      }))
+      .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
+    if (paradas.length >= 2 && bodega) {
       const { mapsApagada } = require('../maps/apagada');
-      if (await mapsApagada(deps)) continue;
-      const stops = [bodega, ...paradas];
-      let matrix;
-      try {
-        matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
-      } catch {
-        continue;
-      }
-      if (!matrix) continue;
-      const ordered = ordenDesdeBodega(paradas.map((rp) => rp.id), matrix);
-      const asignaciones = ordenSinPisarManual(grupo, ordered);
-      for (const item of asignaciones) {
-        const row = grupo.find((rp) => rp.id === item.id);
-        if (row?.orden_manual) continue;
-        if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
+      if (!(await mapsApagada(deps))) {
+        const stops = [bodega, ...paradas];
+        let matrix;
+        try {
+          matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
+        } catch {
+          matrix = null;
+        }
+        if (matrix) {
+          const ordered = ordenDesdeBodega(paradas.map((rp) => rp.id), matrix);
+          const asignaciones = ordenSinPisarManual(grupo, ordered);
+          for (const item of asignaciones) {
+            const row = grupo.find((rp) => rp.id === item.id);
+            if (row?.orden_manual) continue;
+            if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
+          }
+        }
       }
     }
   }

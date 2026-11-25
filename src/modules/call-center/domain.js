@@ -1,5 +1,6 @@
 const { agruparCargasLeidas, dayKey } = require('../app-repartidor/domain');
 const { MAX_PARADAS_DIA } = require('../rutas/cupo');
+const { ventanaDeHorario } = require('../pedidos/horario');
 
 const NOTE_LIMIT = 1000;
 const TIPOS = ['check_in', 'llamada_cliente', 'soporte', 'cierre_dia'];
@@ -381,6 +382,7 @@ function toPedidoDia({ pedido, rutaPedido, ruta }) {
     direccion: pedido.direccion_entrega || null,
     notas: pedido.notas || null,
     franja: rutaPedido.franja === 'tarde' ? 'tarde' : 'manana',
+    ventana: ventanaDeHorario(pedido.horario_preferente),
     horario_preferente: pedido.horario_preferente ? String(pedido.horario_preferente).slice(0, 5) : null,
     metodo_pago: pedido.metodo_pago || null,
     orden_entrega: rutaPedido.orden_entrega ?? null,

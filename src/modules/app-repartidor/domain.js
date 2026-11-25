@@ -177,9 +177,19 @@ function precioCobrado(prod) {
     ? Number(prod.precio_unidad)
     : Number(prod?.producto?.precio_venta) || 0;
   const off = Number(prod?.descuento_producto) || 0;
+  const cant = Number(prod?.cantidad) || 0;
+  const totalLinea = prod?.precio_total != null && prod.precio_total !== '' ? Number(prod.precio_total) : NaN;
   if (!Number.isFinite(lista)) return 0;
   const pct = Number.isFinite(off) ? Math.min(Math.max(off, 0), 100) : 0;
-  return Math.round(lista * (1 - pct / 100) * 100) / 100;
+  const neto = Math.round(lista * (1 - pct / 100) * 100) / 100;
+  if (cant > 0 && Number.isFinite(totalLinea)) {
+    const bruto = Math.round(lista * cant * 100) / 100;
+    // Las líneas viejas guardaron el total de lista y el porcentaje aparte.
+    if (pct === 0 || Math.abs(totalLinea - bruto) > 0.009) {
+      return Math.round((totalLinea / cant) * 100) / 100;
+    }
+  }
+  return neto;
 }
 
 function totalSiDescuentoPendiente(pedido) {

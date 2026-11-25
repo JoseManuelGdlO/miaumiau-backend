@@ -1096,10 +1096,8 @@ async function moverParada(deps = {}) {
     where: { fkid_ruta: parada.fkid_ruta },
     order: [['orden_entrega', 'ASC'], ['id', 'ASC']],
   });
-  const franja = parada.franja === 'tarde' ? 'tarde' : 'manana';
-  const grupo = hermanas.filter((row) => (row.franja === 'tarde' ? 'tarde' : 'manana') === franja);
-  const index = grupo.findIndex((row) => Number(row.id) === Number(parada.id));
-  const vecino = grupo[index + dir];
+  const index = hermanas.findIndex((row) => Number(row.id) === Number(parada.id));
+  const vecino = hermanas[index + dir];
   if (index < 0 || !vecino) {
     return { orden_entrega: parada.orden_entrega, orden_manual: true };
   }

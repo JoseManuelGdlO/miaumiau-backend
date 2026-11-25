@@ -9,7 +9,7 @@ const { dayKey } = require('../app-repartidor/domain');
 const { horarioDeEntrega } = require('./horario');
 const { ensureDeliveryCode } = require('../app-repartidor/assignCode');
 const { calcularYValidarStock, lineaPaquete, lineaConDescuento } = require('./stock');
-const { montoDescuento, aplicaACliente } = require('../promotions/descuento');
+const { montoDescuento, basePromo, aplicaACliente } = require('../promotions/descuento');
 const { precioLista } = require('../inventarios/precio');
 const { Logger } = require('../../utils/logger');
 
@@ -525,6 +525,7 @@ class PedidoController {
         fkid_ciudad,
         fecha_entrega_estimada,
         horario_preferente,
+        ventana,
         metodo_pago,
         notas,
         productos = [],
@@ -659,7 +660,7 @@ class PedidoController {
       // Generar número de pedido único
       const numeroPedido = Pedido.generateNumeroPedido();
       const horaFecha = String(fecha_entrega_estimada || '').split('T')[1] || '';
-      const rango = horarioDeEntrega(horario_preferente || horaFecha.slice(0, 5));
+      const rango = horarioDeEntrega(horario_preferente || horaFecha.slice(0, 5), ventana);
       if (!rango.ok) {
         return res.status(422).json({ success: false, message: rango.message });
       }
@@ -699,6 +700,7 @@ class PedidoController {
 
       // Calcular subtotal inicial
       let subtotal = 0;
+      const lineasPromo = [];
       let productosAProcesar = [];
 
       // Agregar productos al pedido si se proporcionan
@@ -748,6 +750,11 @@ class PedidoController {
           });
 
           subtotal += precioTotal;
+          lineasPromo.push({
+            fkid_producto,
+            cantidad: parseInt(cantidad, 10) || 0,
+            precio_total: precioTotal,
+          });
         }
       }
 
@@ -894,7 +901,7 @@ class PedidoController {
           const promotion = await Promotion.findByCode(codigoPromocionNormalizado);
           if (promotion && promotion.isActive && promotion.isActive()) {
             if (aplicaACliente(promotion, Boolean(cliente?.es_distribuidor))) {
-              const monto = montoDescuento(promotion, subtotal);
+              const monto = montoDescuento(promotion, basePromo(promotion, lineasPromo, subtotal));
               if (monto > 0) await pedido.aplicarDescuento(monto);
             }
           }
@@ -1098,7 +1105,19 @@ class PedidoController {
         }
       }
 
-      await pedido.update(updateData);
+      const { ventana, ...rest } = updateData;
+      if (ventana != null || rest.horario_preferente !== undefined) {
+        const rango = horarioDeEntrega(rest.horario_preferente, ventana);
+        if (!rango.ok) {
+          return res.status(422).json({ success: false, message: rango.message });
+        }
+        rest.horario_preferente = rango.texto;
+      }
+      if (rest.fecha_entrega_estimada !== undefined) {
+        rest.fecha_entrega_estimada = parseFechaEntregaEstimada(rest.fecha_entrega_estimada);
+      }
+
+      await pedido.update(rest);
 
       // Actualizar productos si se proporcionan
       if (updateData.productos && Array.isArray(updateData.productos)) {

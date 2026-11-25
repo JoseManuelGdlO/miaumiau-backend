@@ -205,6 +205,17 @@ describe('domain app-repartidor', () => {
     })).toBeNull();
   });
 
+  test('desglosePedido conserva el precio ya guardado con descuento', () => {
+    expect(desglosePedido({
+      productos: [
+        { fkid_producto: 4, cantidad: 2, precio_unidad: 200, precio_total: 360, descuento_producto: 10, producto: { id: 4, nombre: 'Costal de 20 kg' } },
+      ],
+      paquetes: [],
+    }).sueltos).toEqual([
+      { fkid_producto: 4, nombre: 'Costal de 20 kg', cantidad: 2, precio_unidad: 180 },
+    ]);
+  });
+
   test('desglosePedido junta sueltos y marca las piezas del paquete', () => {
     expect(desglosePedido({
       productos: [

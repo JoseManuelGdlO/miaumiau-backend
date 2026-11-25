@@ -66,6 +66,21 @@ const validateCreatePromotion = [
     .optional()
     .isFloat({ min: 0 })
     .withMessage('La compra mínima debe ser un número positivo'),
+
+  body('unidades_minimas')
+    .optional({ nullable: true })
+    .isInt({ min: 1 })
+    .withMessage('Las unidades mínimas deben ser un entero mayor a cero'),
+
+  body('productos_ids')
+    .optional()
+    .isArray()
+    .withMessage('Los productos deben ser un array'),
+
+  body('productos_ids.*')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Cada producto debe ser un ID válido'),
   
   body('descuento_maximo')
     .optional()
@@ -133,6 +148,21 @@ const validateUpdatePromotion = [
     .optional()
     .isFloat({ min: 0 })
     .withMessage('La compra mínima debe ser un número positivo'),
+
+  body('unidades_minimas')
+    .optional({ nullable: true })
+    .isInt({ min: 1 })
+    .withMessage('Las unidades mínimas deben ser un entero mayor a cero'),
+
+  body('productos_ids')
+    .optional()
+    .isArray()
+    .withMessage('Los productos deben ser un array'),
+
+  body('productos_ids.*')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Cada producto debe ser un ID válido'),
   
   body('descuento_maximo')
     .optional()

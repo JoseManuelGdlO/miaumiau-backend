@@ -139,6 +139,21 @@ class PromotionController {
         aplica_a = 'todos',
       } = req.body;
       const cities = req.body.cities || req.body.ciudades || [];
+      const unidadesMinimas = parseInt(req.body.unidades_minimas, 10);
+      const productosIds = [...new Set((Array.isArray(req.body.productos_ids) ? req.body.productos_ids : [])
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0))];
+      if (productosIds.length > 0) {
+        const existentes = await Inventario.findAll({
+          where: { id: { [Op.in]: productosIds }, baja_logica: false },
+        });
+        if (existentes.length !== productosIds.length) {
+          return res.status(400).json({
+            success: false,
+            message: 'Algunos productos no existen o están inactivos',
+          });
+        }
+      }
       if (cities.length > 0) {
         const existingCities = await City.findAll({
           where: { id: { [Op.in]: cities }, baja_logica: false },
@@ -174,6 +189,8 @@ class PromotionController {
         compra_minima,
         descuento_maximo,
         aplica_a: aplica_a === 'distribuidor' || aplica_a === 'retail' ? aplica_a : 'todos',
+        unidades_minimas: Number.isInteger(unidadesMinimas) && unidadesMinimas > 0 ? unidadesMinimas : null,
+        productos_ids: productosIds.length ? productosIds : null,
       });
 
       if (cities.length > 0) await PromotionCity.syncPromotionCities(promotion.id, cities);
@@ -232,6 +249,17 @@ class PromotionController {
 
       // Remover ciudades del updateData para manejarlo por separado
       delete updateData.ciudades;
+      delete updateData.cities;
+      if (Object.prototype.hasOwnProperty.call(updateData, 'productos_ids')) {
+        const productosIds = [...new Set((Array.isArray(updateData.productos_ids) ? updateData.productos_ids : [])
+          .map(Number)
+          .filter((id) => Number.isInteger(id) && id > 0))];
+        updateData.productos_ids = productosIds.length ? productosIds : null;
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, 'unidades_minimas')) {
+        const unidadesMinimas = parseInt(updateData.unidades_minimas, 10);
+        updateData.unidades_minimas = Number.isInteger(unidadesMinimas) && unidadesMinimas > 0 ? unidadesMinimas : null;
+      }
 
       // Actualizar la promoción
       await promotion.update(updateData);

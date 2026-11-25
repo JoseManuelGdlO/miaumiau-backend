@@ -94,6 +94,15 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.ENUM('todos', 'retail', 'distribuidor'),
       allowNull: false,
       defaultValue: 'todos'
+    },
+    unidades_minimas: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: { min: 1 }
+    },
+    productos_ids: {
+      type: DataTypes.JSON,
+      allowNull: true
     }
   }, {
     tableName: 'promotions',

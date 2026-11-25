@@ -10,7 +10,14 @@ function parseFechaEntregaEstimada(value) {
   const s = String(value).trim();
   if (!s) return null;
 
-  // ISO: YYYY-MM-DD (con o sin hora)
+  // Solo el día: medianoche local, para no correr la fecha por UTC.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [yyyy, mm, dd] = s.split('-').map(Number);
+    const d = new Date(yyyy, mm - 1, dd);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  // ISO: YYYY-MM-DD (con hora)
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
     const d = new Date(s);
     return Number.isNaN(d.getTime()) ? null : d;

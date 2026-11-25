@@ -22,6 +22,18 @@ test('antes de las 12 es mañana y desde las 12 es tarde', () => {
   expect(horarioDeEntrega('').ok).toBe(true);
 });
 
+test('ventana gana sobre la hora y guarda 09:30, 12:00 o vacío', () => {
+  const { ventanaDeHorario } = require('./horario');
+  expect(horarioDeEntrega('16:00', 'manana')).toMatchObject({ ok: true, texto: '09:30:00', franja: 'manana', ventana: 'manana', ajustado: false });
+  expect(horarioDeEntrega('09:30', 'tarde')).toMatchObject({ ok: true, texto: '12:00:00', franja: 'tarde', ventana: 'tarde' });
+  expect(horarioDeEntrega('09:30', 'cualquiera')).toMatchObject({ ok: true, texto: null, franja: null, ventana: 'cualquiera' });
+  expect(ventanaDeHorario('09:30:00')).toBe('manana');
+  expect(ventanaDeHorario('12:00:00')).toBe('tarde');
+  expect(ventanaDeHorario('10:15')).toBe('manana');
+  expect(ventanaDeHorario('')).toBe('cualquiera');
+  expect(ventanaDeHorario(null)).toBe('cualquiera');
+});
+
 test('la mañana suelta la parada que no cabe por distancia', () => {
   const cerca = { id: 1, franja: 'manana', lat: 24.02, lng: -104.67, orden: 1 };
   const lejos = { id: 2, franja: 'manana', lat: 25.5, lng: -103.4, orden: 2 };
