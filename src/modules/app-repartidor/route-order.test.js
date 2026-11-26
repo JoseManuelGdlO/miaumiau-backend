@@ -79,3 +79,19 @@ test('prioridad hora mete el pedido sin hora en el hueco corto', () => {
   ];
   expect(ordenRuta(paradas, matrix, 'hora')).toEqual(['A', 'B', 'C']);
 });
+
+test('sin modo o con distancia ignora el corte de las 12:00', () => {
+  const { ordenRuta } = require('./route-order');
+  const matrix = [
+    [0, 100, 5],
+    [100, 0, 90],
+    [5, 90, 0],
+  ];
+  const paradas = [
+    { id: 11, horario: '10:00' },
+    { id: 22, horario: '13:00' },
+  ];
+  expect(ordenRuta(paradas, matrix)).toEqual([22, 11]);
+  expect(ordenRuta(paradas, matrix, 'distancia')).toEqual([22, 11]);
+  expect(ordenRuta(paradas, matrix, 'hora')).toEqual([11, 22]);
+});

@@ -32,6 +32,7 @@ test('si la ciudad tiene el horario apagado, una ventana de mañana se guarda co
   });
   expect(prioridadRutaDeCiudad({ entregas_por_horario: false, prioridad_ruta: 'hora' })).toBe('distancia');
   expect(prioridadRutaDeCiudad({ entregas_por_horario: true, prioridad_ruta: 'hora' })).toBe('hora');
+  expect(prioridadRutaDeCiudad({ entregas_por_horario: true, prioridad_ruta: 'distancia' })).toBe('distancia');
 });
 
 test('ventana gana sobre la hora y guarda 09:30, 12:00 o vacío', () => {
