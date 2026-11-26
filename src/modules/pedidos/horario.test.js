@@ -22,6 +22,18 @@ test('antes de las 12 es mañana y desde las 12 es tarde', () => {
   expect(horarioDeEntrega('').ok).toBe(true);
 });
 
+test('si la ciudad tiene el horario apagado, una ventana de mañana se guarda como cualquiera', () => {
+  const { prioridadRutaDeCiudad } = require('./horario');
+  expect(horarioDeEntrega('09:30', 'manana', { entregas_por_horario: false })).toMatchObject({
+    ok: true,
+    texto: null,
+    franja: null,
+    ventana: 'cualquiera',
+  });
+  expect(prioridadRutaDeCiudad({ entregas_por_horario: false, prioridad_ruta: 'hora' })).toBe('distancia');
+  expect(prioridadRutaDeCiudad({ entregas_por_horario: true, prioridad_ruta: 'hora' })).toBe('hora');
+});
+
 test('ventana gana sobre la hora y guarda 09:30, 12:00 o vacío', () => {
   const { ventanaDeHorario } = require('./horario');
   expect(horarioDeEntrega('16:00', 'manana')).toMatchObject({ ok: true, texto: '09:30:00', franja: 'manana', ventana: 'manana', ajustado: false });

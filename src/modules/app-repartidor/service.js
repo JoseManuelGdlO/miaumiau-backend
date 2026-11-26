@@ -31,7 +31,7 @@ const { ensureDeliveryCode } = require('./assignCode');
 const { sendWhatsAppTemplate, WHATSAPP_TEMPLATE_LANGUAGE } = require('../../utils/whatsapp');
 const { formatPhoneForWhatsApp } = require('../../services/whatsappWindowService');
 const { reemplazarSaldo, descontarEntrega, anotarAjuste } = require('./inventario-vehiculo');
-const { ordenDesdeBodega, distanceMatrix, ordenSinPisarManual } = require('./route-order');
+const { distanceMatrix, matrizLinea, ordenRuta, asignacionesDeOrden } = require('./route-order');
 const { ventanaDeHorario } = require('../pedidos/horario');
 const jornadaPaquetes = require('./jornada-paquetes');
 const { analizarFoto, decidirLectura, historialDesde, marcasDeTiempo, normalizarTipo, resumenEvidencias } = require('./evidencia');
@@ -942,20 +942,66 @@ async function coordsBodega(ruta, apiKey, deps = {}) {
   return coords;
 }
 
+async function ordenarUnaRuta(ruta, deps = {}) {
+  const grupo = ruta?.pedidos || [];
+  if (!grupo.length) return;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  let bodega = null;
+  try {
+    bodega = await coordsBodega(ruta, apiKey, deps);
+  } catch {
+    bodega = null;
+  }
+  const paradas = grupo.map((rp) => ({
+    id: rp.id,
+    horario: rp.pedido?.horario_preferente || null,
+    lat: rp.lat == null ? null : Number(rp.lat),
+    lng: rp.lng == null ? null : Number(rp.lng),
+    orden_manual: Boolean(rp.orden_manual),
+    orden_entrega: rp.orden_entrega,
+  }));
+  const origen = bodega || paradas.find((parada) => Number.isFinite(parada.lat) && Number.isFinite(parada.lng));
+  if (!origen) return;
+  const stops = [origen, ...paradas.map((parada) => ({ lat: parada.lat, lng: parada.lng }))];
+  let matrix = null;
+  const { mapsApagada } = require('../maps/apagada');
+  if (apiKey && !(await mapsApagada(deps))) {
+    try {
+      matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
+    } catch {
+      matrix = null;
+    }
+  }
+  if (!matrix) matrix = matrizLinea(stops);
+  const modo = deps.prioridad === 'hora' ? 'hora' : 'distancia';
+  const chain = ordenRuta(paradas, matrix, modo);
+  for (const item of asignacionesDeOrden(paradas, chain)) {
+    const row = grupo.find((rp) => rp.id === item.id);
+    if (!row) continue;
+    const patch = { orden_entrega: item.orden_entrega };
+    if (item.franja && row.franja !== item.franja) patch.franja = item.franja;
+    if (typeof row.update === 'function') await row.update(patch);
+    else Object.assign(row, patch);
+  }
+}
+
 async function ordenarParadasSiAplica(deps = {}) {
   if (process.env.NODE_ENV === 'test' && !deps.ordenarRutas) return;
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey || deps.repartidorId == null || !deps.fecha) return;
+  if (deps.repartidorId == null || !deps.fecha) return;
   const cacheKey = `${deps.repartidorId}:${deps.fecha}`;
   if (rutasOrdenadas.has(cacheKey)) return;
   const db = getModels(deps);
   if (typeof db.Ruta?.findAll !== 'function') return;
-  const include = [{ model: db.RutaPedido, as: 'pedidos' }];
+  const include = [{
+    model: db.RutaPedido,
+    as: 'pedidos',
+    include: db.Pedido ? [{ model: db.Pedido, as: 'pedido', attributes: ['id', 'horario_preferente'], required: false }] : [],
+  }];
   if (db.City) {
     include.push({
       model: db.City,
       as: 'ciudad',
-      attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones'],
+      attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones', 'entregas_por_horario', 'prioridad_ruta'],
     });
   }
   const rutas = await db.Ruta.findAll({
@@ -967,43 +1013,7 @@ async function ordenarParadasSiAplica(deps = {}) {
     },
     include,
   });
-  for (const ruta of rutas) {
-    const grupo = ruta.pedidos || [];
-    let bodega = null;
-    try {
-      bodega = await coordsBodega(ruta, apiKey, deps);
-    } catch {
-      bodega = null;
-    }
-    const paradas = grupo
-      .map((rp) => ({
-        id: rp.id,
-        lat: rp.lat == null ? null : Number(rp.lat),
-        lng: rp.lng == null ? null : Number(rp.lng),
-      }))
-      .filter((rp) => Number.isFinite(rp.lat) && Number.isFinite(rp.lng));
-    if (paradas.length >= 2 && bodega) {
-      const { mapsApagada } = require('../maps/apagada');
-      if (!(await mapsApagada(deps))) {
-        const stops = [bodega, ...paradas];
-        let matrix;
-        try {
-          matrix = await distanceMatrix(stops, apiKey, deps.distanceMatrixGet);
-        } catch {
-          matrix = null;
-        }
-        if (matrix) {
-          const ordered = ordenDesdeBodega(paradas.map((rp) => rp.id), matrix);
-          const asignaciones = ordenSinPisarManual(grupo, ordered);
-          for (const item of asignaciones) {
-            const row = grupo.find((rp) => rp.id === item.id);
-            if (row?.orden_manual) continue;
-            if (row?.update) await row.update({ orden_entrega: item.orden_entrega });
-          }
-        }
-      }
-    }
-  }
+  // shortcut: la jornada no rearma una ruta ya ordenada; el orden corre al asignar
   rutasOrdenadas.add(cacheKey);
   const { refrescarPolylineRuta } = require('../maps/google');
   for (const ruta of rutas) {
@@ -2510,6 +2520,7 @@ module.exports = {
   mandarCodigo,
   avisarCodigoAlCrear,
   ordenarParadasSiAplica,
+  ordenarUnaRuta,
   lineaWhatsAppDelCliente,
   perfil,
   actualizarFoto,

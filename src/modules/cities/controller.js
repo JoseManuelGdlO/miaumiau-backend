@@ -254,7 +254,9 @@ class CityController {
         notas_adicionales,
         max_pedidos_por_horario = 5,
         dias_trabajo = [0, 1, 2, 3, 4, 5, 6],
-        horario_por_dia
+        horario_por_dia,
+        entregas_por_horario = true,
+        prioridad_ruta = 'hora',
       } = req.body;
 
       // Verificar si la ciudad ya existe
@@ -329,6 +331,8 @@ class CityController {
           notas_adicionales,
           max_pedidos_por_horario,
           dias_trabajo,
+          entregas_por_horario: entregas_por_horario !== false,
+          prioridad_ruta: prioridad_ruta === 'distancia' ? 'distancia' : 'hora',
           ...horasEntregaData
         }, { transaction });
         const createdProfile = await issueCityProfile({
@@ -437,6 +441,19 @@ class CityController {
           return res.status(400).json({
             success: false,
             message: 'max_pedidos_por_horario debe ser un número entre 1 y 100'
+          });
+        }
+      }
+
+      if (updateData.entregas_por_horario !== undefined) {
+        updateData.entregas_por_horario = updateData.entregas_por_horario !== false && updateData.entregas_por_horario !== 0;
+      }
+      if (updateData.prioridad_ruta !== undefined) {
+        if (updateData.prioridad_ruta !== 'hora' && updateData.prioridad_ruta !== 'distancia') {
+          log.warn('updateCity rechazado', { status: 400, reason: "prioridad_ruta debe ser hora o distancia" });
+          return res.status(400).json({
+            success: false,
+            message: 'La prioridad de la ruta debe ser hora o distancia',
           });
         }
       }

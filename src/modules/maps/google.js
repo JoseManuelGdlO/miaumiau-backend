@@ -157,8 +157,17 @@ async function geometriaCached(origen, destino, apiKey, httpGet, now = Date.now(
 
 async function asegurarPolyline(ruta, paradas, apiKey, httpGet, deps = {}) {
   const hash = hashParadas(paradas);
-  if (ruta.polyline_hash === hash && ruta.polyline_encoded) {
-    return { encoded: ruta.polyline_encoded, puntos: decodePolyline(ruta.polyline_encoded), km: Number(ruta.distancia_estimada) || 0, minutos: Number(ruta.tiempo_estimado) || 0, cached: true };
+  if (ruta.polyline_hash === hash) {
+    const puntos = ruta.polyline_encoded
+      ? decodePolyline(ruta.polyline_encoded)
+      : paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) }));
+    return {
+      encoded: ruta.polyline_encoded || '',
+      puntos,
+      km: Number(ruta.distancia_estimada) || 0,
+      minutos: Number(ruta.tiempo_estimado) || 0,
+      cached: true,
+    };
   }
   if (paradas.length < 2) {
     const puntos = paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) }));
@@ -173,7 +182,16 @@ async function asegurarPolyline(ruta, paradas, apiKey, httpGet, deps = {}) {
     waypoints: paradas.slice(1, -1),
   }, apiKey, httpGet, deps);
   if (!geo) {
-    return { encoded: ruta.polyline_encoded || '', puntos: ruta.polyline_encoded ? decodePolyline(ruta.polyline_encoded) : paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) })), km: Number(ruta.distancia_estimada) || 0, minutos: Number(ruta.tiempo_estimado) || 0, cached: false };
+    if (typeof ruta.update === 'function') {
+      await ruta.update({ polyline_encoded: '', polyline_hash: hash });
+    }
+    return {
+      encoded: '',
+      puntos: paradas.map((parada) => ({ lat: Number(parada.lat), lng: Number(parada.lng) })),
+      km: Number(ruta.distancia_estimada) || 0,
+      minutos: Number(ruta.tiempo_estimado) || 0,
+      cached: false,
+    };
   }
   if (typeof ruta.update === 'function') {
     await ruta.update({

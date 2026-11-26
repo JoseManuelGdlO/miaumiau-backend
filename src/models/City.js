@@ -128,6 +128,21 @@ module.exports = (sequelize, DataTypes) => {
       },
       comment: 'Máximo número de pedidos por horario de entrega (mañana o tarde)'
     },
+    entregas_por_horario: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: 'Si es false, no se pregunta mañana/tarde y el pedido queda sin hora'
+    },
+    prioridad_ruta: {
+      type: DataTypes.STRING(12),
+      allowNull: false,
+      defaultValue: 'hora',
+      validate: {
+        isIn: [['hora', 'distancia']]
+      },
+      comment: 'Prioridad de la ruta inteligente: hora o distancia'
+    },
     dias_trabajo: {
       type: DataTypes.JSON,
       allowNull: true,

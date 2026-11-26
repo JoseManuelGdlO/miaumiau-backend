@@ -660,7 +660,7 @@ class PedidoController {
       // Generar número de pedido único
       const numeroPedido = Pedido.generateNumeroPedido();
       const horaFecha = String(fecha_entrega_estimada || '').split('T')[1] || '';
-      const rango = horarioDeEntrega(horario_preferente || horaFecha.slice(0, 5), ventana);
+      const rango = horarioDeEntrega(horario_preferente || horaFecha.slice(0, 5), ventana, ciudad);
       if (!rango.ok) {
         return res.status(422).json({ success: false, message: rango.message });
       }
@@ -1107,7 +1107,10 @@ class PedidoController {
 
       const { ventana, ...rest } = updateData;
       if (ventana != null || rest.horario_preferente !== undefined) {
-        const rango = horarioDeEntrega(rest.horario_preferente, ventana);
+        const ciudadHorario = updateData.fkid_ciudad
+          ? await City.findByPk(updateData.fkid_ciudad)
+          : (pedido.ciudad || await City.findByPk(pedido.fkid_ciudad));
+        const rango = horarioDeEntrega(rest.horario_preferente, ventana, ciudadHorario);
         if (!rango.ok) {
           return res.status(422).json({ success: false, message: rango.message });
         }
