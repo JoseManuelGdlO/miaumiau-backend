@@ -75,6 +75,16 @@ const validateCity = [
     .optional()
     .isLength({ max: 1000 })
     .withMessage('Las notas no pueden exceder 1000 caracteres'),
+
+  body('entregas_por_horario')
+    .optional({ nullable: true })
+    .custom((value) => value === true || value === false || value === 0 || value === 1)
+    .withMessage('entregas_por_horario debe ser verdadero o falso'),
+
+  body('prioridad_ruta')
+    .optional()
+    .isIn(['hora', 'distancia'])
+    .withMessage('La prioridad de la ruta debe ser hora o distancia'),
   
   handleValidationErrors
 ];

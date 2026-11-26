@@ -108,10 +108,10 @@ test('asegurarPolyline con el mismo hash no llama Directions', async () => {
   expect(geo.puntos).toHaveLength(3);
 });
 
-test('OVER_QUERY_LIMIT no llama de nuevo ni guarda polyline', async () => {
+test('OVER_QUERY_LIMIT borra la polyline para trazar los pines en el orden actual', async () => {
   const httpGet = jest.fn(async () => ({ data: { status: 'OVER_QUERY_LIMIT' } }));
   const update = jest.fn();
-  const ruta = { polyline_encoded: null, polyline_hash: null, update };
+  const ruta = { polyline_encoded: 'old', polyline_hash: null, update };
   const geo = await asegurarPolyline(
     ruta,
     [{ orden: 1, lat: 24.02, lng: -104.66 }, { orden: 2, lat: 24.03, lng: -104.67 }],
@@ -120,7 +120,7 @@ test('OVER_QUERY_LIMIT no llama de nuevo ni guarda polyline', async () => {
     { mapsApagada: false },
   );
   expect(geo.encoded).toBe('');
-  expect(update).not.toHaveBeenCalled();
+  expect(update).toHaveBeenCalledWith({ polyline_encoded: '', polyline_hash: expect.any(String) });
 });
 
 test('geocodePedido no persiste un pin aproximado', async () => {

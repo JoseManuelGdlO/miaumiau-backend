@@ -148,7 +148,24 @@ const asignarPedidosValidation = [
   body('pedidos.*.notas_entrega')
     .optional()
     .isLength({ max: 500 })
-    .withMessage('Las notas de entrega no pueden exceder 500 caracteres')
+    .withMessage('Las notas de entrega no pueden exceder 500 caracteres'),
+
+  body('prioridad')
+    .optional()
+    .isIn(['hora', 'distancia'])
+    .withMessage('La prioridad debe ser hora o distancia')
+];
+
+const moverParadaValidation = [
+  param('id')
+    .isInt({ min: 1 })
+    .withMessage('El ID de la ruta debe ser un número válido'),
+  param('pedidoId')
+    .isInt({ min: 1 })
+    .withMessage('El ID del pedido debe ser un número válido'),
+  body('direccion')
+    .isIn(['subir', 'bajar'])
+    .withMessage('La dirección debe ser subir o bajar'),
 ];
 
 // Validaciones para cambiar estado
@@ -299,6 +316,14 @@ router.post('/:id/pedidos',
   asignarPedidosValidation,
   handleValidationErrors,
   rutaController.asignarPedidos
+);
+
+router.post('/:id/pedidos/:pedidoId/orden',
+  authenticateToken,
+  requireSuperAdminOrPermission('editar_rutas'),
+  moverParadaValidation,
+  handleValidationErrors,
+  rutaController.moverParada
 );
 
 // Desasignar un pedido específico de una ruta

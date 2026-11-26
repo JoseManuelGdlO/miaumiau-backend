@@ -8,6 +8,31 @@ const { createCityWhatsappRepository } = require('../../services/cityWhatsappRep
 const graph = require('../../services/metaGraphClient');
 const { presentCity, removeProfileOnDelete } = require('./whatsappController');
 
+function errorDeRuta(body) {
+  const entregas = body?.entregas_por_horario;
+  if (entregas !== undefined && entregas !== null
+    && entregas !== true && entregas !== false && entregas !== 0 && entregas !== 1) {
+    return 'entregas_por_horario debe ser verdadero o falso';
+  }
+  const prioridad = body?.prioridad_ruta;
+  if (prioridad !== undefined && prioridad !== null && prioridad !== ''
+    && prioridad !== 'hora' && prioridad !== 'distancia') {
+    return 'La prioridad de la ruta debe ser hora o distancia';
+  }
+  return null;
+}
+
+function aplicarRuta(body) {
+  const out = {};
+  if (body?.entregas_por_horario !== undefined && body?.entregas_por_horario !== null) {
+    out.entregas_por_horario = body.entregas_por_horario !== false && body.entregas_por_horario !== 0;
+  }
+  if (body?.prioridad_ruta === 'hora' || body?.prioridad_ruta === 'distancia') {
+    out.prioridad_ruta = body.prioridad_ruta;
+  }
+  return out;
+}
+
 // Validar horario_por_dia: objeto con claves "0"-"6", valores { inicio, fin } (0-23, inicio < fin)
 function validateHorarioPorDia(value) {
   if (value === null || value === undefined) return null;
@@ -254,7 +279,9 @@ class CityController {
         notas_adicionales,
         max_pedidos_por_horario = 5,
         dias_trabajo = [0, 1, 2, 3, 4, 5, 6],
-        horario_por_dia
+        horario_por_dia,
+        entregas_por_horario = true,
+        prioridad_ruta = 'hora',
       } = req.body;
 
       // Verificar si la ciudad ya existe
@@ -312,6 +339,16 @@ class CityController {
         var horasEntregaData = { horario_por_dia };
       }
 
+      const rutaError = errorDeRuta({ entregas_por_horario, prioridad_ruta });
+      if (rutaError) {
+        log.warn('createCity rechazado', { status: 400, reason: rutaError });
+        return res.status(400).json({
+          success: false,
+          message: rutaError
+        });
+      }
+      const ruta = aplicarRuta({ entregas_por_horario, prioridad_ruta });
+
       const { city, issued } = await sequelize.transaction(async (transaction) => {
         const createdCity = await City.create({
           nombre,
@@ -329,6 +366,8 @@ class CityController {
           notas_adicionales,
           max_pedidos_por_horario,
           dias_trabajo,
+          entregas_por_horario: ruta.entregas_por_horario ?? true,
+          prioridad_ruta: ruta.prioridad_ruta ?? 'hora',
           ...horasEntregaData
         }, { transaction });
         const createdProfile = await issueCityProfile({
@@ -440,6 +479,16 @@ class CityController {
           });
         }
       }
+
+      const rutaError = errorDeRuta(updateData);
+      if (rutaError) {
+        log.warn('updateCity rechazado', { status: 400, reason: rutaError });
+        return res.status(400).json({
+          success: false,
+          message: rutaError
+        });
+      }
+      Object.assign(updateData, aplicarRuta(updateData));
 
       if (updateData.horario_por_dia !== undefined) {
         if (updateData.horario_por_dia !== null) {
@@ -1000,3 +1049,5 @@ class CityController {
 }
 
 module.exports = new CityController();
+module.exports.errorDeRuta = errorDeRuta;
+module.exports.aplicarRuta = aplicarRuta;

@@ -75,7 +75,15 @@ function horarioNormalizado(value) {
 
 const AVISO_HORARIO = 'La entrega es de 9:30 a 17:00.';
 
-function horarioDeEntrega(value, ventana) {
+function prioridadRutaDeCiudad(city) {
+  if (!city || city.entregas_por_horario === false || city.entregas_por_horario === 0) return 'distancia';
+  return city.prioridad_ruta === 'distancia' ? 'distancia' : 'hora';
+}
+
+function horarioDeEntrega(value, ventana, city) {
+  if (city && (city.entregas_por_horario === false || city.entregas_por_horario === 0)) {
+    return { ok: true, texto: null, franja: null, ajustado: false, aviso: AVISO_HORARIO, ventana: 'cualquiera' };
+  }
   const clave = ventana === 'manana' || ventana === 'tarde' || ventana === 'cualquiera' ? ventana : null;
   if (clave) {
     const canon = VENTANAS[clave];
@@ -108,4 +116,4 @@ function horarioDeEntrega(value, ventana) {
   };
 }
 
-module.exports = { CORTE_TARDE, AVISO_HORARIO, VENTANAS, ventanaDeHorario, franjaDeHorario, horarioNormalizado, horarioDeEntrega, idsExcedentesManana };
+module.exports = { CORTE_TARDE, AVISO_HORARIO, VENTANAS, ventanaDeHorario, franjaDeHorario, horarioNormalizado, horarioDeEntrega, idsExcedentesManana, prioridadRutaDeCiudad };

@@ -9,7 +9,7 @@ const { franjaDeHorario } = require('../pedidos/horario');
 const { reencolarNoEntregados } = require('../pedidos/reencolar');
 const { avisar } = require('../push-nativo');
 const { avisoDeEvento } = require('../app-repartidor/avisos');
-const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarParadasSiAplica } = require('../app-repartidor/service');
+const { refrescarCargaEnValidacion, olvidarOrdenRuta, ordenarUnaRuta } = require('../app-repartidor/service');
 const { geocodePedido, refrescarPolylineRuta, puntoDe } = require('../maps/google');
 const { Logger } = require('../../utils/logger');
 
@@ -925,26 +925,40 @@ class RutaController {
       
       log.debug(`[RUTAS] Total de pedidos asignados exitosamente: ${rutaPedidos.length} de ${pedidos.length}`);
 
-      if (rutaPedidos.length > 0 && ruta.fkid_repartidor) {
+      if (rutaPedidos.length > 0) {
         const fecha = String(ruta.fecha_ruta || '').slice(0, 10);
-        olvidarOrdenRuta(ruta.fkid_repartidor, fecha);
+        if (ruta.fkid_repartidor) olvidarOrdenRuta(ruta.fkid_repartidor, fecha);
         try {
-          await ordenarParadasSiAplica({ repartidorId: ruta.fkid_repartidor, fecha });
+          const rutaParaOrden = await Ruta.findByPk(id, {
+            include: [
+              { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones'], required: false },
+              {
+                model: RutaPedido,
+                as: 'pedidos',
+                include: [{ model: Pedido, as: 'pedido', attributes: ['id', 'horario_preferente'], required: false }],
+              },
+            ],
+          });
+          await ordenarUnaRuta(rutaParaOrden, {
+            prioridad: req.body.prioridad === 'hora' ? 'hora' : 'distancia',
+          });
         } catch (ordenError) {
           log.warn('[RUTAS] No se pudo ordenar la ruta', { message: ordenError.message });
         }
-        await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
-        try {
-          const pedidoNuevo = Number(rutaPedidos[0].fkid_pedido);
-          const event = {
-            type: 'ruta.actualizada',
-            pedidoId: Number.isFinite(pedidoNuevo) ? pedidoNuevo : rutaPedidos[0].fkid_pedido,
-          };
-          avisar(ruta.fkid_repartidor, event, avisoDeEvento(event));
-        } catch (notifyError) {
-          log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
-            message: notifyError.message,
-          });
+        if (ruta.fkid_repartidor) {
+          await refrescarFotoDeRuta(ruta.fkid_repartidor, ruta.fecha_ruta);
+          try {
+            const pedidoNuevo = Number(rutaPedidos[0].fkid_pedido);
+            const event = {
+              type: 'ruta.actualizada',
+              pedidoId: Number.isFinite(pedidoNuevo) ? pedidoNuevo : rutaPedidos[0].fkid_pedido,
+            };
+            avisar(ruta.fkid_repartidor, event, avisoDeEvento(event));
+          } catch (notifyError) {
+            log.warn('[RUTAS] No se pudo avisar al repartidor de la jornada actualizada', {
+              message: notifyError.message,
+            });
+          }
         }
       }
 
@@ -1403,6 +1417,63 @@ class RutaController {
         success: false,
         message: 'Error interno del servidor',
         error: error.message
+      });
+    }
+  }
+
+  async moverParada(req, res) {
+    try {
+      const dir = req.body.direccion === 'subir' ? -1 : req.body.direccion === 'bajar' ? 1 : 0;
+      if (!dir) {
+        return res.status(422).json({ success: false, message: 'La dirección no es válida' });
+      }
+      const ruta = await Ruta.findByPk(req.params.id, {
+        include: [{ model: RutaPedido, as: 'pedidos' }],
+      });
+      if (!ruta) {
+        return res.status(404).json({ success: false, message: 'Ruta no encontrada' });
+      }
+      const hermanas = [...(ruta.pedidos || [])].sort((a, b) => {
+        const orden = (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0);
+        return orden !== 0 ? orden : Number(a.id) - Number(b.id);
+      });
+      const parada = hermanas.find((row) => Number(row.fkid_pedido) === Number(req.params.pedidoId));
+      if (!parada) {
+        return res.status(409).json({ success: false, message: 'Ese pedido no está en esta ruta' });
+      }
+      const index = hermanas.findIndex((row) => Number(row.id) === Number(parada.id));
+      const vecino = hermanas[index + dir];
+      if (index < 0 || !vecino) {
+        return res.json({ success: true, data: { orden_entrega: parada.orden_entrega, orden_manual: true } });
+      }
+      const ordenActual = parada.orden_entrega;
+      const ordenVecino = vecino.orden_entrega;
+      await parada.update({ orden_entrega: ordenVecino, orden_manual: true });
+      if (typeof vecino.update === 'function') {
+        await vecino.update({ orden_entrega: ordenActual, orden_manual: true });
+      }
+      for (const row of hermanas) {
+        if (Number(row.id) === Number(parada.id) || Number(row.id) === Number(vecino.id)) continue;
+        if (!row.orden_manual && typeof row.update === 'function') await row.update({ orden_manual: true });
+      }
+      if (ruta.fkid_repartidor) {
+        olvidarOrdenRuta(ruta.fkid_repartidor, String(ruta.fecha_ruta || '').slice(0, 10));
+      }
+      try {
+        const rutaConParadas = await Ruta.findByPk(ruta.id, {
+          include: [{ model: RutaPedido, as: 'pedidos' }],
+        });
+        await refrescarPolylineRuta(rutaConParadas);
+      } catch (polyError) {
+        log.warn('[RUTAS] No se pudo guardar la polyline', { message: polyError.message });
+      }
+      return res.json({ success: true, data: { orden_entrega: ordenVecino, orden_manual: true } });
+    } catch (error) {
+      log.error('Error al mover la parada:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: error.message,
       });
     }
   }
