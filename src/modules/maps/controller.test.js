@@ -21,6 +21,7 @@ test('el centro de ciudad no cuenta como domicilio', () => {
   expect(isStreetFound('34000 Durango, Durango, México', 'Durango')).toBe(false);
   expect(isStreetFound('Melchor Ocampo 234, Zona Centro, 34000 Durango, Durango, México', 'Melchor Ocampo 234')).toBe(true);
   expect(isStreetFound('Calle Independencia 12, Durango, Durango, México', 'Independencia 12')).toBe(true);
+  expect(isStreetFound('Guadalupe, 34100 Durango, Dgo., México', 'Guadalupe 10')).toBe(true);
   expect(esDomicilio({
     lat: 24.0277,
     lng: -104.6532,
