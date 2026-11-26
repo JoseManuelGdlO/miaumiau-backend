@@ -95,6 +95,8 @@ function isStreetFound(formattedAddress, searchedAddress) {
   if (streetPrefixes.some((prefix) => head.startsWith(prefix))) return true;
   if (/\d/.test(first) && /[a-záéíóúñ]/i.test(first)) return true;
   if (searchedAddress && formattedAddress.toLowerCase().includes(String(searchedAddress).toLowerCase())) return true;
+  // Colonia + CP + ciudad + estado: Google sí ubicó, no es el centro de la ciudad.
+  if (parts.length >= 4) return true;
   return false;
 }
 
@@ -140,7 +142,7 @@ class MapsController {
           message: estado ? `Esa dirección no está en ${estado}. Comunícate a soporte para confirmarla.` : AVISO_SIN_UBICAR,
         });
       }
-      if (punto && esDomicilio(punto, estado)) {
+      if (punto) {
         return res.json({
           success: true,
           data: punto
@@ -308,7 +310,7 @@ class MapsController {
           const estado = typeof addressData === 'object' ? addressData.estado : undefined;
 
           const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey);
-          if (!esDomicilio(punto, estado)) {
+          if (!punto) {
             return { address: addressKey, success: false, error: AVISO_SIN_UBICAR };
           }
           return {
