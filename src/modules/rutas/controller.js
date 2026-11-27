@@ -927,6 +927,9 @@ class RutaController {
 
       if (rutaPedidos.length > 0) {
         const fecha = String(ruta.fecha_ruta || '').slice(0, 10);
+        if (req.body.cierre === 'bodega' || req.body.cierre === 'ultima') {
+          await ruta.update({ regresa_bodega: req.body.cierre === 'bodega' });
+        }
         if (ruta.fkid_repartidor) olvidarOrdenRuta(ruta.fkid_repartidor, fecha);
         try {
           const rutaParaOrden = await Ruta.findByPk(id, {
@@ -965,7 +968,10 @@ class RutaController {
       if (rutaPedidos.length > 0) {
         try {
           const rutaConParadas = await Ruta.findByPk(id, {
-            include: [{ model: RutaPedido, as: 'pedidos' }],
+            include: [
+              { model: City, as: 'ciudad', attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones'], required: false },
+              { model: RutaPedido, as: 'pedidos' },
+            ],
           });
           await refrescarPolylineRuta(rutaConParadas);
         } catch (polyError) {

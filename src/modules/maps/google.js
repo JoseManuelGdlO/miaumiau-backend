@@ -204,6 +204,30 @@ async function asegurarPolyline(ruta, paradas, apiKey, httpGet, deps = {}) {
   return { ...geo, cached: false };
 }
 
+async function coordsBodegaRuta(ruta, deps = {}) {
+  const inyectada = puntoDe(deps.bodega);
+  if (inyectada) return inyectada;
+  let ciudad = ruta?.ciudad;
+  if (!ciudad && ruta?.fkid_ciudad) {
+    const City = deps.City || require('../../models').City;
+    ciudad = await City.findByPk(ruta.fkid_ciudad, {
+      attributes: ['id', 'nombre', 'departamento', 'direccion_operaciones'],
+    });
+  }
+  const dir = String(ciudad?.direccion_operaciones || '').trim();
+  if (!dir) return null;
+  const apiKey = deps.apiKey || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return null;
+  const maps = deps.resolver || require('./controller');
+  const punto = await maps.resolverDireccion({
+    address: dir,
+    ciudad: ciudad.nombre,
+    estado: ciudad.departamento,
+  }, apiKey);
+  if (!punto || punto.aproximado) return null;
+  return puntoDe(punto);
+}
+
 async function refrescarPolylineRuta(ruta, deps = {}) {
   if (!ruta) return null;
   const rows = [...(ruta.pedidos || [])].sort((a, b) => (Number(a.orden_entrega) || 0) - (Number(b.orden_entrega) || 0));
@@ -212,6 +236,13 @@ async function refrescarPolylineRuta(ruta, deps = {}) {
     const punto = puntoDe(rp) || puntoDe(rp.pedido?.cliente);
     if (!punto) continue;
     paradas.push({ orden: Number(rp.orden_entrega) || paradas.length + 1, lat: punto.lat, lng: punto.lng });
+  }
+  if (ruta.regresa_bodega && paradas.length) {
+    const bodega = await coordsBodegaRuta(ruta, deps);
+    if (bodega) {
+      paradas.unshift({ orden: 0, lat: bodega.lat, lng: bodega.lng });
+      paradas.push({ orden: 999, lat: bodega.lat, lng: bodega.lng });
+    }
   }
   return asegurarPolyline(ruta, paradas, deps.apiKey || process.env.GOOGLE_MAPS_API_KEY, deps.httpGet, deps);
 }
