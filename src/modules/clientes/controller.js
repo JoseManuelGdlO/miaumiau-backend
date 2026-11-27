@@ -199,8 +199,17 @@ class ClienteController {
         direccion_entrega,
         notas_especiales
       } = req.body;
-      const email = req.body.email ?? req.body.correo_electronico;
+      const email = String(req.body.email ?? req.body.correo_electronico ?? '').trim() || null;
+      const telefonoLimpio = String(telefono || '').trim();
+      const nombre = String(nombre_completo || '').trim();
       const fkid_ciudad = req.body.fkid_ciudad ?? req.body.ciudad_id;
+
+      if (!telefonoLimpio) {
+        return res.status(400).json({
+          success: false,
+          message: 'El teléfono es requerido',
+        });
+      }
 
       const clienteInclude = [
         {
@@ -217,59 +226,38 @@ class ClienteController {
         }
       ];
 
-      // Verificar que el email no exista (si se proporciona)
-      if (email) {
-        const existingCliente = await Cliente.findOne({
-          where: { email }
-        });
-
-        if (existingCliente) {
-          // Si el cliente existe pero está inactivo, reactivarlo
-          if (!existingCliente.isActive) {
-            await existingCliente.update({ isActive: true });
-          }
-
-          const clienteCompleto = await Cliente.findByPk(existingCliente.id, {
+      const responderDuplicado = async (existing, campo) => {
+        if (!existing.isActive) {
+          await existing.update({ isActive: true });
+          const clienteCompleto = await Cliente.findByPk(existing.id, {
             include: clienteInclude
           });
-
           return res.status(200).json({
             success: true,
-            message: 'Ya existe un cliente con ese correo electrónico',
-            data: {
-              cliente: clienteCompleto,
-              alreadyExists: true
-            }
+            message: `Se reactivó el cliente existente (${campo}): ${existing.nombre_completo}`,
+            data: { cliente: clienteCompleto, alreadyExists: true },
           });
         }
-      }
-
-      // Verificar que el teléfono no exista
-      const existingPhone = await Cliente.findOne({
-        where: { telefono }
-      });
-
-      if (existingPhone) {
-        // Si el cliente existe pero está inactivo, reactivarlo
-        if (!existingPhone.isActive) {
-          await existingPhone.update({ isActive: true });
-        }
-
-        const clienteCompleto = await Cliente.findByPk(existingPhone.id, {
+        const clienteCompleto = await Cliente.findByPk(existing.id, {
           include: clienteInclude
         });
-
-        return res.status(200).json({
-          success: true,
-          message: 'Ya existe un cliente con ese número de teléfono',
-          data: {
-            cliente: clienteCompleto,
-            alreadyExists: true
-          }
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un cliente con ese ${campo}: ${existing.nombre_completo}`,
+          data: { cliente: clienteCompleto, alreadyExists: true },
         });
+      };
+
+      if (email) {
+        const existingCliente = await Cliente.findOne({ where: { email } });
+        if (existingCliente) return responderDuplicado(existingCliente, 'correo');
       }
 
-      // Verificar que la ciudad existe y convertir nombre a ID si es necesario
+      const existingPhone = await Cliente.findOne({
+        where: { telefono: telefonoLimpio }
+      });
+      if (existingPhone) return responderDuplicado(existingPhone, 'teléfono');
+
       const ciudadData = await validateAndGetCity(fkid_ciudad, { defaultId: 3 });
       if (!ciudadData) {
         return res.status(400).json({
@@ -277,13 +265,16 @@ class ClienteController {
           message: `La ciudad especificada "${fkid_ciudad}" no existe`
         });
       }
-      const ciudadAsignada = ciudadData.id;
-      const ciudad = ciudadData.city;
+      let ciudadAsignada = ciudadData.id;
+      const userCityId = req.user?.ciudad_id || req.user?.ciudad?.id || null;
+      if (userCityId && Number(ciudadAsignada) !== Number(userCityId)) {
+        ciudadAsignada = Number(userCityId);
+      }
 
       const cuenta = cuentaDe(req.body);
       const cliente = await Cliente.create({
-        nombre_completo,
-        telefono,
+        nombre_completo: nombre,
+        telefono: telefonoLimpio,
         email,
         fkid_ciudad: ciudadAsignada,
         canal_contacto,

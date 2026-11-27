@@ -1,4 +1,4 @@
-const { direccionDeRespaldo, enElEstado, centroDeCiudad, isStreetFound, esDomicilio } = require('./controller');
+const { direccionDeRespaldo, enElEstado, centroDeCiudad, isStreetFound, esDomicilio, esPinUtil } = require('./controller');
 
 test('una ciudad de prueba se busca como lugar de México', () => {
   expect(direccionDeRespaldo('Durango')).toBe('Durango, México');
@@ -14,6 +14,7 @@ test('Durango tiene un centro si Google no responde', () => {
 test('dirección fuera del departamento falla', () => {
   expect(enElEstado('Calle Independencia 12, Guadalajara, Jalisco, México', 'Durango')).toBe(false);
   expect(enElEstado('Calle Independencia 12, Durango, Durango, México', 'Durango')).toBe(true);
+  expect(enElEstado('C. 5 de Febrero 10, 34000, Dgo., México', 'Durango')).toBe(true);
 });
 
 test('el centro de ciudad no cuenta como domicilio', () => {
@@ -40,4 +41,16 @@ test('el centro de ciudad no cuenta como domicilio', () => {
     formatted_address: 'Calle Independencia 12, Guadalajara, Jalisco, México',
     aproximado: false,
   }, 'Durango')).toBe(false);
+  expect(esPinUtil({
+    lat: 24.02,
+    lng: -104.66,
+    formatted_address: 'Taquería El Fogón, Durango, México',
+    types: ['restaurant', 'point_of_interest', 'establishment'],
+  })).toBe(true);
+  expect(esPinUtil({
+    lat: 24.0277,
+    lng: -104.6532,
+    formatted_address: 'Durango, México',
+    types: ['locality', 'political'],
+  })).toBe(false);
 });

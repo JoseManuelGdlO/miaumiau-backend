@@ -164,9 +164,10 @@ class UsersController {
         rol_id
       };
       
-      // Solo incluir ciudad_id si viene en el body
       if (ciudad_id !== undefined && ciudad_id !== null) {
         userData.ciudad_id = ciudad_id;
+      } else if (req.user?.ciudad_id) {
+        userData.ciudad_id = req.user.ciudad_id;
       }
       
       const user = await User.create(userData);
