@@ -237,11 +237,11 @@ async function refrescarPolylineRuta(ruta, deps = {}) {
     if (!punto) continue;
     paradas.push({ orden: Number(rp.orden_entrega) || paradas.length + 1, lat: punto.lat, lng: punto.lng });
   }
-  if (ruta.regresa_bodega && paradas.length) {
+  if (paradas.length) {
     const bodega = await coordsBodegaRuta(ruta, deps);
     if (bodega) {
       paradas.unshift({ orden: 0, lat: bodega.lat, lng: bodega.lng });
-      paradas.push({ orden: 999, lat: bodega.lat, lng: bodega.lng });
+      if (ruta.regresa_bodega) paradas.push({ orden: 999, lat: bodega.lat, lng: bodega.lng });
     }
   }
   return asegurarPolyline(ruta, paradas, deps.apiKey || process.env.GOOGLE_MAPS_API_KEY, deps.httpGet, deps);

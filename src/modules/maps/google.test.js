@@ -206,9 +206,9 @@ test('sin regresa_bodega el destino de Directions es la última parada', async (
   };
   await refrescarPolylineRuta(ruta, { apiKey: 'k', httpGet, bodega: { lat: 24.01, lng: -104.65 } });
   const params = httpGet.mock.calls[0][1].params;
-  expect(params.origin).toBe('24.02,-104.66');
+  expect(params.origin).toBe('24.01,-104.65');
   expect(params.destination).toBe('24.03,-104.67');
-  expect(params.waypoints).toBeUndefined();
+  expect(params.waypoints).toBe('24.02,-104.66');
 });
 
 test('geocodePedido y asegurarPolyline no llaman HTTP si Maps está apagado', async () => {
