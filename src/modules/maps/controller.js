@@ -58,7 +58,56 @@ function fold(value) {
 function enElEstado(formatted, estado) {
   const needle = fold(estado).trim();
   if (!needle) return true;
-  return fold(formatted).includes(needle);
+  const hay = fold(formatted);
+  if (hay.includes(needle)) return true;
+  if (needle === 'durango' && /\bdgo\.?\b/.test(hay)) return true;
+  if (needle === 'dgo' && hay.includes('durango')) return true;
+  return false;
+}
+
+function cabeEnCiudad(formatted, ciudad, estado) {
+  const tieneEstado = Boolean(fold(estado).trim());
+  const tieneCiudad = Boolean(fold(ciudad).trim());
+  if (!tieneEstado && !tieneCiudad) return true;
+  if (tieneEstado && enElEstado(formatted, estado)) return true;
+  if (tieneCiudad && enElEstado(formatted, ciudad)) return true;
+  return false;
+}
+
+function yaTrae(texto, pieza) {
+  const n = fold(pieza).trim();
+  return n.length >= 2 && fold(texto).includes(n);
+}
+
+function esSoloCiudad(formatted) {
+  const parts = String(formatted || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length <= 2) return true;
+  const first = parts[0];
+  if (/^\d{5}(\s|$)/.test(first)) return true;
+  if (parts.length === 3 && !/\d/.test(first)) {
+    const head = first.toLowerCase();
+    const streetPrefixes = ['c.', 'av.', 'calle', 'blvd', 'boulevard', 'privada', 'priv.', 'prolongación', 'prol.', 'andador', 'cerrada', 'calzada'];
+    if (streetPrefixes.some((prefix) => head.startsWith(prefix))) return false;
+    return true;
+  }
+  return false;
+}
+
+const TIPOS_PIN = new Set([
+  'street_address', 'premise', 'subpremise', 'route', 'intersection',
+  'point_of_interest', 'establishment', 'store', 'restaurant', 'food',
+  'neighborhood', 'sublocality', 'sublocality_level_1', 'postal_code',
+]);
+const TIPOS_CIUDAD = new Set([
+  'locality', 'administrative_area_level_1', 'administrative_area_level_2', 'country', 'political',
+]);
+
+function esPinUtil(punto) {
+  if (!punto || punto.lat == null || punto.lng == null || punto.aproximado) return false;
+  const types = punto.types || [];
+  if (types.some((t) => TIPOS_PIN.has(t))) return true;
+  if (types.length && types.every((t) => TIPOS_CIUDAD.has(t))) return false;
+  return !esSoloCiudad(punto.formatted_address);
 }
 
 function coordsDe(data) {
@@ -67,18 +116,24 @@ function coordsDe(data) {
   const lat = Number(result?.geometry?.location?.lat);
   const lng = Number(result?.geometry?.location?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { lat, lng, formatted_address: result.formatted_address };
+  return { lat, lng, formatted_address: result.formatted_address, types: result.types || [] };
 }
 
 async function resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey) {
-  let fullAddress = address;
-  if (colonia) fullAddress += `, ${colonia}`;
-  if (ciudad && !String(address).includes(ciudad)) fullAddress += `, ${ciudad}`;
-  if (estado && !String(fullAddress).includes(estado)) fullAddress += `, ${estado}`;
-  if (codigo_postal) fullAddress += `, ${codigo_postal}`;
+  let padded = String(address || '');
+  if (colonia && !yaTrae(padded, colonia)) padded += `, ${colonia}`;
+  if (ciudad && !yaTrae(padded, ciudad)) padded += `, ${ciudad}`;
+  if (estado && !yaTrae(padded, estado)) padded += `, ${estado}`;
+  if (codigo_postal && !yaTrae(padded, codigo_postal)) padded += `, ${codigo_postal}`;
 
-  const primero = coordsDe(await callGeocodeApi(fullAddress, apiKey));
-  if (primero && isStreetFound(primero.formatted_address, address) && enElEstado(primero.formatted_address, estado)) {
+  const vistas = new Set();
+  for (const raw of [padded, address]) {
+    const query = String(raw || '').trim();
+    if (!query || vistas.has(query)) continue;
+    vistas.add(query);
+    const primero = coordsDe(await callGeocodeApi(query, apiKey));
+    if (!primero || !esPinUtil(primero)) continue;
+    if (!cabeEnCiudad(primero.formatted_address, ciudad, estado)) continue;
     return { ...primero, aproximado: false };
   }
   return null;
@@ -100,11 +155,9 @@ function isStreetFound(formattedAddress, searchedAddress) {
   return false;
 }
 
-function esDomicilio(punto, estado) {
-  if (!punto || punto.lat == null || punto.lng == null || punto.aproximado) return false;
-  if (estado && punto.formatted_address && !enElEstado(punto.formatted_address, estado)) return false;
-  if (punto.formatted_address && !isStreetFound(punto.formatted_address, '')) return false;
-  return true;
+function esDomicilio(punto, estado, ciudad) {
+  if (!esPinUtil(punto)) return false;
+  return cabeEnCiudad(punto.formatted_address, ciudad, estado);
 }
 
 class MapsController {
@@ -136,7 +189,7 @@ class MapsController {
       }
 
       const punto = await resolverDireccion({ address, ciudad, colonia, codigo_postal, estado }, apiKey);
-      if (punto && !enElEstado(punto.formatted_address, estado)) {
+      if (punto && !cabeEnCiudad(punto.formatted_address, ciudad, estado)) {
         return res.status(422).json({
           success: false,
           message: estado ? `Esa dirección no está en ${estado}. Comunícate a soporte para confirmarla.` : AVISO_SIN_UBICAR,
@@ -347,8 +400,10 @@ module.exports = new MapsController();
 module.exports.direccionDeRespaldo = direccionDeRespaldo;
 module.exports.resolverDireccion = resolverDireccion;
 module.exports.enElEstado = enElEstado;
+module.exports.cabeEnCiudad = cabeEnCiudad;
 module.exports.centroDeCiudad = centroDeCiudad;
 module.exports.isStreetFound = isStreetFound;
 module.exports.esDomicilio = esDomicilio;
+module.exports.esPinUtil = esPinUtil;
 module.exports.AVISO_SIN_UBICAR = AVISO_SIN_UBICAR;
 
