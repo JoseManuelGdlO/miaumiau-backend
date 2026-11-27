@@ -166,6 +166,51 @@ test('refrescarPolylineRuta traza sin repartidor', async () => {
   expect(ruta.polyline_encoded).toBe(GOOGLE_LINE);
 });
 
+test('con regresa_bodega el destino de Directions es la bodega', async () => {
+  const httpGet = jest.fn(async () => ({
+    data: {
+      status: 'OK',
+      routes: [{ overview_polyline: { points: GOOGLE_LINE }, legs: [{ distance: { value: 1200 }, duration: { value: 180 } }] }],
+    },
+  }));
+  const ruta = {
+    id: 12,
+    regresa_bodega: true,
+    pedidos: [
+      { orden_entrega: 1, lat: 24.02, lng: -104.66 },
+      { orden_entrega: 2, lat: 24.03, lng: -104.67 },
+    ],
+    update: jest.fn(async (patch) => Object.assign(ruta, patch)),
+  };
+  await refrescarPolylineRuta(ruta, { apiKey: 'k', httpGet, bodega: { lat: 24.01, lng: -104.65 } });
+  const params = httpGet.mock.calls[0][1].params;
+  expect(params.origin).toBe('24.01,-104.65');
+  expect(params.destination).toBe('24.01,-104.65');
+  expect(params.waypoints).toBe('24.02,-104.66|24.03,-104.67');
+});
+
+test('sin regresa_bodega el destino de Directions es la última parada', async () => {
+  const httpGet = jest.fn(async () => ({
+    data: {
+      status: 'OK',
+      routes: [{ overview_polyline: { points: GOOGLE_LINE }, legs: [{ distance: { value: 1200 }, duration: { value: 180 } }] }],
+    },
+  }));
+  const ruta = {
+    id: 13,
+    pedidos: [
+      { orden_entrega: 1, lat: 24.02, lng: -104.66 },
+      { orden_entrega: 2, lat: 24.03, lng: -104.67 },
+    ],
+    update: jest.fn(async (patch) => Object.assign(ruta, patch)),
+  };
+  await refrescarPolylineRuta(ruta, { apiKey: 'k', httpGet, bodega: { lat: 24.01, lng: -104.65 } });
+  const params = httpGet.mock.calls[0][1].params;
+  expect(params.origin).toBe('24.01,-104.65');
+  expect(params.destination).toBe('24.03,-104.67');
+  expect(params.waypoints).toBe('24.02,-104.66');
+});
+
 test('geocodePedido y asegurarPolyline no llaman HTTP si Maps está apagado', async () => {
   const resolverDireccion = jest.fn();
   const httpGet = jest.fn();

@@ -118,6 +118,11 @@ module.exports = (sequelize, DataTypes) => {
     polyline_hash: {
       type: DataTypes.STRING(40),
       allowNull: true
+    },
+    regresa_bodega: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     tableName: 'rutas',

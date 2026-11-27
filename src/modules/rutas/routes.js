@@ -153,7 +153,12 @@ const asignarPedidosValidation = [
   body('prioridad')
     .optional()
     .isIn(['hora', 'distancia'])
-    .withMessage('La prioridad debe ser hora o distancia')
+    .withMessage('La prioridad debe ser hora o distancia'),
+
+  body('cierre')
+    .optional()
+    .isIn(['ultima', 'bodega'])
+    .withMessage('El cierre debe ser ultima o bodega')
 ];
 
 const moverParadaValidation = [
